@@ -1,5 +1,5 @@
 """
-Scoreboard Hotkeys Bridge
+Scsoreboard Hotkeys Bridge
 -------------------------
 ลงทะเบียน OBS Hotkeys (Settings > Hotkeys) สำหรับแต่ละปุ่มใน Scoreboard Dock
 แล้วส่งต่อผ่าน obs-websocket (BroadcastCustomEvent) ให้หน้า dock (main.js) รับไปกดปุ่มแทน
