@@ -1,0 +1,13 @@
+# OBS YouTube Streaming Configuration Template
+# Copy this file to basic.ini and fill in your credentials
+
+DVR=true
+ScheduleForLater=false
+Projection=rectangular
+ThumbnailFile=
+RememberSettings=true
+RefreshToken=YOUR_GOOGLE_REFRESH_TOKEN_HERE
+Token=YOUR_GOOGLE_ACCESS_TOKEN_HERE
+ExpireTime=0
+ScopeVer=1
+ChannelName=YOUR_CHANNEL_NAME_HERE
