@@ -169,10 +169,16 @@ export default function OverlayContainer() {
 
   // Helper for rendering logos
   const renderLogo = (teamName: string, className = 'overlay-logo') => {
+    // Auto-append .png if not present
+    let logoFileName = teamName || '';
+    if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
+      logoFileName = `${logoFileName}.png`;
+    }
+    
     return (
       <img
         className={className}
-        src={`logos/${encodeURIComponent(teamName || '')}.png`}
+        src={`/logos/${encodeURIComponent(logoFileName)}`}
         alt=""
         onError={(e) => {
           (e.target as HTMLImageElement).src = defaultLogo;
