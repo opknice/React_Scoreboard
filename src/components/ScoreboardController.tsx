@@ -17,6 +17,7 @@ import {
 import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParser';
 import PenaltyShootoutController from './PenaltyShootoutController';
 import AutoMacrosPanel from './AutoMacrosPanel';
+import LogoUploader from './LogoUploader';
 
 export default function ScoreboardController() {
   // --- Hooks ---
@@ -1362,6 +1363,13 @@ export default function ScoreboardController() {
                 {trans.close}
               </button>
             </div>
+
+            {/* Logo Uploader Component */}
+            <LogoUploader 
+              onUploadSuccess={(fileName, url) => {
+                triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ! กำลัง deploy...`, 'success');
+              }}
+            />
           </div>
         </div>
       )}

@@ -11,8 +11,10 @@
     "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
+    "@octokit/rest": "^21.1.1",
     "exceljs": "^4.4.0",
     "firebase": "^12.16.0",
+    "formidable": "^3.5.4",
     "obs-websocket-js": "^5.0.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
