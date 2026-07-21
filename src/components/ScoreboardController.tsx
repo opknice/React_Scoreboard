@@ -1887,7 +1887,9 @@ export default function ScoreboardController() {
                       style={{ background: row.color1 || '#333' }}
                     >
                       <img
-                        src={`logos/${encodeURIComponent(row.team)}.png`}
+                        src={`/logos/${encodeURIComponent(
+                          row.team.endsWith('.png') ? row.team : `${row.team}.png`
+                        )}`}
                         alt=""
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />

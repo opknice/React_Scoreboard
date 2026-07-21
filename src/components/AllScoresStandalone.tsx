@@ -129,10 +129,16 @@ export default function AllScoresStandalone() {
   });
 
   const renderLogo = (teamName: string) => {
+    // Auto-append .png if not present
+    let logoFileName = teamName || '';
+    if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
+      logoFileName = `${logoFileName}.png`;
+    }
+    
     return (
       <img
         className="overlay-logo"
-        src={`logos/${encodeURIComponent(teamName || '')}.png`}
+        src={`/logos/${encodeURIComponent(logoFileName)}`}
         alt=""
         onError={(e) => {
           (e.target as HTMLImageElement).src = defaultLogo;
