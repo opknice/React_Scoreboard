@@ -274,17 +274,23 @@ export default function ScoreboardController() {
   const getLogoSrc = (logoName: string) => {
     if (!logoName) return '';
     
+    // Auto-append .png if not present
+    let fileName = logoName;
+    if (!fileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
+      fileName = `${fileName}.png`;
+    }
+    
     // In production (deployed), always use /logos/ folder
     // In development, use custom path if configured
     const isDev = import.meta.env.DEV;
     
     if (isDev && logoFolderPath) {
       // Development mode with custom path
-      return `/api/logo?path=${encodeURIComponent(logoFolderPath)}&file=${encodeURIComponent(logoName)}`;
+      return `/api/logo?path=${encodeURIComponent(logoFolderPath)}&file=${encodeURIComponent(fileName)}`;
     }
     
     // Production or no custom path - use deployed logos folder
-    return `/logos/${encodeURIComponent(logoName)}`;
+    return `/logos/${encodeURIComponent(fileName)}`;
   };
 
   // --- Excel Loading & Parsing Logic ---
