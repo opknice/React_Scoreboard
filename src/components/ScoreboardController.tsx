@@ -274,13 +274,17 @@ export default function ScoreboardController() {
   const getLogoSrc = (logoName: string) => {
     if (!logoName) return '';
     
-    // Use API endpoint with configured logoFolderPath
-    if (logoFolderPath) {
+    // In production (deployed), always use /logos/ folder
+    // In development, use custom path if configured
+    const isDev = import.meta.env.DEV;
+    
+    if (isDev && logoFolderPath) {
+      // Development mode with custom path
       return `/api/logo?path=${encodeURIComponent(logoFolderPath)}&file=${encodeURIComponent(logoName)}`;
     }
     
-    // Fallback to old behavior
-    return `logos/${encodeURIComponent(logoName)}`;
+    // Production or no custom path - use deployed logos folder
+    return `/logos/${encodeURIComponent(logoName)}`;
   };
 
   // --- Excel Loading & Parsing Logic ---
