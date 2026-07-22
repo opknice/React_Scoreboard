@@ -807,8 +807,13 @@ export default function ScoreboardController() {
               accept=".xlsx, .xls"
               onChange={handleExcelUpload}
             />
-            <button className="btn-secondary" title={trans.logoPathHint} onClick={() => setShowLogoPathModal(true)}>
+            <button className="btn-secondary" title={trans.logoPathHint} onClick={() => setShowLogoPathModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <i className="fas fa-folder-open"></i>
+              <span>Logo Path</span>
+            </button>
+            <button className="btn-primary" onClick={() => setShowLogoPathModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fas fa-upload"></i>
+              <span>📤 อัปโหลดโลโก้</span>
             </button>
           </div>
 
