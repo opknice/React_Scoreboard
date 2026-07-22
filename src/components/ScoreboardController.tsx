@@ -807,10 +807,6 @@ export default function ScoreboardController() {
               accept=".xlsx, .xls"
               onChange={handleExcelUpload}
             />
-            <button className="btn-secondary" title={trans.logoPathHint} onClick={() => setShowLogoPathModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <i className="fas fa-folder-open"></i>
-              <span>Logo Path</span>
-            </button>
             <button className="btn-primary" onClick={() => setShowLogoPathModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <i className="fas fa-upload"></i>
               <span>📤 อัปโหลดโลโก้</span>
@@ -1337,15 +1333,15 @@ export default function ScoreboardController() {
         </div>
       )}
 
-      {/* --- Logo Folder Path Settings Modal --- */}
+      {/* --- Logo Upload & Path Settings Modal --- */}
       {showLogoPathModal && (
         <div className="modal-overlay" onClick={() => setShowLogoPathModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>
-              <i className="fas fa-folder-open"></i> {trans.logoPathTitle || 'ที่เก็บรูปโลโก้ทีม'}
+              <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
             </h3>
             <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>
-              {trans.logoPathDesc || 'ตั้งค่าโฟลเดอร์สำหรับโหลดโลโก้ทีมลง OBS'}
+              {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Firebase หรือตั้งค่าโฟลเดอร์ local (สำหรับ dev mode)'}
             </p>
             <input
               type="text"
