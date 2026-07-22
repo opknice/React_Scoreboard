@@ -1,4 +1,7 @@
+// Firebase Storage Logo Uploader
 import React, { useState } from 'react';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getApp } from 'firebase/app';
 
 interface LogoUploaderProps {
   onUploadSuccess?: (fileName: string, url: string) => void;
@@ -10,6 +13,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [uploadedUrl, setUploadedUrl] = useState<string>('');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -29,6 +33,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       setFile(selectedFile);
       setError('');
       setMessage('');
+      setUploadedUrl('');
 
       // Show preview
       const reader = new FileReader();
@@ -50,35 +55,38 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
     setMessage('');
 
     try {
-      const formData = new FormData();
-      formData.append('logo', file);
+      // Get Firebase app
+      const app = getApp();
+      const storage = getStorage(app);
 
-      const response = await fetch('/api/upload-logo', {
-        method: 'POST',
-        body: formData,
-      });
+      // Create unique filename with timestamp
+      const timestamp = Date.now();
+      const fileName = file.name;
+      const storageRef = ref(storage, `logos/${fileName}`);
 
-      const data = await response.json();
+      // Upload file
+      await uploadBytes(storageRef, file);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
-      }
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
 
-      setMessage(`✅ อัปโหลดสำเร็จ: ${data.fileName}`);
+      setMessage(`✅ อัปโหลดสำเร็จ!`);
+      setUploadedUrl(downloadURL);
       setFile(null);
       setPreviewUrl('');
       
       if (onUploadSuccess) {
-        onUploadSuccess(data.fileName, data.url);
+        onUploadSuccess(fileName, downloadURL);
       }
 
-      // Reset after 3 seconds
-      setTimeout(() => {
-        setMessage('');
-      }, 3000);
-
     } catch (err: any) {
-      setError(`❌ เกิดข้อผิดพลาด: ${err.message}`);
+      console.error('Upload error:', err);
+      
+      if (err.code === 'storage/unauthorized') {
+        setError(`❌ ไม่มีสิทธิ์อัปโหลด - กรุณาตั้งค่า Firebase Storage Rules`);
+      } else {
+        setError(`❌ เกิดข้อผิดพลาด: ${err.message}`);
+      }
     } finally {
       setUploading(false);
     }
@@ -92,7 +100,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       backgroundColor: '#1a1a1a',
       marginTop: '20px'
     }}>
-      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้</h3>
+      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Firebase Storage)</h3>
       
       <div style={{ marginBottom: '15px' }}>
         <input
@@ -144,7 +152,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
           width: '100%'
         }}
       >
-        {uploading ? '⏳ กำลังอัปโหลด...' : '🚀 อัปโหลดและ Deploy'}
+        {uploading ? '⏳ กำลังอัปโหลด...' : '🚀 อัปโหลดทันที (ไม่ต้องรอ deploy)'}
       </button>
 
       {message && (
@@ -157,6 +165,41 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
           fontSize: '14px'
         }}>
           {message}
+        </div>
+      )}
+
+      {uploadedUrl && (
+        <div style={{
+          marginTop: '10px',
+          padding: '10px',
+          backgroundColor: '#1a237e',
+          borderRadius: '4px',
+          fontSize: '12px',
+          wordBreak: 'break-all'
+        }}>
+          <strong>URL:</strong><br/>
+          <a href={uploadedUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6' }}>
+            {uploadedUrl}
+          </a>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(uploadedUrl);
+              setMessage('✅ คัดลอก URL แล้ว!');
+              setTimeout(() => setMessage(''), 2000);
+            }}
+            style={{
+              marginLeft: '10px',
+              padding: '4px 8px',
+              fontSize: '11px',
+              backgroundColor: '#1976d2',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            📋 คัดลอก
+          </button>
         </div>
       )}
 
@@ -178,7 +221,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
         fontSize: '12px',
         color: '#888'
       }}>
-        💡 <strong>หมายเหตุ:</strong> หลังอัปโหลดจะใช้เวลา 2-3 นาทีในการ deploy ขึ้น Vercel
+        💡 <strong>ข้อดี:</strong> อัปโหลดได้ทันที ไม่ต้องรอ deploy (ฟรี 5GB)
       </div>
     </div>
   );

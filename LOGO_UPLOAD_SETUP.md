@@ -1,86 +1,132 @@
-# 📤 Logo Upload Setup Guide
+# 📤 Logo Upload Setup Guide (Firebase Storage - 100% FREE)
 
-## ขั้นตอนการตั้งค่า Auto Logo Upload & Deploy
+## ขั้นตอนการตั้งค่า Firebase Storage
 
-### 1. สร้าง GitHub Personal Access Token
+### 1. เปิดใช้งาน Firebase Storage
 
-1. ไปที่ https://github.com/settings/tokens
-2. คลิก **Generate new token** → **Generate new token (classic)**
-3. ตั้งชื่อ: `React Scoreboard Logo Upload`
-4. เลือก expiration: **No expiration** (หรือตามที่ต้องการ)
-5. เลือก scopes:
-   - ✅ `repo` (Full control of private repositories)
-6. คลิก **Generate token**
-7. **คัดลอก token ทันที** (จะไม่สามารถดูอีกครั้ง)
+#### 1.1 ไปที่ Firebase Console
+```
+https://console.firebase.google.com/
+```
 
-### 2. เพิ่ม Environment Variables ใน Vercel
+#### 1.2 เลือก Project ของคุณ
+- คลิกที่ project ที่คุณใช้อยู่
 
-1. ไปที่ https://vercel.com/dashboard
-2. เลือก project **React_Scoreboard**
-3. ไปที่ **Settings** → **Environment Variables**
-4. เพิ่ม 3 ตัวแปร:
+#### 1.3 เปิดใช้ Storage
+1. ไปที่เมนู **Build** → **Storage**
+2. คลิก **Get Started**
+3. เลือก **Production mode** (หรือ Test mode ก็ได้)
+4. เลือก Region: **asia-southeast1** (Singapore - ใกล้ที่สุด)
+5. คลิก **Done**
 
-#### ตัวแปรที่ 1: GITHUB_TOKEN
-- **Key:** `GITHUB_TOKEN`
-- **Value:** `ghp_xxxxxxxxxxxxxxxxxxxxx` (token ที่คัดลอกมา)
-- **Environment:** Production, Preview, Development
+### 2. ตั้งค่า Storage Rules (สำคัญ!)
 
-#### ตัวแปรที่ 2: GITHUB_OWNER
-- **Key:** `GITHUB_OWNER`
-- **Value:** `opknice`
-- **Environment:** Production, Preview, Development
+ไปที่ **Storage** → **Rules** tab และใช้ rules นี้:
 
-#### ตัวแปรที่ 3: GITHUB_REPO
-- **Key:** `GITHUB_REPO`
-- **Value:** `React_Scoreboard`
-- **Environment:** Production, Preview, Development
+```javascript
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /logos/{fileName} {
+      // อนุญาตให้อ่านได้ทุกคน (public)
+      allow read: if true;
+      
+      // อนุญาตให้เขียนได้เฉพาะไฟล์รูปภาพ ขนาดไม่เกิน 5MB
+      allow write: if request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
+```
 
-5. คลิก **Save**
+คลิก **Publish**
 
-### 3. Redeploy Project
-
-1. ไปที่ **Deployments** tab
-2. คลิก **...** ที่ deployment ล่าสุด
-3. เลือก **Redeploy**
-4. รอให้ deploy เสร็จ
-
-### 4. วิธีใช้งาน
+### 3. วิธีใช้งาน
 
 1. เปิดหน้า Controller: `https://react-scoreboard-two.vercel.app/`
-2. เลื่อนลงไปที่ส่วน **"📤 อัปโหลดโลโก้"**
-3. กด **Choose File** → เลือกรูปโลโก้
-4. กด **🚀 อัปโหลดและ Deploy**
-5. รอ 2-3 นาที ให้ Vercel deploy เสร็จ
-6. รีเฟรชหน้า → โลโก้ใหม่จะปรากฏ!
+2. คลิกปุ่ม **⚙️ Logo Path Settings**
+3. เลื่อนลงไปที่ส่วน **"📤 อัปโหลดโลโก้ (Firebase Storage)"**
+4. กด **Choose File** → เลือกรูปโลโก้
+5. กด **🚀 อัปโหลดทันที**
+6. **คัดลอก URL** ที่ปรากฏขึ้นมา
+7. **ใช้ URL นั้นในฐานข้อมูล** แทนชื่อไฟล์
+
+## ✅ ข้อดีของ Firebase Storage
+
+- ✅ **ฟรี 100%** - 5GB storage, 1GB/day download
+- ✅ **อัปโหลดทันที** - ไม่ต้องรอ deploy
+- ✅ **ใช้งานได้ทันที** - URL พร้อมใช้ทันที
+- ✅ **Fast CDN** - มี cache ทั่วโลก
+- ✅ **ไม่ต้องตั้งค่า GitHub** - ไม่ต้องใช้ token
+
+## 📝 วิธีใช้ URL ที่อัปโหลดแล้ว
+
+### ตัวอย่าง URL ที่ได้:
+```
+https://firebasestorage.googleapis.com/v0/b/your-project.appspot.com/o/logos%2Fteam.png?alt=media&token=xxx
+```
+
+### วิธีใช้:
+
+#### Option 1: ใช้ URL เต็ม (แนะนำ)
+ใส่ URL เต็มในฐานข้อมูล:
+```json
+{
+  "logoA": "https://firebasestorage.googleapis.com/v0/b/.../team.png?alt=media&token=xxx",
+  "logoB": "https://firebasestorage.googleapis.com/v0/b/.../team2.png?alt=media&token=xxx"
+}
+```
+
+#### Option 2: ใช้ชื่อไฟล์ + fallback
+ถ้าต้องการใช้ร่วมกับ local logos:
+- ใส่ชื่อไฟล์ธรรมดา: `"logoA": "ทีมกาลาติกอส.png"`
+- ระบบจะหารูปจาก `/public/logos/` ก่อน
+- ถ้าไม่มี จะแสดง initials
 
 ## ⚠️ ข้อควรระวัง
 
 - ไฟล์รูปต้องเป็น PNG, JPG, GIF, WebP เท่านั้น
 - ขนาดไฟล์ไม่เกิน 5MB
-- ชื่อไฟล์ควรเป็นภาษาไทยหรืออังกฤษที่มีความหมาย (เช่น "ทีมกาลาติกอส.png")
-- การ deploy ใช้เวลา 2-3 นาที (รอดู status ใน Vercel dashboard)
+- ชื่อไฟล์ควรไม่ซ้ำกัน (จะ overwrite ไฟล์เดิม)
+- Firebase Free Plan: 5GB storage, 1GB/day download
+- ถ้าเกิน quota ให้ลบไฟล์เก่าออก
 
 ## 🔒 ความปลอดภัย
 
-- GitHub Token จะถูกเก็บใน Vercel Environment Variables (ปลอดภัย)
-- ไม่มีใครสามารถเห็น token ได้ยกเว้นคุณ
-- Vercel Serverless Function ทำงานในสภาพแวดล้อมที่แยกออกจากกัน
+Firebase Storage Rules ที่แนะนำ:
+- ✅ อนุญาตให้**อ่านได้ทุกคน** (public read) - เพื่อให้แสดงโลโก้ได้
+- ✅ อนุญาตให้**เขียนได้เฉพาะไฟล์รูป** ขนาดไม่เกิน 5MB
+- ✅ ป้องกันไฟล์ขนาดใหญ่และไฟล์ที่ไม่ใช่รูป
 
 ## 🐛 แก้ปัญหา
 
-### ปัญหา: Upload แล้วขึ้น 500 Error
+### ปัญหา: Upload แล้วขึ้น "unauthorized"
 **วิธีแก้:**
-- ตรวจสอบว่าตั้งค่า Environment Variables ครบ 3 ตัวแปร
-- ตรวจสอบว่า GitHub Token ยังไม่หมดอายุ
-- Redeploy project ใหม่
+- ตรวจสอบ Storage Rules ว่าตั้งค่าถูกต้อง
+- ตรวจสอบว่าเปิดใช้งาน Firebase Storage แล้ว
+- ลอง Publish rules ใหม่
 
-### ปัญหา: Upload สำเร็จแต่รูปไม่ขึ้น
+### ปัญหา: อัปโหลดช้า
 **วิธีแก้:**
-- รอ 2-3 นาที ให้ Vercel deploy เสร็จ
-- ตรวจสอบ deployment status ที่ https://vercel.com/dashboard
-- กด Ctrl+Shift+R เพื่อ hard refresh
+- ตรวจสอบขนาดไฟล์ (ควรไม่เกิน 1MB)
+- ลดขนาดรูปก่อนอัปโหลด
+- เปลี่ยน region ให้ใกล้ที่สุด
 
-### ปัญหา: 403 Forbidden
+### ปัญหา: รูปไม่แสดง
 **วิธีแก้:**
-- ตรวจสอบว่า GitHub Token มี permission `repo` ครบถ้วน
-- สร้าง token ใหม่และอัปเดตใน Vercel
+- ตรวจสอบว่า URL ถูกต้อง
+- เปิด URL ในแท็บใหม่ดูว่าเข้าถึงได้ไหม
+- ตรวจสอบ Storage Rules ว่าอนุญาต read: true
+
+## 💰 ค่าใช้จ่าย
+
+### Firebase Free Plan (Spark)
+- **Storage:** 5 GB
+- **Download:** 1 GB/day
+- **Upload:** 20,000/day
+
+### เพียงพอสำหรับ:
+- โลโก้ประมาณ 1,000-5,000 ทีม (ขนาด 50KB-1MB/ทีม)
+- Pageviews ประมาณ 10,000-50,000/day
+
+**100% ฟรี ไม่มีค่าใช้จ่าย!** 🎉
