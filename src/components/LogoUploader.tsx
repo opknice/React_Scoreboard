@@ -1,7 +1,5 @@
-// Firebase Storage Logo Uploader
+// Cloudinary Logo Uploader (Unsigned Upload - No API Secret needed)
 import React, { useState } from 'react';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getApp } from 'firebase/app';
 
 interface LogoUploaderProps {
   onUploadSuccess?: (fileName: string, url: string) => void;
@@ -15,6 +13,10 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [uploadedUrl, setUploadedUrl] = useState<string>('');
 
+  // Cloudinary config (public info - safe to expose)
+  const CLOUD_NAME = 'vayh51zb';
+  const UPLOAD_PRESET = 'logo_upload'; // You'll create this in next step
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -24,9 +26,9 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
         return;
       }
 
-      // Validate file size (5MB)
-      if (selectedFile.size > 5 * 1024 * 1024) {
-        setError('ไฟล์ใหญ่เกิน 5MB');
+      // Validate file size (10MB for Cloudinary)
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        setError('ไฟล์ใหญ่เกิน 10MB');
         return;
       }
 
@@ -55,35 +57,43 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
     setMessage('');
 
     try {
-      // Get Firebase app
-      const app = getApp();
-      const storage = getStorage(app);
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', UPLOAD_PRESET);
+      formData.append('folder', 'logos'); // Optional: organize in folder
 
-      // Create unique filename with timestamp
-      const timestamp = Date.now();
-      const fileName = file.name;
-      const storageRef = ref(storage, `logos/${fileName}`);
+      // Upload to Cloudinary
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
 
-      // Upload file
-      await uploadBytes(storageRef, file);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Upload failed');
+      }
 
-      // Get download URL
-      const downloadURL = await getDownloadURL(storageRef);
+      const data = await response.json();
+      const imageUrl = data.secure_url;
 
       setMessage(`✅ อัปโหลดสำเร็จ!`);
-      setUploadedUrl(downloadURL);
+      setUploadedUrl(imageUrl);
       setFile(null);
       setPreviewUrl('');
       
       if (onUploadSuccess) {
-        onUploadSuccess(fileName, downloadURL);
+        onUploadSuccess(file.name, imageUrl);
       }
 
     } catch (err: any) {
       console.error('Upload error:', err);
       
-      if (err.code === 'storage/unauthorized') {
-        setError(`❌ ไม่มีสิทธิ์อัปโหลด - กรุณาตั้งค่า Firebase Storage Rules`);
+      if (err.message.includes('Invalid upload preset')) {
+        setError(`❌ ยังไม่ได้ตั้งค่า Upload Preset - กรุณาดูคำแนะนำด้านล่าง`);
       } else {
         setError(`❌ เกิดข้อผิดพลาด: ${err.message}`);
       }
@@ -100,7 +110,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       backgroundColor: '#1a1a1a',
       marginTop: '20px'
     }}>
-      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Firebase Storage)</h3>
+      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Cloudinary - ฟรี 25GB)</h3>
       
       <div style={{ marginBottom: '15px' }}>
         <input
@@ -218,10 +228,32 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
 
       <div style={{
         marginTop: '15px',
+        padding: '12px',
+        backgroundColor: '#1a1a2e',
+        borderRadius: '4px',
+        fontSize: '12px',
+        color: '#aaa',
+        borderLeft: '3px solid #ff9800'
+      }}>
+        <strong style={{ color: '#ff9800' }}>⚠️ ขั้นตอนสำคัญ:</strong><br/>
+        ต้องสร้าง <strong>Upload Preset</strong> ก่อนใช้งาน:<br/>
+        <ol style={{ marginLeft: '20px', marginTop: '8px', marginBottom: 0 }}>
+          <li>ไปที่ <a href="https://console.cloudinary.com/settings/upload" target="_blank" style={{ color: '#64b5f6' }}>Cloudinary Settings</a></li>
+          <li>เลื่อนลงมาที่ <strong>Upload presets</strong></li>
+          <li>คลิก <strong>Add upload preset</strong></li>
+          <li>ตั้งชื่อ: <code style={{ backgroundColor: '#2a2a2a', padding: '2px 6px', borderRadius: '3px' }}>logo_upload</code></li>
+          <li>เปลี่ยน Signing Mode เป็น: <strong>Unsigned</strong></li>
+          <li>Folder: <code style={{ backgroundColor: '#2a2a2a', padding: '2px 6px', borderRadius: '3px' }}>logos</code></li>
+          <li>คลิก <strong>Save</strong></li>
+        </ol>
+      </div>
+
+      <div style={{
+        marginTop: '10px',
         fontSize: '12px',
         color: '#888'
       }}>
-        💡 <strong>ข้อดี:</strong> อัปโหลดได้ทันที ไม่ต้องรอ deploy (ฟรี 5GB)
+        💡 <strong>ข้อดี:</strong> ฟรี 25GB, CDN เร็ว, Image optimization อัตโนมัติ
       </div>
     </div>
   );
