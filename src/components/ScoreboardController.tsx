@@ -275,7 +275,12 @@ export default function ScoreboardController() {
   const getLogoSrc = (logoName: string) => {
     if (!logoName) return '';
     
-    // Auto-append .png if not present
+    // Check if it's a full URL (Cloudinary, Firebase, etc.)
+    if (logoName.startsWith('http://') || logoName.startsWith('https://')) {
+      return logoName; // Use URL directly
+    }
+    
+    // It's a filename - auto-append .png if needed
     let fileName = logoName;
     if (!fileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
       fileName = `${fileName}.png`;
@@ -1902,9 +1907,15 @@ export default function ScoreboardController() {
                       style={{ background: row.color1 || '#333' }}
                     >
                       <img
-                        src={`/logos/${encodeURIComponent(
-                          row.team.endsWith('.png') ? row.team : `${row.team}.png`
-                        )}`}
+                        src={(() => {
+                          // Check if team name is a URL
+                          if (row.team.startsWith('http://') || row.team.startsWith('https://')) {
+                            return row.team;
+                          }
+                          // It's a filename
+                          const fileName = row.team.endsWith('.png') ? row.team : `${row.team}.png`;
+                          return `/logos/${encodeURIComponent(fileName)}`;
+                        })()}
                         alt=""
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />

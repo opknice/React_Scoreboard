@@ -148,16 +148,24 @@ export default function LeagueTableStandalone() {
   const standingsRows = calculateStandings();
 
   const renderLogo = (teamName: string) => {
-    // Auto-append .png if not present
-    let logoFileName = teamName || '';
-    if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
-      logoFileName = `${logoFileName}.png`;
+    let logoSrc = '';
+    
+    // Check if it's a full URL (Cloudinary, Firebase, etc.)
+    if (teamName && (teamName.startsWith('http://') || teamName.startsWith('https://'))) {
+      logoSrc = teamName; // Use URL directly
+    } else {
+      // It's a filename - auto-append .png if needed
+      let logoFileName = teamName || '';
+      if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
+        logoFileName = `${logoFileName}.png`;
+      }
+      logoSrc = `/logos/${encodeURIComponent(logoFileName)}`;
     }
     
     return (
       <img
         className="overlay-logo"
-        src={`/logos/${encodeURIComponent(logoFileName)}`}
+        src={logoSrc}
         alt=""
         onError={(e) => {
           (e.target as HTMLImageElement).src = defaultLogo;
