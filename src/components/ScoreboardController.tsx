@@ -108,6 +108,7 @@ export default function ScoreboardController() {
   const [showAutoMacrosModal, setShowAutoMacrosModal] = useState<boolean>(false);
   const [showTeamLogosManagerModal, setShowTeamLogosManagerModal] = useState<boolean>(false);
   const [teamsCacheVersion, setTeamsCacheVersion] = useState<number>(0);
+  const [tickerSpeed, setTickerSpeed] = useState<number>(() => parseInt(localStorage.getItem('tickerSpeed') || '75', 10));
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
 
@@ -779,7 +780,7 @@ export default function ScoreboardController() {
     } else {
       urlString = `${host}/overlay?league=${target.id}&view=${viewType}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
       if (viewType === 'ticker') {
-        urlString += `&date=today`;
+        urlString += `&date=today&speed=${tickerSpeed}`;
       }
     }
 
@@ -1711,9 +1712,35 @@ export default function ScoreboardController() {
               <button className="btn-success" onClick={() => handleCopyOverlayUrl('results')}>
                 <i className="fas fa-list"></i> Copy Match Results URL
               </button>
-              <button className="btn-warning" onClick={() => handleCopyOverlayUrl('ticker')}>
-                <i className="fas fa-tv"></i> Copy Live Ticker URL
-              </button>
+
+              {/* Ticker Speed & Copy Button Box */}
+              <div style={{ padding: '10px 12px', backgroundColor: '#262626', borderRadius: '6px', border: '1px solid #ffb74d' }}>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffb74d', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  <i className="fas fa-gauge-high"></i> ตั้งค่าความเร็วการวิ่งของตัวหนังสือ (Live Ticker):
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                  <select
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', backgroundColor: '#1e1e1e', color: '#fff', border: '1px solid #555', fontSize: '13px' }}
+                    value={tickerSpeed}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10) || 75;
+                      setTickerSpeed(val);
+                      localStorage.setItem('tickerSpeed', String(val));
+                    }}
+                  >
+                    <option value={150}>🐢 ช้ามากพิเศษ (Ultra Slow - 150s)</option>
+                    <option value={120}>🐢 ช้ามาก (Very Slow - 120s)</option>
+                    <option value={90}>🚶 ช้า / อ่านง่าย (Slow - 90s)</option>
+                    <option value={75}>✨ ปานกลาง (Normal - 75s) [แนะนำ]</option>
+                    <option value={50}>🏃 ค่อนข้างเร็ว (Medium - 50s)</option>
+                    <option value={35}>⚡ เร็ว (Fast - 35s)</option>
+                  </select>
+                  <span style={{ fontSize: '12px', color: '#aaa', whiteSpace: 'nowrap' }}>{tickerSpeed} วินาที/รอบ</span>
+                </div>
+                <button className="btn-warning" style={{ width: '100%', justifyContent: 'center' }} onClick={() => handleCopyOverlayUrl('ticker')}>
+                  <i className="fas fa-tv"></i> Copy Live Ticker URL (ความเร็ว {tickerSpeed}s)
+                </button>
+              </div>
               <button
                 className="btn-secondary"
                 style={{ background: '#8b5cf6', borderColor: '#8b5cf6' }}

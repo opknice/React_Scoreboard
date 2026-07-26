@@ -587,7 +587,7 @@ button:disabled {
 .overlay-app {
   min-height: 100vh;
   padding: 32px;
-  background: transparent;
+  background: transparent !important;
   width: 100%;
   box-sizing: border-box;
 }
@@ -612,7 +612,7 @@ button:disabled {
 .overlay-title {
   margin: 0;
   font-size: clamp(36px, 6vw, 72px);
-  font-weight: 800;
+  font-weight: 400;
   line-height: 1.2;
   text-shadow: 0 3px 12px rgba(0, 0, 0, 0.9);
 }
@@ -623,7 +623,7 @@ button:disabled {
   min-height: 300px;
   color: #cbd5e1;
   font-size: 32px;
-  font-weight: 700;
+  font-weight: 400;
   text-align: center;
 }
 
@@ -633,34 +633,34 @@ button:disabled {
   margin: 0 auto;
   border-collapse: collapse;
   overflow: hidden;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(12px);
-  border: none;
-  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .overlay-table th,
 .overlay-table td {
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   text-align: center;
   font-size: clamp(22px, 2.5vw, 38px);
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .overlay-table th {
   color: #cbd5e1;
-  background: rgba(0, 0, 0, 0.5);
-  font-weight: 800;
+  background: transparent !important;
+  font-weight: 400;
   letter-spacing: 1px;
 }
 
 .overlay-table tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.03);
+  background: transparent !important;
 }
 
 .overlay-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent !important;
 }
 
 .overlay-team-cell {
@@ -697,10 +697,10 @@ button:disabled {
 }
 
 .overlay-date-group {
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(12px);
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
   overflow: hidden;
 }
 
@@ -708,10 +708,10 @@ button:disabled {
   padding: 14px 20px;
   color: #cbd5e1;
   font-size: clamp(20px, 2.4vw, 32px);
-  font-weight: 800;
+  font-weight: 400;
   text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0,0,0,0.3);
+  border-bottom: none !important;
+  background: transparent !important;
 }
 
 .overlay-match-row {
@@ -720,9 +720,9 @@ button:disabled {
   align-items: center;
   gap: 20px;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   font-size: clamp(22px, 2.8vw, 42px);
-  font-weight: 850;
+  font-weight: 400;
 }
 
 .overlay-match-row:last-child {
@@ -754,15 +754,15 @@ button:disabled {
   text-align: center;
   color: #3b82f6;
   font-size: 2.5rem;
-  font-weight: 900;
+  font-weight: 400;
 }
 
 /* Ticker styles */
 .overlay-ticker-shell {
   position: fixed;
   inset: auto 0 0;
-  background: rgba(8, 14, 20, 0.9);
-  border-top: 2px solid rgba(255, 255, 255, 0.18);
+  background: transparent !important;
+  border-top: none !important;
   padding: 18px 0;
   overflow: hidden;
   width: 100%;
@@ -775,19 +775,20 @@ button:disabled {
   padding-left: 100%;
   color: #ffffff;
   font-size: clamp(16px, 3vw, 42px);
-  font-weight: 900;
+  font-weight: 400;
   white-space: nowrap;
-  animation: scroll-left-overlay var(--ticker-duration, 42s) linear infinite;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  animation: scroll-left-overlay var(--ticker-duration, 75s) linear infinite;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
 .overlay-ticker-score {
   display: inline-block;
   padding: 4px 14px;
   border-radius: 6px;
-  color: #111827;
-  background: #ffffff;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
   text-shadow: none;
+  font-weight: 400;
 }
 
 @keyframes scroll-left-overlay {

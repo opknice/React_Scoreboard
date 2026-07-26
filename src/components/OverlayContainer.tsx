@@ -18,7 +18,7 @@ export default function OverlayContainer() {
   const limitParam = searchParams.get('limit');
   const showHeader = searchParams.get('header') !== '0';
   const defaultLogo = searchParams.get('defaultLogo') || 'images/logo.png';
-  const speed = searchParams.get('speed') || '42';
+  const speed = searchParams.get('speed') || '75';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
 
@@ -348,7 +348,7 @@ export default function OverlayContainer() {
       return <div className="overlay-status">ยังไม่มีคะแนนสำหรับวันนี้</div>;
     }
 
-    const duration = parseInt(speed, 10) || 42;
+    const duration = parseInt(speed, 10) || 75;
 
     return (
       <div className="overlay-ticker-shell">

@@ -227,7 +227,7 @@ export default function LeagueTableStandalone() {
             <tbody>
               {standingsRows.map((row, index) => (
                 <tr key={row.team}>
-                  <td style={{ fontWeight: 800 }}>{index + 1}</td>
+                  <td style={{ fontWeight: 400 }}>{index + 1}</td>
                   <td className="overlay-team-cell">
                   {renderLogo(row.logo, row.team)}
                   {row.team}
@@ -241,7 +241,7 @@ export default function LeagueTableStandalone() {
                   <td className={row.GD > 0 ? 'overlay-win' : row.GD < 0 ? 'overlay-lose' : 'overlay-draw'}>
                     {row.GD > 0 ? `+${row.GD}` : row.GD}
                   </td>
-                  <td style={{ fontWeight: 900, color: '#3b82f6' }}>
+                  <td style={{ fontWeight: 400, color: '#3b82f6' }}>
                     {row.Pts}
                   </td>
                 </tr>
