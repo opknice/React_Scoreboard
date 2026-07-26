@@ -637,18 +637,20 @@ button:disabled {
 .overlay-table {
   width: min(1600px, 96vw);
   margin: 0 auto;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   overflow: hidden;
-  background: transparent !important;
-  backdrop-filter: none !important;
-  border: none !important;
-  box-shadow: none !important;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 2px solid rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8) !important;
 }
 
 .overlay-table th,
 .overlay-table td {
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   text-align: center;
   font-size: clamp(22px, 2.5vw, 38px);
   font-weight: 400;
@@ -656,17 +658,17 @@ button:disabled {
 
 .overlay-table th {
   color: #cbd5e1;
-  background: transparent !important;
-  font-weight: 400;
+  background: rgba(30, 41, 59, 0.95) !important;
+  font-weight: 500;
   letter-spacing: 1px;
 }
 
 .overlay-table tbody tr:nth-child(even) {
-  background: transparent !important;
+  background: rgba(255, 255, 255, 0.04) !important;
 }
 
 .overlay-table tbody tr:hover {
-  background: transparent !important;
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
 .overlay-team-cell {
@@ -703,21 +705,22 @@ button:disabled {
 }
 
 .overlay-date-group {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  border: 2px solid rgba(16, 185, 129, 0.4) !important;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
   overflow: hidden;
 }
 
 .overlay-date-title {
-  padding: 14px 20px;
-  color: #cbd5e1;
+  padding: 16px 20px;
+  color: #e2e8f0;
   font-size: clamp(20px, 2.4vw, 32px);
-  font-weight: 400;
+  font-weight: 500;
   text-align: center;
-  border-bottom: none !important;
-  background: transparent !important;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.15) !important;
+  background: rgba(30, 41, 59, 0.95) !important;
 }
 
 .overlay-match-row {
