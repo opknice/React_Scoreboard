@@ -14,6 +14,8 @@ interface TeamLogosManagerModalProps {
   teamList: string[];
   db: Database | null;
   leagueName?: string;
+  logoFolderPath: string;
+  onLogoFolderPathChange: (path: string) => void;
   onToast?: (message: string, type?: string) => void;
 }
 
@@ -23,12 +25,19 @@ export default function TeamLogosManagerModal({
   teamList,
   db,
   leagueName,
+  logoFolderPath,
+  onLogoFolderPathChange,
   onToast
 }: TeamLogosManagerModalProps) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [teamLogosMap, setTeamLogosMap] = useState<Record<string, { name: string; logo: string }>>({});
   const [uploadingTeam, setUploadingTeam] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [obsLogoPath, setObsLogoPath] = useState<string>(() => logoFolderPath || localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
+
+  useEffect(() => {
+    setObsLogoPath(logoFolderPath || localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
+  }, [logoFolderPath, isOpen]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const targetUploadTeamRef = useRef<string | null>(null);
@@ -201,6 +210,52 @@ export default function TeamLogosManagerModal({
             {leagueName ? `สำหรับลีก: ${leagueName} | ` : ''}
             อัปโหลดหรือใส่ URL โลโก้ของทุกทีมที่ดึงจาก Excel แล้วบันทึกลง Firebase ครั้งแรกเพียงครั้งเดียว
           </p>
+        </div>
+
+        {/* OBS Logo Path Setting Section */}
+        <div style={{ marginBottom: '16px', padding: '12px 16px', backgroundColor: '#1a1a2e', borderRadius: '8px', border: '1px solid #3f51b5' }}>
+          <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#64b5f6', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+            <i className="fas fa-folder-open"></i> ตั้งค่า Path logo obs (ส่งไฟล์ไป OBS WebSocket):
+          </label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="text"
+              style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff', fontSize: '13px' }}
+              value={obsLogoPath}
+              placeholder="D:\OBS_football\logos"
+              onChange={(e) => {
+                const val = e.target.value;
+                setObsLogoPath(val);
+                onLogoFolderPathChange?.(val);
+                localStorage.setItem('logoFolderPath', val);
+              }}
+            />
+            <button
+              className="btn-primary"
+              style={{ fontSize: '12px', padding: '6px 14px', whiteSpace: 'nowrap' }}
+              onClick={() => {
+                onLogoFolderPathChange?.(obsLogoPath);
+                localStorage.setItem('logoFolderPath', obsLogoPath);
+                onToast?.(`💾 บันทึก Path OBS (${obsLogoPath}) เรียบร้อยแล้ว`, 'success');
+                onClose();
+              }}
+            >
+              💾 บันทึก
+            </button>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}
+              onClick={() => {
+                const defaultPath = 'D:\\OBS_football\\logos';
+                setObsLogoPath(defaultPath);
+                onLogoFolderPathChange?.(defaultPath);
+                localStorage.setItem('logoFolderPath', defaultPath);
+                onToast?.('ตั้งค่า Path เป็น D:\\OBS_football\\logos เรียบร้อย', 'info');
+              }}
+            >
+              🔄 ใช้ Default Path
+            </button>
+          </div>
         </div>
 
         {/* Stats & Search Bar */}

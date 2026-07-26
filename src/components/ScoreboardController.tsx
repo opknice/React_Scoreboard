@@ -37,7 +37,7 @@ export default function ScoreboardController() {
 
   // --- Local States ---
   const [currentLang, setCurrentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
-  const [logoFolderPath, setLogoFolderPath] = useState<string>(() => localStorage.getItem('logoFolderPath') || 'C:/OBSAssets/logos');
+  const [logoFolderPath, setLogoFolderPath] = useState<string>(() => localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
   const [matchIdInput, setMatchIdInput] = useState<number>(1);
   const [leagueName, setLeagueName] = useState<string>('Football Scoreboard Controller');
   const [excelData, setExcelData] = useState<any[][]>([]);
@@ -107,6 +107,7 @@ export default function ScoreboardController() {
   const [showTeamSelectModal, setShowTeamSelectModal] = useState<boolean>(false);
   const [showAutoMacrosModal, setShowAutoMacrosModal] = useState<boolean>(false);
   const [showTeamLogosManagerModal, setShowTeamLogosManagerModal] = useState<boolean>(false);
+  const [teamsCacheVersion, setTeamsCacheVersion] = useState<number>(0);
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
 
@@ -186,7 +187,9 @@ export default function ScoreboardController() {
   // Listen to Firebase DB `teams` node
   useEffect(() => {
     if (activeDb) {
-      const unsubscribe = listenToFirebaseTeams(activeDb);
+      const unsubscribe = listenToFirebaseTeams(activeDb, () => {
+        setTeamsCacheVersion((prev) => prev + 1);
+      });
       return () => unsubscribe();
     }
   }, [activeDb]);
@@ -396,7 +399,18 @@ export default function ScoreboardController() {
         setExcelMapping(mapping);
         setTeamSheetData(colors);
         setFirebaseTargets(targets);
-        if (targets.length > 0) setSelectedQuickLeagueId(targets[0].id);
+        if (targets.length > 0) {
+          setSelectedQuickLeagueId(targets[0].id);
+          try {
+            const app = getOrCreateFirebaseApp(targets[0]);
+            const db = getDatabase(app);
+            listenToFirebaseTeams(db, () => {
+              setTeamsCacheVersion((prev) => prev + 1);
+            });
+          } catch (e) {
+            console.warn('Pre-listening to teams failed:', e);
+          }
+        }
 
         const lName = targets.length > 0 ? targets[0].name : file.name.replace(/\.[^/.]+$/, '');
         setLeagueName(lName);
@@ -847,10 +861,6 @@ export default function ScoreboardController() {
               accept=".xlsx, .xls"
               onChange={handleExcelUpload}
             />
-            <button className="btn-primary" onClick={() => setShowLogoPathModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <i className="fas fa-upload"></i>
-              <span>📤 อัปโหลดโลโก้</span>
-            </button>
             <button
               className="btn-success"
               onClick={() => setShowTeamLogosManagerModal(true)}
@@ -952,10 +962,10 @@ export default function ScoreboardController() {
               </div>
             </div>
 
-            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowLogoPathModal(true)}>
+            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
               {logoA || nameA ? (
                 <img
-                  key={`${logoA}-${nameA}`}
+                  key={`${logoA}-${nameA}-${teamsCacheVersion}`}
                   src={getLogoSrc(logoA, nameA)}
                   alt=""
                   onError={(e) => {
@@ -1076,10 +1086,10 @@ export default function ScoreboardController() {
               </div>
             </div>
 
-            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowLogoPathModal(true)}>
+            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
               {logoB || nameB ? (
                 <img
-                  key={`${logoB}-${nameB}`}
+                  key={`${logoB}-${nameB}-${teamsCacheVersion}`}
                   src={getLogoSrc(logoB, nameB)}
                   alt=""
                   onError={(e) => {
@@ -1526,6 +1536,8 @@ export default function ScoreboardController() {
         teamList={allUniqueTeams}
         db={activeDb}
         leagueName={leagueName}
+        logoFolderPath={logoFolderPath}
+        onLogoFolderPathChange={setLogoFolderPath}
         onToast={triggerToast}
       />
 
