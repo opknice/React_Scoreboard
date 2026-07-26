@@ -791,8 +791,8 @@ button:disabled {
   display: inline-block;
   padding: 4px 14px;
   border-radius: 6px;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.15);
+  color: #000000 !important;
+  background: #ffffff !important;
   text-shadow: none;
   font-weight: 400;
 }
