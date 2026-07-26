@@ -350,8 +350,8 @@ export default function ScoreboardController() {
   };
 
   // --- Logo Preview Logic ---
-  const getLogoSrc = (logoName: string) => {
-    return resolveLogoSrc(logoName, undefined, logoFolderPath);
+  const getLogoSrc = (logoName: string, teamName?: string) => {
+    return resolveLogoSrc(logoName, teamName, logoFolderPath);
   };
 
   // --- Excel Loading & Parsing Logic ---
@@ -440,11 +440,13 @@ export default function ScoreboardController() {
     setScoreB(0);
     timerHook.resetToZero();
 
-    // Logos
+    // Logos - Fallback to saved team logo or team name so getLogoSrc resolves Cloud/Local logo immediately
     const logoAFile = getMappedValue(matchRow, 'logoA', mapping, headers);
     const logoBFile = getMappedValue(matchRow, 'logoB', mapping, headers);
-    setLogoA(logoAFile);
-    setLogoB(logoBFile);
+    const resolvedLogoA = logoAFile || getTeamLogo(teamAName) || teamAName;
+    const resolvedLogoB = logoBFile || getTeamLogo(teamBName) || teamBName;
+    setLogoA(resolvedLogoA);
+    setLogoB(resolvedLogoB);
 
     // Apply colors: freshTeamSheet (on first load) > state teamSheetData > saved colors > default
     const teamSheet = freshTeamSheet ?? teamSheetData;
@@ -951,10 +953,10 @@ export default function ScoreboardController() {
             </div>
 
             <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowLogoPathModal(true)}>
-              {logoA ? (
+              {logoA || nameA ? (
                 <img
-                  key={logoA}
-                  src={getLogoSrc(logoA)}
+                  key={`${logoA}-${nameA}`}
+                  src={getLogoSrc(logoA, nameA)}
                   alt=""
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';
@@ -1075,10 +1077,10 @@ export default function ScoreboardController() {
             </div>
 
             <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowLogoPathModal(true)}>
-              {logoB ? (
+              {logoB || nameB ? (
                 <img
-                  key={logoB}
-                  src={getLogoSrc(logoB)}
+                  key={`${logoB}-${nameB}`}
+                  src={getLogoSrc(logoB, nameB)}
                   alt=""
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';
