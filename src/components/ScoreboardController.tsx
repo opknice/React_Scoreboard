@@ -1372,7 +1372,7 @@ export default function ScoreboardController() {
 
             {/* Logo Uploader Component */}
             <LogoUploader 
-              onUploadSuccess={(fileName, url) => {
+              onUploadSuccess={(fileName) => {
                 triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ! กำลัง deploy...`, 'success');
               }}
             />
