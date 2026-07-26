@@ -2,11 +2,12 @@
 import React, { useState } from 'react';
 
 interface LogoUploaderProps {
-  onUploadSuccess?: (fileName: string, url: string) => void;
+  onUploadSuccess?: (fileName: string, url: string, targetTeam?: 'A' | 'B' | 'none') => void;
 }
 
 export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [targetTeam, setTargetTeam] = useState<'A' | 'B' | 'none'>('none');
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -86,7 +87,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       setPreviewUrl('');
       
       if (onUploadSuccess) {
-        onUploadSuccess(file.name, imageUrl);
+        onUploadSuccess(file.name, imageUrl, targetTeam);
       }
 
     } catch (err: any) {
@@ -112,7 +113,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
     }}>
       <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Cloudinary - ฟรี 25GB)</h3>
       
-      <div style={{ marginBottom: '15px' }}>
+      <div style={{ marginBottom: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <input
           type="file"
           accept="image/*"
@@ -124,10 +125,27 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
             border: '1px solid #444',
             backgroundColor: '#2a2a2a',
             color: '#fff',
-            width: '100%',
+            flex: 1,
             cursor: 'pointer'
           }}
         />
+        <select
+          value={targetTeam}
+          onChange={(e) => setTargetTeam(e.target.value as 'A' | 'B' | 'none')}
+          disabled={uploading}
+          style={{
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid #444',
+            backgroundColor: '#2a2a2a',
+            color: '#fff',
+            cursor: 'pointer'
+          }}
+        >
+          <option value="none">ไม่อัปเดตทีม</option>
+          <option value="A">ใช้เป็นโลโก้ Team A</option>
+          <option value="B">ใช้เป็นโลโก้ Team B</option>
+        </select>
       </div>
 
       {previewUrl && (

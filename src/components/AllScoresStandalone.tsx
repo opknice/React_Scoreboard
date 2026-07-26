@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
+import { getLogoSrc } from '../utils/logoResolver';
 
 export default function AllScoresStandalone() {
   const [searchParams] = useSearchParams();
@@ -128,28 +129,21 @@ export default function AllScoresStandalone() {
     groups[key].push(match);
   });
 
-  const renderLogo = (teamName: string) => {
-    let logoSrc = '';
-    
-    // Check if it's a full URL (Cloudinary, Firebase, etc.)
-    if (teamName && (teamName.startsWith('http://') || teamName.startsWith('https://'))) {
-      logoSrc = teamName; // Use URL directly
-    } else {
-      // It's a filename - auto-append .png if needed
-      let logoFileName = teamName || '';
-      if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
-        logoFileName = `${logoFileName}.png`;
-      }
-      logoSrc = `/logos/${encodeURIComponent(logoFileName)}`;
-    }
+  const renderLogo = (logoIdentifier: string | undefined, teamName: string) => {
+    const logoSrc = getLogoSrc(logoIdentifier, teamName);
     
     return (
       <img
         className="overlay-logo"
         src={logoSrc}
-        alt=""
+        alt={teamName}
         onError={(e) => {
-          (e.target as HTMLImageElement).src = defaultLogo;
+          const target = e.target as HTMLImageElement;
+          if (defaultLogo && target.src !== defaultLogo) {
+            target.src = defaultLogo;
+          } else {
+            target.style.display = 'none';
+          }
         }}
       />
     );
@@ -206,13 +200,13 @@ export default function AllScoresStandalone() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${getResultClassColor(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(m.teamA)}
+                          {renderLogo(m.logoA, m.teamA)}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${getResultClassColor(scoreB, scoreA)}`}>
-                          {renderLogo(m.teamB)}
+                          {renderLogo(m.logoB, m.teamB)}
                           <span>{m.teamB}</span>
                         </div>
                       </div>

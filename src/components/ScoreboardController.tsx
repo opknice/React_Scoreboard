@@ -15,6 +15,7 @@ import {
   loadTeamSheetWithColors
 } from '../utils/excelParser';
 import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParser';
+import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import PenaltyShootoutController from './PenaltyShootoutController';
 import AutoMacrosPanel from './AutoMacrosPanel';
 import LogoUploader from './LogoUploader';
@@ -273,30 +274,7 @@ export default function ScoreboardController() {
 
   // --- Logo Preview Logic ---
   const getLogoSrc = (logoName: string) => {
-    if (!logoName) return '';
-    
-    // Check if it's a full URL (Cloudinary, Firebase, etc.)
-    if (logoName.startsWith('http://') || logoName.startsWith('https://')) {
-      return logoName; // Use URL directly
-    }
-    
-    // It's a filename - auto-append .png if needed
-    let fileName = logoName;
-    if (!fileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
-      fileName = `${fileName}.png`;
-    }
-    
-    // In production (deployed), always use /logos/ folder
-    // In development, use custom path if configured
-    const isDev = import.meta.env.DEV;
-    
-    if (isDev && logoFolderPath) {
-      // Development mode with custom path
-      return `/api/logo?path=${encodeURIComponent(logoFolderPath)}&file=${encodeURIComponent(fileName)}`;
-    }
-    
-    // Production or no custom path - use deployed logos folder
-    return `/logos/${encodeURIComponent(fileName)}`;
+    return resolveLogoSrc(logoName, undefined, logoFolderPath);
   };
 
   // --- Excel Loading & Parsing Logic ---
@@ -507,6 +485,8 @@ export default function ScoreboardController() {
       const matchData = {
         teamA: nameA.replace(/<br\s*\/?>/gi, ' '),
         teamB: nameB.replace(/<br\s*\/?>/gi, ' '),
+        logoA: logoA || '',
+        logoB: logoB || '',
         scoreA: parseInt(String(scoreA), 10),
         scoreB: parseInt(String(scoreB), 10),
         roundLabel: obsGetLabel2Value(),
@@ -1372,8 +1352,17 @@ export default function ScoreboardController() {
 
             {/* Logo Uploader Component */}
             <LogoUploader 
-              onUploadSuccess={(fileName) => {
-                triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ! กำลัง deploy...`, 'success');
+              onUploadSuccess={(fileName, url, targetTeam) => {
+                triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ!`, 'success');
+                if (targetTeam === 'A') {
+                  setLogoA(url);
+                  obs.setImage('logo_team_a', url, logoFolderPath);
+                  triggerToast(`ตั้งค่าโลโก้ Team A เป็นรูปภาพ Cloudแล้ว`, 'info');
+                } else if (targetTeam === 'B') {
+                  setLogoB(url);
+                  obs.setImage('logo_team_b', url, logoFolderPath);
+                  triggerToast(`ตั้งค่าโลโก้ Team B เป็นรูปภาพ Cloudแล้ว`, 'info');
+                }
               }}
             />
           </div>

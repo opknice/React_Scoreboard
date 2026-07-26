@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
+import { getLogoSrc } from '../utils/logoResolver';
 
 export default function OverlayContainer() {
   const [searchParams] = useSearchParams();
@@ -129,8 +130,10 @@ export default function OverlayContainer() {
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
 
-      stats[teamA] ||= { team: teamA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      stats[teamB] ||= { team: teamB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      stats[teamA] ||= { team: teamA, logo: match.logoA || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      stats[teamB] ||= { team: teamB, logo: match.logoB || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      if (!stats[teamA].logo && match.logoA) stats[teamA].logo = match.logoA;
+      if (!stats[teamB].logo && match.logoB) stats[teamB].logo = match.logoB;
 
       const a = stats[teamA];
       const b = stats[teamB];
@@ -168,28 +171,21 @@ export default function OverlayContainer() {
   const standingsRows = calculateStandings();
 
   // Helper for rendering logos
-  const renderLogo = (teamName: string, className = 'overlay-logo') => {
-    let logoSrc = '';
-    
-    // Check if it's a full URL (Cloudinary, Firebase, etc.)
-    if (teamName && (teamName.startsWith('http://') || teamName.startsWith('https://'))) {
-      logoSrc = teamName; // Use URL directly
-    } else {
-      // It's a filename - auto-append .png if needed
-      let logoFileName = teamName || '';
-      if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
-        logoFileName = `${logoFileName}.png`;
-      }
-      logoSrc = `/logos/${encodeURIComponent(logoFileName)}`;
-    }
+  const renderLogo = (logoIdentifier: string | undefined, teamName: string, className = 'overlay-logo') => {
+    const logoSrc = getLogoSrc(logoIdentifier, teamName);
     
     return (
       <img
         className={className}
         src={logoSrc}
-        alt=""
+        alt={teamName}
         onError={(e) => {
-          (e.target as HTMLImageElement).src = defaultLogo;
+          const target = e.target as HTMLImageElement;
+          if (defaultLogo && target.src !== defaultLogo) {
+            target.src = defaultLogo;
+          } else {
+            target.style.display = 'none';
+          }
         }}
       />
     );
@@ -237,7 +233,7 @@ export default function OverlayContainer() {
               <tr key={row.team}>
                 <td>{index + 1}</td>
                 <td className="overlay-team-cell">
-                  {renderLogo(row.team, 'overlay-logo')}
+                  {renderLogo(row.logo, row.team, 'overlay-logo')}
                   {row.team}
                 </td>
                 <td>{row.P}</td>
@@ -315,13 +311,13 @@ export default function OverlayContainer() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${resultClass(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(m.teamA, 'overlay-logo')}
+                          {renderLogo(m.logoA, m.teamA, 'overlay-logo')}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${resultClass(scoreB, scoreA)}`}>
-                          {renderLogo(m.teamB, 'overlay-logo')}
+                          {renderLogo(m.logoB, m.teamB, 'overlay-logo')}
                           <span>{m.teamB}</span>
                         </div>
                       </div>
@@ -357,13 +353,13 @@ export default function OverlayContainer() {
         >
           {filtered.map((m) => (
             <React.Fragment key={m.id}>
-              {renderLogo(m.teamA, 'overlay-logo-small')}
+              {renderLogo(m.logoA, m.teamA, 'overlay-logo-small')}
               <span>{m.teamA}</span>
               <span className="overlay-ticker-score">
                 {m.scoreA} - {m.scoreB}
               </span>
               <span>{m.teamB}</span>
-              {renderLogo(m.teamB, 'overlay-logo-small')}
+              {renderLogo(m.logoB, m.teamB, 'overlay-logo-small')}
               <span style={{ fontSize: '1.5rem', color: '#9ca3af' }}>&nbsp;&nbsp;&nbsp;&nbsp;&bull;&nbsp;&nbsp;&nbsp;&nbsp;</span>
             </React.Fragment>
           ))}

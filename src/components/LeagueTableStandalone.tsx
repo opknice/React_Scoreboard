@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
+import { getLogoSrc } from '../utils/logoResolver';
 
 export default function LeagueTableStandalone() {
   const [searchParams] = useSearchParams();
@@ -109,8 +110,10 @@ export default function LeagueTableStandalone() {
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
 
-      stats[teamA] ||= { team: teamA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      stats[teamB] ||= { team: teamB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      stats[teamA] ||= { team: teamA, logo: match.logoA || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      stats[teamB] ||= { team: teamB, logo: match.logoB || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      if (!stats[teamA].logo && match.logoA) stats[teamA].logo = match.logoA;
+      if (!stats[teamB].logo && match.logoB) stats[teamB].logo = match.logoB;
 
       const a = stats[teamA];
       const b = stats[teamB];
@@ -147,28 +150,21 @@ export default function LeagueTableStandalone() {
 
   const standingsRows = calculateStandings();
 
-  const renderLogo = (teamName: string) => {
-    let logoSrc = '';
-    
-    // Check if it's a full URL (Cloudinary, Firebase, etc.)
-    if (teamName && (teamName.startsWith('http://') || teamName.startsWith('https://'))) {
-      logoSrc = teamName; // Use URL directly
-    } else {
-      // It's a filename - auto-append .png if needed
-      let logoFileName = teamName || '';
-      if (logoFileName && !logoFileName.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
-        logoFileName = `${logoFileName}.png`;
-      }
-      logoSrc = `/logos/${encodeURIComponent(logoFileName)}`;
-    }
+  const renderLogo = (logoIdentifier: string | undefined, teamName: string) => {
+    const logoSrc = getLogoSrc(logoIdentifier, teamName);
     
     return (
       <img
         className="overlay-logo"
         src={logoSrc}
-        alt=""
+        alt={teamName}
         onError={(e) => {
-          (e.target as HTMLImageElement).src = defaultLogo;
+          const target = e.target as HTMLImageElement;
+          if (defaultLogo && target.src !== defaultLogo) {
+            target.src = defaultLogo;
+          } else {
+            target.style.display = 'none';
+          }
         }}
       />
     );
@@ -225,9 +221,9 @@ export default function LeagueTableStandalone() {
                 <tr key={row.team}>
                   <td style={{ fontWeight: 800 }}>{index + 1}</td>
                   <td className="overlay-team-cell">
-                    {renderLogo(row.team)}
-                    <span>{row.team}</span>
-                  </td>
+                  {renderLogo(row.logo, row.team)}
+                  {row.team}
+                </td>
                   <td>{row.P}</td>
                   <td>{row.W}</td>
                   <td>{row.D}</td>
