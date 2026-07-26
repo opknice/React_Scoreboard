@@ -760,7 +760,7 @@ button:disabled {
   text-align: center;
   color: #3b82f6;
   font-size: 2.5rem;
-  font-weight: 400;
+  font-weight: 800;
 }
 
 /* Ticker styles */
@@ -794,7 +794,7 @@ button:disabled {
   color: #000000 !important;
   background: #ffffff !important;
   text-shadow: none;
-  font-weight: 400;
+  font-weight: 800;
 }
 
 @keyframes scroll-left-overlay {

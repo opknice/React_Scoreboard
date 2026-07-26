@@ -180,7 +180,7 @@ export default function OverlayContainer() {
   // Helper for rendering logos
   const renderLogo = (logoIdentifier: string | undefined, teamName: string, className = 'overlay-logo') => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-    
+
     return (
       <img
         key={`${logoSrc}-${teamName}`}
@@ -368,7 +368,7 @@ export default function OverlayContainer() {
               </span>
               <span>{m.teamB}</span>
               {renderLogo(extractMatchLogo(m, 'B'), m.teamB, 'overlay-logo-small')}
-              <span style={{ fontSize: '1.5rem', color: '#9ca3af' }}>&nbsp;&nbsp;&nbsp;&nbsp;&bull;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+              <span style={{ fontSize: '1.5rem', color: '#9ca3af' }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
             </React.Fragment>
           ))}
         </div>
