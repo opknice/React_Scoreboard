@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
-import { getLogoSrc } from '../utils/logoResolver';
+import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 
 export default function AllScoresStandalone() {
   const [searchParams] = useSearchParams();
@@ -57,6 +57,8 @@ export default function AllScoresStandalone() {
       const db = getDatabase(app);
       const matchesRef = ref(db, 'matches');
 
+      const unsubTeams = listenToFirebaseTeams(db);
+
       const unsubscribe = onValue(
         matchesRef,
         (snapshot) => {
@@ -73,7 +75,10 @@ export default function AllScoresStandalone() {
         }
       );
 
-      return () => unsubscribe();
+      return () => {
+        unsubscribe();
+        unsubTeams();
+      };
     } catch (err: any) {
       setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
       setLoading(false);
@@ -134,6 +139,7 @@ export default function AllScoresStandalone() {
     
     return (
       <img
+        key={`${logoSrc}-${teamName}`}
         className="overlay-logo"
         src={logoSrc}
         alt={teamName}
@@ -200,13 +206,13 @@ export default function AllScoresStandalone() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${getResultClassColor(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(m.logoA, m.teamA)}
+                          {renderLogo(extractMatchLogo(m, 'A'), m.teamA)}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${getResultClassColor(scoreB, scoreA)}`}>
-                          {renderLogo(m.logoB, m.teamB)}
+                          {renderLogo(extractMatchLogo(m, 'B'), m.teamB)}
                           <span>{m.teamB}</span>
                         </div>
                       </div>

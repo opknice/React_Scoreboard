@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
-import { getLogoSrc } from '../utils/logoResolver';
+import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 
 export default function OverlayContainer() {
   const [searchParams] = useSearchParams();
@@ -76,6 +76,8 @@ export default function OverlayContainer() {
         }
       }
 
+      const unsubTeams = listenToFirebaseTeams(db);
+
       const unsubscribe = onValue(
         q,
         (snapshot) => {
@@ -92,7 +94,10 @@ export default function OverlayContainer() {
         }
       );
 
-      return () => unsubscribe();
+      return () => {
+        unsubscribe();
+        unsubTeams();
+      };
     } catch (err: any) {
       setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${err.message}`);
       setLoading(false);
@@ -130,10 +135,12 @@ export default function OverlayContainer() {
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
 
-      stats[teamA] ||= { team: teamA, logo: match.logoA || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      stats[teamB] ||= { team: teamB, logo: match.logoB || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      if (!stats[teamA].logo && match.logoA) stats[teamA].logo = match.logoA;
-      if (!stats[teamB].logo && match.logoB) stats[teamB].logo = match.logoB;
+      const logoA = extractMatchLogo(match, 'A');
+      const logoB = extractMatchLogo(match, 'B');
+      stats[teamA] ||= { team: teamA, logo: logoA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      stats[teamB] ||= { team: teamB, logo: logoB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      if (!stats[teamA].logo && logoA) stats[teamA].logo = logoA;
+      if (!stats[teamB].logo && logoB) stats[teamB].logo = logoB;
 
       const a = stats[teamA];
       const b = stats[teamB];
@@ -176,6 +183,7 @@ export default function OverlayContainer() {
     
     return (
       <img
+        key={`${logoSrc}-${teamName}`}
         className={className}
         src={logoSrc}
         alt={teamName}
@@ -311,13 +319,13 @@ export default function OverlayContainer() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${resultClass(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(m.logoA, m.teamA, 'overlay-logo')}
+                          {renderLogo(extractMatchLogo(m, 'A'), m.teamA, 'overlay-logo')}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${resultClass(scoreB, scoreA)}`}>
-                          {renderLogo(m.logoB, m.teamB, 'overlay-logo')}
+                          {renderLogo(extractMatchLogo(m, 'B'), m.teamB, 'overlay-logo')}
                           <span>{m.teamB}</span>
                         </div>
                       </div>
@@ -353,13 +361,13 @@ export default function OverlayContainer() {
         >
           {filtered.map((m) => (
             <React.Fragment key={m.id}>
-              {renderLogo(m.logoA, m.teamA, 'overlay-logo-small')}
+              {renderLogo(extractMatchLogo(m, 'A'), m.teamA, 'overlay-logo-small')}
               <span>{m.teamA}</span>
               <span className="overlay-ticker-score">
                 {m.scoreA} - {m.scoreB}
               </span>
               <span>{m.teamB}</span>
-              {renderLogo(m.logoB, m.teamB, 'overlay-logo-small')}
+              {renderLogo(extractMatchLogo(m, 'B'), m.teamB, 'overlay-logo-small')}
               <span style={{ fontSize: '1.5rem', color: '#9ca3af' }}>&nbsp;&nbsp;&nbsp;&nbsp;&bull;&nbsp;&nbsp;&nbsp;&nbsp;</span>
             </React.Fragment>
           ))}

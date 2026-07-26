@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
-import { getLogoSrc } from '../utils/logoResolver';
+import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 
 export default function LeagueTableStandalone() {
   const [searchParams] = useSearchParams();
@@ -56,6 +56,8 @@ export default function LeagueTableStandalone() {
       const db = getDatabase(app);
       const matchesRef = ref(db, 'matches');
 
+      const unsubTeams = listenToFirebaseTeams(db);
+
       const unsubscribe = onValue(
         matchesRef,
         (snapshot) => {
@@ -72,7 +74,10 @@ export default function LeagueTableStandalone() {
         }
       );
 
-      return () => unsubscribe();
+      return () => {
+        unsubscribe();
+        unsubTeams();
+      };
     } catch (err: any) {
       setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
       setLoading(false);
@@ -110,10 +115,12 @@ export default function LeagueTableStandalone() {
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
 
-      stats[teamA] ||= { team: teamA, logo: match.logoA || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      stats[teamB] ||= { team: teamB, logo: match.logoB || '', P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      if (!stats[teamA].logo && match.logoA) stats[teamA].logo = match.logoA;
-      if (!stats[teamB].logo && match.logoB) stats[teamB].logo = match.logoB;
+      const logoA = extractMatchLogo(match, 'A');
+      const logoB = extractMatchLogo(match, 'B');
+      stats[teamA] ||= { team: teamA, logo: logoA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      stats[teamB] ||= { team: teamB, logo: logoB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
+      if (!stats[teamA].logo && logoA) stats[teamA].logo = logoA;
+      if (!stats[teamB].logo && logoB) stats[teamB].logo = logoB;
 
       const a = stats[teamA];
       const b = stats[teamB];
@@ -155,6 +162,7 @@ export default function LeagueTableStandalone() {
     
     return (
       <img
+        key={`${logoSrc}-${teamName}`}
         className="overlay-logo"
         src={logoSrc}
         alt={teamName}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
@@ -15,10 +15,11 @@ import {
   loadTeamSheetWithColors
 } from '../utils/excelParser';
 import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParser';
-import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
+import { getLogoSrc as resolveLogoSrc, listenToFirebaseTeams } from '../utils/logoResolver';
 import PenaltyShootoutController from './PenaltyShootoutController';
 import AutoMacrosPanel from './AutoMacrosPanel';
 import LogoUploader from './LogoUploader';
+import TeamLogosManagerModal from './TeamLogosManagerModal';
 
 export default function ScoreboardController() {
   // --- Hooks ---
@@ -47,6 +48,26 @@ export default function ScoreboardController() {
     const saved = localStorage.getItem('teamColors');
     return saved ? JSON.parse(saved) : {};
   });
+  const [teamLogosMemory, setTeamLogosMemory] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('teamLogos');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const saveTeamLogo = (teamName: string, url: string) => {
+    if (!teamName || !url) return;
+    const cleanKey = teamName.trim().toLowerCase();
+    setTeamLogosMemory((prev) => {
+      const updated = { ...prev, [cleanKey]: url };
+      localStorage.setItem('teamLogos', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const getTeamLogo = (teamName: string) => {
+    if (!teamName) return '';
+    const cleanKey = teamName.trim().toLowerCase();
+    return teamLogosMemory[cleanKey] || '';
+  };
 
   // Team A and B States
   const [nameA, setNameA] = useState<string>('Team A');
@@ -85,6 +106,7 @@ export default function ScoreboardController() {
   const [showChangelogModal, setShowChangelogModal] = useState<boolean>(false);
   const [showTeamSelectModal, setShowTeamSelectModal] = useState<boolean>(false);
   const [showAutoMacrosModal, setShowAutoMacrosModal] = useState<boolean>(false);
+  const [showTeamLogosManagerModal, setShowTeamLogosManagerModal] = useState<boolean>(false);
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
 
@@ -114,6 +136,60 @@ export default function ScoreboardController() {
   const firebaseAppsRef = useRef<Record<string, FirebaseApp>>({});
 
   const trans = translations[currentLang] || translations.en;
+
+  // --- Dynamic Firebase Apps manager ---
+  const getOrCreateFirebaseApp = useCallback((target: FirebaseSaveTarget) => {
+    const appName = `ExcelLeague_${target.id.replace(/[^A-Za-z0-9_]/g, '_')}_${target.index}`;
+    if (getApps().some((app) => app.name === appName)) {
+      return getApp(appName);
+    }
+    const app = initializeApp(target.firebaseConfig, appName);
+    firebaseAppsRef.current[appName] = app;
+    return app;
+  }, []);
+
+  const getMappedValue = useCallback((row: any[], fieldKey: string, currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
+    const columnName = currentMapping[fieldKey];
+    if (!columnName) return '';
+    const idx = currentHeaders.indexOf(columnName);
+    return idx >= 0 ? row[idx] ?? '' : '';
+  }, [excelMapping, excelData]);
+
+  const getMatchIdValue = useCallback((row: any[], currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
+    const mapped = getMappedValue(row, 'matchId', currentMapping, currentHeaders);
+    if (mapped !== '') return mapped;
+    return row[0] ?? '';
+  }, [getMappedValue, excelMapping, excelData]);
+
+  // Compute list of unique team names from Excel and Team Sheet safely
+  const allUniqueTeams = useMemo(() => {
+    if (!excelData.length && !teamSheetData.length) return [];
+    const headers = excelData[0] || [];
+    const mapping = Object.keys(excelMapping).length ? excelMapping : inferExcelMapping(headers);
+
+    const matchTeams = excelData.slice(1).flatMap((row) => [
+      getMappedValue(row, 'teamA', mapping, headers),
+      getMappedValue(row, 'teamB', mapping, headers)
+    ]);
+
+    const sheetTeams = teamSheetData.map((t) => t.team);
+
+    return Array.from(new Set([...sheetTeams, ...matchTeams]))
+      .map((name) => String(name || '').trim())
+      .filter((name) => name.length > 0);
+  }, [excelData, excelMapping, teamSheetData, getMappedValue]);
+
+  // Active Firebase DB
+  const activeFirebaseTarget = firebaseTargets.find((t) => t.id === selectedQuickLeagueId) || firebaseTargets[0];
+  const activeDb = activeFirebaseTarget ? getDatabase(getOrCreateFirebaseApp(activeFirebaseTarget)) : null;
+
+  // Listen to Firebase DB `teams` node
+  useEffect(() => {
+    if (activeDb) {
+      const unsubscribe = listenToFirebaseTeams(activeDb);
+      return () => unsubscribe();
+    }
+  }, [activeDb]);
 
   // --- Toast Function ---
   const triggerToast = (message: string, type = 'info') => {
@@ -246,7 +322,8 @@ export default function ScoreboardController() {
   // --- Apply team from Team Sheet selection ---
   const applyTeamFromSheet = (teamName: string, target: 'A' | 'B') => {
     const sheetColors = getTeamColorsFromSheet(teamName) || getTeamColors(teamName);
-    const logoFile = `${teamName}.png`;
+    const savedCloudLogo = getTeamLogo(teamName);
+    const logoFile = savedCloudLogo || `${teamName}.png`;
 
     if (target === 'A') {
       setNameA(teamName);
@@ -331,19 +408,6 @@ export default function ScoreboardController() {
       .catch((err: any) => {
         triggerToast(err.message || 'Error parsing Excel file', 'error');
       });
-  };
-
-  const getMappedValue = (row: any[], fieldKey: string, currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
-    const columnName = currentMapping[fieldKey];
-    if (!columnName) return '';
-    const idx = currentHeaders.indexOf(columnName);
-    return idx >= 0 ? row[idx] ?? '' : '';
-  };
-
-  const getMatchIdValue = (row: any[], currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
-    const mapped = getMappedValue(row, 'matchId', currentMapping, currentHeaders);
-    if (mapped !== '') return mapped;
-    return row[0] ?? '';
   };
 
   // --- Load match data by ID ---
@@ -459,17 +523,6 @@ export default function ScoreboardController() {
     setScoreA(0);
     setScoreB(0);
     triggerToast(trans.toastScoreReset, 'info');
-  };
-
-  // --- Dynamic Firebase Apps manager ---
-  const getOrCreateFirebaseApp = (target: FirebaseSaveTarget) => {
-    const appName = `ExcelLeague_${target.id.replace(/[^A-Za-z0-9_]/g, '_')}_${target.index}`;
-    if (getApps().some((app) => app.name === appName)) {
-      return getApp(appName);
-    }
-    const app = initializeApp(target.firebaseConfig, appName);
-    firebaseAppsRef.current[appName] = app;
-    return app;
   };
 
   // --- Save match results to Firebase ---
@@ -796,6 +849,15 @@ export default function ScoreboardController() {
               <i className="fas fa-upload"></i>
               <span>📤 อัปโหลดโลโก้</span>
             </button>
+            <button
+              className="btn-success"
+              onClick={() => setShowTeamLogosManagerModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Firebase Database ครั้งเดียว"
+            >
+              <i className="fas fa-shield-halved"></i>
+              <span>🛡️ จัดการโลโก้ประจำลีก</span>
+            </button>
           </div>
 
           <div className="row" style={{ marginBottom: 0 }}>
@@ -888,9 +950,10 @@ export default function ScoreboardController() {
               </div>
             </div>
 
-            <div className="logo-container">
+            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowLogoPathModal(true)}>
               {logoA ? (
                 <img
+                  key={logoA}
                   src={getLogoSrc(logoA)}
                   alt=""
                   onError={(e) => {
@@ -1011,9 +1074,10 @@ export default function ScoreboardController() {
               </div>
             </div>
 
-            <div className="logo-container">
+            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowLogoPathModal(true)}>
               {logoB ? (
                 <img
+                  key={logoB}
                   src={getLogoSrc(logoB)}
                   alt=""
                   onError={(e) => {
@@ -1321,20 +1385,102 @@ export default function ScoreboardController() {
       {/* --- Logo Upload & Path Settings Modal --- */}
       {showLogoPathModal && (
         <div className="modal-overlay" onClick={() => setShowLogoPathModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
             <h3>
               <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
             </h3>
             <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>
-              {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Firebase หรือตั้งค่าโฟลเดอร์ local (สำหรับ dev mode)'}
+              {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Cloudinary / Firebase หรือใส่ URL โลโก้ของทีม مباشرة'}
             </p>
-            <input
-              type="text"
-              style={{ width: '100%', marginBottom: '12px' }}
-              value={logoFolderPath}
-              onChange={(e) => setLogoFolderPath(e.target.value)}
-            />
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+
+            {/* Direct URL Inputs for Team A and Team B */}
+            <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                  🖼️ URL โลโก้ Team A ({nameA}):
+                </label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="text"
+                    style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                    placeholder="https://res.cloudinary.com/..."
+                    value={logoA}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLogoA(val);
+                      if (val.startsWith('http')) saveTeamLogo(nameA, val);
+                    }}
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) {
+                          setLogoA(text);
+                          saveTeamLogo(nameA, text);
+                          triggerToast('วาง URL ให้ Team A เรียบร้อย', 'success');
+                        }
+                      } catch (err) {
+                        triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
+                      }
+                    }}
+                  >
+                    📋 วาง URL
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                  🖼️ URL โลโก้ Team B ({nameB}):
+                </label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="text"
+                    style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                    placeholder="https://res.cloudinary.com/..."
+                    value={logoB}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLogoB(val);
+                      if (val.startsWith('http')) saveTeamLogo(nameB, val);
+                    }}
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        if (text) {
+                          setLogoB(text);
+                          saveTeamLogo(nameB, text);
+                          triggerToast('วาง URL ให้ Team B เรียบร้อย', 'success');
+                        }
+                      } catch (err) {
+                        triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
+                      }
+                    }}
+                  >
+                    📋 วาง URL
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                📁 โฟลเดอร์รูปในเครื่อง (เฉพาะ Dev mode):
+              </label>
+              <input
+                type="text"
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                value={logoFolderPath}
+                onChange={(e) => setLogoFolderPath(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '16px' }}>
               <button
                 className="btn-primary"
                 onClick={() => {
@@ -1354,20 +1500,32 @@ export default function ScoreboardController() {
             <LogoUploader 
               onUploadSuccess={(fileName, url, targetTeam) => {
                 triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ!`, 'success');
-                if (targetTeam === 'A') {
-                  setLogoA(url);
-                  obs.setImage('logo_team_a', url, logoFolderPath);
-                  triggerToast(`ตั้งค่าโลโก้ Team A เป็นรูปภาพ Cloudแล้ว`, 'info');
-                } else if (targetTeam === 'B') {
+                if (targetTeam === 'B') {
                   setLogoB(url);
+                  saveTeamLogo(nameB, url);
                   obs.setImage('logo_team_b', url, logoFolderPath);
-                  triggerToast(`ตั้งค่าโลโก้ Team B เป็นรูปภาพ Cloudแล้ว`, 'info');
+                  triggerToast(`ตั้งค่าโลโก้ Team B (${nameB}) เป็นรูปภาพ Cloud แล้ว`, 'info');
+                } else {
+                  setLogoA(url);
+                  saveTeamLogo(nameA, url);
+                  obs.setImage('logo_team_a', url, logoFolderPath);
+                  triggerToast(`ตั้งค่าโลโก้ Team A (${nameA}) เป็นรูปภาพ Cloud แล้ว`, 'info');
                 }
               }}
             />
           </div>
         </div>
       )}
+
+      {/* --- Batch Team Logos Manager Modal --- */}
+      <TeamLogosManagerModal
+        isOpen={showTeamLogosManagerModal}
+        onClose={() => setShowTeamLogosManagerModal(false)}
+        teamList={allUniqueTeams}
+        db={activeDb}
+        leagueName={leagueName}
+        onToast={triggerToast}
+      />
 
       {/* --- Adjust Preset Starts Modal --- */}
       {showPresetTimeModal && (

@@ -85,14 +85,14 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       setUploadedUrl(imageUrl);
       setFile(null);
       setPreviewUrl('');
-      
+
       if (onUploadSuccess) {
         onUploadSuccess(file.name, imageUrl, targetTeam);
       }
 
     } catch (err: any) {
       console.error('Upload error:', err);
-      
+
       if (err.message.includes('Invalid upload preset')) {
         setError(`❌ ยังไม่ได้ตั้งค่า Upload Preset - กรุณาดูคำแนะนำด้านล่าง`);
       } else {
@@ -112,7 +112,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       marginTop: '20px'
     }}>
       <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Cloudinary - ฟรี 25GB)</h3>
-      
+
       <div style={{ marginBottom: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <input
           type="file"
@@ -205,7 +205,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
           fontSize: '12px',
           wordBreak: 'break-all'
         }}>
-          <strong>URL:</strong><br/>
+          <strong>URL:</strong><br />
           <a href={uploadedUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6' }}>
             {uploadedUrl}
           </a>
@@ -253,8 +253,8 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
         color: '#aaa',
         borderLeft: '3px solid #ff9800'
       }}>
-        <strong style={{ color: '#ff9800' }}>⚠️ ขั้นตอนสำคัญ:</strong><br/>
-        ต้องสร้าง <strong>Upload Preset</strong> ก่อนใช้งาน:<br/>
+        <strong style={{ color: '#ff9800' }}>⚠️ ขั้นตอนสำคัญ:</strong><br />
+        ต้องสร้าง <strong>Upload Preset</strong> ก่อนใช้งาน:<br />
         <ol style={{ marginLeft: '20px', marginTop: '8px', marginBottom: 0 }}>
           <li>ไปที่ <a href="https://console.cloudinary.com/settings/upload" target="_blank" style={{ color: '#64b5f6' }}>Cloudinary Settings</a></li>
           <li>เลื่อนลงมาที่ <strong>Upload presets</strong></li>
