@@ -3,6 +3,9 @@ import * as XLSX from 'xlsx';
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import type { FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, push, onValue, remove, update } from 'firebase/database';
+import { useNavigate } from 'react-router-dom';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { getFirebaseAuth, logoutUser, isSuperAdmin } from '../config/firebaseAuth';
 import { useTimer } from '../hooks/useTimer';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 import { useAutoMacros } from '../hooks/useAutoMacros';
@@ -22,12 +25,12 @@ import LogoUploader from './LogoUploader';
 import TeamLogosManagerModal from './TeamLogosManagerModal';
 
 export default function ScoreboardController() {
-  // --- Hooks ---
+  const navigate = useNavigate();
   const timerHook = useTimer();
   // Stable ref so the OBS WebSocket event listener always calls the latest handleHotkeyAction
   // without being re-registered every render (avoids stale closure on hotkeys)
   const hotkeyHandlerRef = useRef<((action: string) => void) | null>(null);
-  
+
   const obs = useOBSWebSocket(useCallback((action: string) => {
     hotkeyHandlerRef.current?.(action);
   }, []));
@@ -52,6 +55,19 @@ export default function ScoreboardController() {
     const saved = localStorage.getItem('teamLogos');
     return saved ? JSON.parse(saved) : {};
   });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    try {
+      const auth = getFirebaseAuth();
+      const unsubscribe = onAuthStateChanged(auth, (usr) => {
+        setCurrentUser(usr);
+      });
+      return () => unsubscribe();
+    } catch {
+      // ignore if auth not initialized
+    }
+  }, []);
 
   const saveTeamLogo = (teamName: string, url: string) => {
     if (!teamName || !url) return;
@@ -72,7 +88,7 @@ export default function ScoreboardController() {
   // Team A and B States
   const [nameA, setNameA] = useState<string>('Team A');
   const [nameB, setNameB] = useState<string>('Team B');
-  
+
   // Sync team names to localStorage for Penalty Shootout
   useEffect(() => {
     localStorage.setItem('penalty_teamA', nameA);
@@ -86,6 +102,9 @@ export default function ScoreboardController() {
   const [colorB2, setColorB2] = useState<string>('#ffffff');
   const [logoA, setLogoA] = useState<string>('');
   const [logoB, setLogoB] = useState<string>('');
+  const [label1, setLabel1] = useState<string>('');
+  const [label2, setLabel2] = useState<string>('');
+  const [label3, setLabel3] = useState<string>('');
 
   // Editing Name State
   const [isEditingA, setIsEditingA] = useState<boolean>(false);
@@ -204,16 +223,23 @@ export default function ScoreboardController() {
     }, 4500);
   };
 
-  // --- Prevent spacebar default behavior ---
+  // --- Prevent spacebar default behavior (except inside inputs/textareas) ---
   useEffect(() => {
     const preventSpacebar = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.key === ' ') {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      );
+
+      if (!isInput && (e.code === 'Space' || e.key === ' ')) {
         e.preventDefault();
       }
     };
-    
+
     window.addEventListener('keydown', preventSpacebar);
-    
+
     return () => {
       window.removeEventListener('keydown', preventSpacebar);
     };
@@ -496,9 +522,15 @@ export default function ScoreboardController() {
     obs.setSourceColor('Color_Team_B', colB1);
     obs.setSourceColor('Color_Team_B_2', colB2);
 
-    obs.setText('label_1', getMappedValue(matchRow, 'label1', mapping, headers));
-    obs.setText('label_2', getMappedValue(matchRow, 'label2', mapping, headers));
-    obs.setText('label_3', getMappedValue(matchRow, 'label3', mapping, headers));
+    const l1 = getMappedValue(matchRow, 'label1', mapping, headers) || '';
+    const l2 = getMappedValue(matchRow, 'label2', mapping, headers) || '';
+    const l3 = getMappedValue(matchRow, 'label3', mapping, headers) || '';
+    setLabel1(l1);
+    setLabel2(l2);
+    setLabel3(l3);
+    obs.setText('label_1', l1);
+    obs.setText('label_2', l2);
+    obs.setText('label_3', l3);
 
     triggerToast(`${trans.toastLoaded} ${matchId}`, 'success');
   };
@@ -611,7 +643,10 @@ export default function ScoreboardController() {
       .replace(/<score_team_b>/gi, String(scoreB))
       .replace(/<thai_date>/gi, thaiDate)
       .replace(/<time_counter>/gi, timerHook.formattedTime)
-      .replace(/<half_text>/gi, timerHook.half);
+      .replace(/<half_text>/gi, timerHook.half)
+      .replace(/<label1>/gi, cleanBr(label1))
+      .replace(/<label2>/gi, cleanBr(label2))
+      .replace(/<label3>/gi, cleanBr(label3));
 
     navigator.clipboard
       .writeText(filled)
@@ -799,12 +834,12 @@ export default function ScoreboardController() {
   // --- OBS Setup Functions ---
   const handleDownloadTemplate = async () => {
     const downloadUrl = `${window.location.origin}/React.json`;
-    
+
     try {
       // Try to copy URL to clipboard
       await navigator.clipboard.writeText(downloadUrl);
       triggerToast('✓ คัดลอก URL แล้ว! เปิด Chrome แล้ว Paste (Ctrl+V) ที่ Address Bar', 'success');
-      
+
       // Also try to open in new window (may work in some cases)
       const newWindow = window.open(downloadUrl, '_blank');
       if (!newWindow) {
@@ -814,7 +849,7 @@ export default function ScoreboardController() {
     } catch (err) {
       // Fallback: show the URL in a modal
       const message = `คัดลอก URL นี้แล้ววางใน Chrome:\n\n${downloadUrl}\n\nหรือ Ctrl+C เพื่อคัดลอก`;
-      
+
       if (window.confirm(message)) {
         // User clicked OK, try to copy again
         try {
@@ -841,10 +876,38 @@ export default function ScoreboardController() {
       </div>
 
       {/* Header */}
-      <div className="card" style={{ textAlign: 'center', padding: '12px' }}>
+      <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: 'var(--accent-color)' }}>
           {leagueName}
         </h1>
+        {currentUser && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255, 255, 255, 0.05)', padding: '6px 12px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            {currentUser.photoURL && (
+              <img src={currentUser.photoURL} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%' }} />
+            )}
+            <span style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 500 }}>
+              {currentUser.email}
+            </span>
+            {isSuperAdmin(currentUser.email) && (
+              <button
+                onClick={() => navigate('/admin/whitelist')}
+                className="btn-primary"
+                style={{ padding: '4px 10px', fontSize: '0.75rem', marginLeft: '4px' }}
+                title="จัดการ Whitelist"
+              >
+                🛡️ จัดการ Whitelist
+              </button>
+            )}
+            <button
+              onClick={() => logoutUser()}
+              className="btn-secondary"
+              style={{ padding: '4px 10px', fontSize: '0.75rem', marginLeft: '4px' }}
+              title="ออกจากระบบ"
+            >
+              <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Controls Bar */}
@@ -1181,15 +1244,6 @@ export default function ScoreboardController() {
         </div>
       )}
 
-      {/* Announcement Scrolling Text */}
-      {detailsTemplate.trim() && (
-        <div className="card" style={{ padding: '6px 12px' }}>
-          <div className="announcement-container">
-            <span className="announcement-text">{detailsTemplate}</span>
-          </div>
-        </div>
-      )}
-
       {/* Timer and Half Controls */}
       <div className="card">
         <div className="row timer-area-container">
@@ -1248,8 +1302,8 @@ export default function ScoreboardController() {
             >
               ปัจจุบัน: {Math.floor(timerHook.countdownStartTime / 60)} นาที
             </div>
-            <button 
-              className="btn-primary" 
+            <button
+              className="btn-primary"
               onClick={async () => {
                 // Show Penalty source and hide Main_events when opening modal
                 try {
@@ -1258,7 +1312,7 @@ export default function ScoreboardController() {
                     await obs.setSceneItemEnabled('Main Stream', penaltyId, true);
                     console.log('[Scoreboard] Penalty source shown');
                   }
-                  
+
                   const mainEventsId = await obs.getSceneItemId('Main Stream', 'Main_events');
                   if (mainEventsId !== null) {
                     await obs.setSceneItemEnabled('Main Stream', mainEventsId, false);
@@ -1267,7 +1321,7 @@ export default function ScoreboardController() {
                 } catch (err) {
                   console.error('[Scoreboard] Error toggling sources:', err);
                 }
-                
+
                 // Open penalty shootout modal
                 setShowPenaltyModal(true);
               }}
@@ -1308,9 +1362,6 @@ export default function ScoreboardController() {
           </button>
           <button className="btn-danger" title={trans.copy} onClick={copyDetailsToClipboard}>
             <i className="fas fa-copy"></i>
-          </button>
-          <button className="btn-secondary" title={trans.help} onClick={() => setShowHelpModal(true)}>
-            <i className="fas fa-question-circle"></i>
           </button>
           <button className="btn-secondary" title={trans.donate} onClick={() => setShowDonateModal(true)}>
             <i className="fas fa-hand-holding-usd"></i>
@@ -1366,16 +1417,111 @@ export default function ScoreboardController() {
       {/* --- Settings Modal --- */}
       {showSettingsModal && (
         <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '620px' }}>
             <h3>
               <i className="fas fa-cog"></i> {trans.settings}
             </h3>
-            <p style={{ color: 'var(--text-muted-color)', marginBottom: '16px' }}>{trans.detailsDesc}</p>
+            <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>{trans.detailsDesc}</p>
+
+            {/* Clickable Tags List */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-color)', marginBottom: '6px' }}>
+                <i className="fas fa-tags"></i> คลิก Tag ด้านล่างเพื่อแทรกในข้อความอัตโนมัติ:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {[
+                  { tag: '<TeamA>', label: 'ชื่อทีม A' },
+                  { tag: '<TeamB>', label: 'ชื่อทีม B' },
+                  { tag: '<score_team_a>', label: 'คะแนน A' },
+                  { tag: '<score_team_b>', label: 'คะแนน B' },
+                  { tag: '<thai_date>', label: 'วันที่' },
+                  { tag: '<time_counter>', label: 'เวลา' },
+                  { tag: '<half_text>', label: 'ครึ่งเวลา' },
+                  { tag: '<label1>', label: 'Label 1' },
+                  { tag: '<label2>', label: 'Label 2' },
+                  { tag: '<label3>', label: 'Label 3' },
+                ].map((item) => (
+                  <button
+                    key={item.tag}
+                    type="button"
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.15)',
+                      border: '1px solid var(--accent-color)',
+                      color: '#60a5fa',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    onClick={() => setDetailsTemplate((prev) => prev + item.tag)}
+                    title={`คลิกเพื่อแทรก ${item.tag} (${item.label})`}
+                  >
+                    <code style={{ fontWeight: 'bold' }}>{item.tag}</code>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>({item.label})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <textarea
-              style={{ width: '100%', minHeight: '120px', resize: 'vertical' }}
+              style={{ width: '100%', minHeight: '110px', resize: 'vertical', fontFamily: 'sans-serif', padding: '10px' }}
               value={detailsTemplate}
               onChange={(e) => setDetailsTemplate(e.target.value)}
+              placeholder="ตัวอย่าง: 🔴 <thai_date> | <TeamA> <score_team_a> - <score_team_b> <TeamB>"
             />
+
+            {/* Explanation & Example Section */}
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              fontSize: '0.85rem'
+            }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#f3f4f6' }}>
+                <i className="fas fa-info-circle"></i> คำอธิบาย Tags & ตัวอย่าง:
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', color: 'var(--text-muted-color)', marginBottom: '10px' }}>
+                <div><code>&lt;TeamA&gt;</code> : ชื่อทีม A ({nameA})</div>
+                <div><code>&lt;TeamB&gt;</code> : ชื่อทีม B ({nameB})</div>
+                <div><code>&lt;score_team_a&gt;</code> : คะแนนทีม A ({scoreA})</div>
+                <div><code>&lt;score_team_b&gt;</code> : คะแนนทีม B ({scoreB})</div>
+                <div><code>&lt;thai_date&gt;</code> : วันที่ปัจจุบันรูปแบบไทย</div>
+                <div><code>&lt;time_counter&gt;</code> : เวลาแข่งขัน ({timerHook.formattedTime})</div>
+                <div><code>&lt;half_text&gt;</code> : ครึ่งเวลา ({timerHook.half})</div>
+                <div><code>&lt;label1&gt;</code> : ข้อความ Label 1 ({label1 || '-'})</div>
+                <div><code>&lt;label2&gt;</code> : ข้อความ Label 2 ({label2 || '-'})</div>
+                <div><code>&lt;label3&gt;</code> : ข้อความ Label 3 ({label3 || '-'})</div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: '6px', flexWrap: 'wrap' }}>
+                <span style={{ color: '#9ca3af', fontSize: '0.8rem', fontWeight: 600 }}>ตัวอย่าง:</span>
+                <code style={{ color: '#34d399', flex: 1, fontSize: '0.78rem' }}>
+                  ⚽ &lt;TeamA&gt; &lt;score_team_a&gt; - &lt;score_team_b&gt; &lt;TeamB&gt; (เวลา &lt;time_counter&gt;)
+                </code>
+                <button
+                  type="button"
+                  style={{
+                    background: '#2563eb',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    padding: '4px 10px',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                  onClick={() => setDetailsTemplate('🔴 ผลการแข่งขัน <thai_date>\n⚽ <TeamA> <score_team_a> - <score_team_b> <TeamB>\n⏱ เวลา: <time_counter> (<half_text>)')}
+                >
+                  <i className="fas fa-magic"></i> ใส่ตัวอย่างนี้
+                </button>
+              </div>
+            </div>
+
             <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
                 className="btn-primary"
@@ -1510,7 +1656,7 @@ export default function ScoreboardController() {
             </div>
 
             {/* Logo Uploader Component */}
-            <LogoUploader 
+            <LogoUploader
               onUploadSuccess={(fileName, url, targetTeam) => {
                 triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ!`, 'success');
                 if (targetTeam === 'B') {
@@ -1695,8 +1841,8 @@ export default function ScoreboardController() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button 
-                className="btn-primary" 
+              <button
+                className="btn-primary"
                 style={{ background: '#3b82f6', borderColor: '#3b82f6', fontWeight: 'bold' }}
                 onClick={() => {
                   setShowQuickSetupModal(false);
@@ -1775,9 +1921,9 @@ export default function ScoreboardController() {
               <i className="fas fa-download"></i> ดาวน์โหลด OBS Scene Collection
             </h3>
 
-            <div style={{ 
-              marginBottom: '20px', 
-              padding: '20px', 
+            <div style={{
+              marginBottom: '20px',
+              padding: '20px',
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               borderRadius: '12px',
               textAlign: 'center',
@@ -1787,7 +1933,7 @@ export default function ScoreboardController() {
               <button
                 className="btn-primary"
                 onClick={handleDownloadTemplate}
-                style={{ 
+                style={{
                   fontSize: '1.1rem',
                   padding: '14px 32px',
                   background: '#fff',
@@ -1799,7 +1945,7 @@ export default function ScoreboardController() {
                 <i className="fas fa-download"></i> ดาวน์โหลด React.json
               </button>
               <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: '#e0e7ff' }}>
-                ขนาดไฟล์: ~318KB | รองรับ OBS Studio 28+<br/>
+                ขนาดไฟล์: ~318KB | รองรับ OBS Studio 28+<br />
                 <small style={{ fontSize: '0.75rem', opacity: 0.8 }}>คลิกเพื่อคัดลอก URL → เปิด Chrome → Paste (Ctrl+V)</small>
               </p>
             </div>
@@ -1819,11 +1965,11 @@ export default function ScoreboardController() {
               </ol>
             </div>
 
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '12px', 
-              background: '#064e3b', 
-              borderRadius: '6px', 
+            <div style={{
+              marginTop: '16px',
+              padding: '12px',
+              background: '#064e3b',
+              borderRadius: '6px',
               borderLeft: '4px solid #10b981',
               fontSize: '0.85rem',
               color: '#a7f3d0'
@@ -1831,20 +1977,20 @@ export default function ScoreboardController() {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <i className="fas fa-lightbulb" style={{ marginTop: '2px', color: '#fbbf24' }}></i>
                 <div>
-                  <strong style={{ color: '#6ee7b7' }}>เคล็ดลับ:</strong> หลัง Import แล้ว Sources ทั้งหมดจะเชื่อมต่อกับ Controller นี้อัตโนมัติผ่าน OBS WebSocket 
-                  คุณสามารถปรับตำแหน่ง ขนาด หรือสีของ Sources ใน OBS ได้ตามต้องการ<br/><br/>
-                  <strong style={{ color: '#fbbf24' }}>� วิธีดาวน์โหลด:</strong> 
-                  1. คลิกปุ่มดาวน์โหลด → URL จะถูกคัดลอกอัตโนมัติ<br/>
-                  2. เปิด Chrome (หรือเบราว์เซอร์อื่น)<br/>
-                  3. กด Ctrl+V ที่ Address Bar<br/>
+                  <strong style={{ color: '#6ee7b7' }}>เคล็ดลับ:</strong> หลัง Import แล้ว Sources ทั้งหมดจะเชื่อมต่อกับ Controller นี้อัตโนมัติผ่าน OBS WebSocket
+                  คุณสามารถปรับตำแหน่ง ขนาด หรือสีของ Sources ใน OBS ได้ตามต้องการ<br /><br />
+                  <strong style={{ color: '#fbbf24' }}>� วิธีดาวน์โหลด:</strong>
+                  1. คลิกปุ่มดาวน์โหลด → URL จะถูกคัดลอกอัตโนมัติ<br />
+                  2. เปิด Chrome (หรือเบราว์เซอร์อื่น)<br />
+                  3. กด Ctrl+V ที่ Address Bar<br />
                   4. กด Enter → ไฟล์จะดาวน์โหลดที่โฟลเดอร์ Downloads
                 </div>
               </div>
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'right' }}>
-              <button 
-                className="btn-secondary" 
+              <button
+                className="btn-secondary"
                 onClick={() => setShowOBSSetupModal(false)}
               >
                 {trans.close}
@@ -2109,7 +2255,7 @@ export default function ScoreboardController() {
                       />
                       {row.team.substring(0, 2).toUpperCase()}
                     </div>
-                    <span style={{ flex: 1, fontWeight: 600, textAlign: 'left' }}>{row.team}</span>
+                    <span style={{ flex: 1, fontWeight: 600, textAlign: 'left', color: '#ffffffff' }}>{row.team}</span>
                     {row.color1 && (
                       <span style={{
                         width: '16px', height: '16px', borderRadius: '50%',
@@ -2127,10 +2273,10 @@ export default function ScoreboardController() {
               {teamSheetData.filter((row) =>
                 !teamSelectSearch || row.team.toLowerCase().includes(teamSelectSearch.toLowerCase())
               ).length === 0 && (
-                <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted-color)' }}>
-                  <i className="fas fa-search"></i> ไม่พบทีม
-                </div>
-              )}
+                  <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted-color)' }}>
+                    <i className="fas fa-search"></i> ไม่พบทีม
+                  </div>
+                )}
             </div>
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
               <button className="btn-secondary" onClick={() => setShowTeamSelectModal(false)}>
@@ -2143,8 +2289,8 @@ export default function ScoreboardController() {
 
       {/* Penalty Shootout Modal */}
       {showPenaltyModal && (
-        <div 
-          className="modal-overlay" 
+        <div
+          className="modal-overlay"
           style={{ zIndex: 9999 }}
           onClick={(e) => {
             // Close only if clicking the backdrop
@@ -2160,10 +2306,10 @@ export default function ScoreboardController() {
             }
           }}
         >
-          <div 
-            className="modal-content" 
+          <div
+            className="modal-content"
             onClick={(e) => e.stopPropagation()}
-            style={{ 
+            style={{
               maxWidth: '700px',
               maxHeight: '90vh',
               overflow: 'auto',
@@ -2202,7 +2348,7 @@ export default function ScoreboardController() {
             >
               ×
             </button>
-            <PenaltyShootoutController 
+            <PenaltyShootoutController
               obs={obs}
               teamNameA={nameA}
               teamNameB={nameB}
@@ -2223,7 +2369,7 @@ export default function ScoreboardController() {
 
       {/* Auto Macros Panel */}
       {showAutoMacrosModal && (
-        <AutoMacrosPanel 
+        <AutoMacrosPanel
           obs={obs}
           onClose={() => setShowAutoMacrosModal(false)}
           replayMacro={autoMacros.replayMacro}
