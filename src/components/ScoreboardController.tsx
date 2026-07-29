@@ -914,9 +914,14 @@ export default function ScoreboardController() {
       <div className="card">
         <div className="row space-between">
           <div className="row" style={{ marginBottom: 0 }}>
-            <button className="btn-secondary" onClick={() => fileInputRef.current?.click()}>
-              <i className="fas fa-file-excel"></i>
-              <span>{trans.excel}</span>
+            <button
+              className="btn-success"
+              onClick={() => fileInputRef.current?.click()}
+              title="นำเข้าตารางแข่งขันจากไฟล์ Excel (.xlsx, .xls)"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <i className="fas fa-file-excel" style={{ fontSize: '1.1rem' }}></i>
+              <span>นำเข้าไฟล์ Excel</span>
             </button>
             <input
               type="file"
@@ -1354,44 +1359,17 @@ export default function ScoreboardController() {
             <i className="fas fa-magic"></i>
             <span>Auto Macros</span>
           </button>
-          <button className="btn-secondary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
+          <button className="btn-primary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
             <i className="fas fa-cog"></i>
+            <span>{trans.settings}</span>
           </button>
-          <button className="btn-danger" title={trans.copy} onClick={copyDetailsToClipboard}>
+          <button className="btn-danger" title="คัดลอกข้อความ" onClick={copyDetailsToClipboard}>
             <i className="fas fa-copy"></i>
+            <span>คัดลอกข้อความ</span>
           </button>
         </div>
       </div>
 
-      {/* Footer */}
-      <div style={{
-        textAlign: 'center',
-        color: 'var(--text-muted-color)',
-        fontSize: '0.75rem',
-        padding: '8px',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: '8px',
-        flexWrap: 'wrap'
-      }}>
-        <span>{trans.footerAppName}</span>
-        <span>—</span>
-        <button
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--accent-color)',
-            cursor: 'pointer',
-            padding: 0,
-            fontSize: '0.75rem',
-            textDecoration: 'underline'
-          }}
-          onClick={() => setShowChangelogModal(true)}
-        >
-          {trans.changelog}
-        </button>
-      </div>
 
       {/* --- Settings Modal --- */}
       {showSettingsModal && (
