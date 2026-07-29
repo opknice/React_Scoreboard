@@ -42,7 +42,7 @@ const DEFAULT_OBS_SCENE: OBSSceneSettings = {
 
 export default function PenaltyShootoutController({ obs: parentObs, teamNameA: propTeamNameA, teamNameB: propTeamNameB, onClose: _onClose }: PenaltyShootoutControllerProps = {}) {
   // --- States ---
-  const [currentLang, setCurrentLang] = useState<string>(() => localStorage.getItem('penalty_language') || 'th');
+  const [currentLang] = useState<string>(() => localStorage.getItem('penalty_language') || 'th');
   const [shots, setShots] = useState<PenaltyShots>({ A: [[]], B: [[]] });
   const [scores, setScores] = useState<PenaltyScores>({ A: 0, B: 0 });
   const [currentPage, setCurrentPage] = useState<number>(0);
@@ -570,24 +570,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
           </div>
         )}
 
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <select
-            value={currentLang}
-            onChange={(e) => {
-              setCurrentLang(e.target.value);
-              localStorage.setItem('penalty_language', e.target.value);
-            }}
-            style={{ padding: '6px 12px', background: '#232730', borderColor: '#3a3a3a', color: '#fff' }}
-          >
-            <option value="th">ภาษาไทย</option>
-            <option value="en">English</option>
-            <option value="ko">한국어</option>
-            <option value="lo">ພາສາລາວ</option>
-            <option value="km">ភាសាខ្មែរ</option>
-            <option value="pt-br">Português (BR)</option>
-            <option value="es">Español</option>
-          </select>
-        </div>
       </div>
 
       <div style={{ marginTop: '20px', color: 'var(--text-muted-color)', fontSize: '0.85rem', textAlign: 'center' }}>

@@ -39,7 +39,7 @@ export default function ScoreboardController() {
   const autoMacros = useAutoMacros(obs);
 
   // --- Local States ---
-  const [currentLang, setCurrentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
+  const [currentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
   const [logoFolderPath, setLogoFolderPath] = useState<string>(() => localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
   const [matchIdInput, setMatchIdInput] = useState<number>(1);
   const [leagueName, setLeagueName] = useState<string>('Football Scoreboard Controller');
@@ -1360,24 +1360,6 @@ export default function ScoreboardController() {
           <button className="btn-danger" title={trans.copy} onClick={copyDetailsToClipboard}>
             <i className="fas fa-copy"></i>
           </button>
-          <button className="btn-secondary" title={trans.donate} onClick={() => setShowDonateModal(true)}>
-            <i className="fas fa-hand-holding-usd"></i>
-          </button>
-          <select
-            value={currentLang}
-            onChange={(e) => {
-              setCurrentLang(e.target.value);
-              localStorage.setItem('scoreboardLang', e.target.value);
-            }}
-          >
-            <option value="th">ภาษาไทย</option>
-            <option value="en">English</option>
-            <option value="ko">한국어</option>
-            <option value="lo">ພາສາລາວ</option>
-            <option value="km">ភាសាខ្មែរ</option>
-            <option value="pt-br">Português (BR)</option>
-            <option value="es">Español</option>
-          </select>
         </div>
       </div>
 
