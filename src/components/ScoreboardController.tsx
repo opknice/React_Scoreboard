@@ -271,8 +271,8 @@ export default function ScoreboardController() {
   }, [timerHook.formattedTime, obs.isConnected]);
 
   useEffect(() => {
-    obs.setText('half_text', timerHook.half);
-  }, [timerHook.half, obs.isConnected]);
+    obs.setText('half_text', timerHook.customText || timerHook.half);
+  }, [timerHook.half, timerHook.customText, obs.isConnected]);
 
   // --- Hotkey Callback Handler ---
   const handleHotkeyAction = (action: string) => {
@@ -876,32 +876,32 @@ export default function ScoreboardController() {
       </div>
 
       {/* Header */}
-      <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', flexWrap: 'wrap', gap: '12px' }}>
-        <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700, color: 'var(--accent-color)' }}>
+      <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', flexWrap: 'wrap', gap: '8px' }}>
+        <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-color)' }}>
           {leagueName}
         </h1>
         {currentUser && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255, 255, 255, 0.05)', padding: '6px 12px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
             {currentUser.photoURL && (
-              <img src={currentUser.photoURL} alt="" style={{ width: '28px', height: '28px', borderRadius: '50%' }} />
+              <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
             )}
-            <span style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 500 }}>
+            <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
               {currentUser.email}
             </span>
             {isSuperAdmin(currentUser.email) && (
               <button
                 onClick={() => navigate('/admin/whitelist')}
                 className="btn-primary"
-                style={{ padding: '4px 10px', fontSize: '0.75rem', marginLeft: '4px' }}
+                style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
                 title="จัดการ Whitelist"
               >
-                🛡️ จัดการ Whitelist
+                🛡️ Whitelist
               </button>
             )}
             <button
               onClick={() => logoutUser()}
               className="btn-secondary"
-              style={{ padding: '4px 10px', fontSize: '0.75rem', marginLeft: '4px' }}
+              style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
               title="ออกจากระบบ"
             >
               <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
@@ -974,18 +974,18 @@ export default function ScoreboardController() {
       </div>
 
       {/* Team score and editor panel */}
-      <div className="card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
+      <div className="card" style={{ padding: '20px', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'nowrap', minWidth: '680px' }}>
           {/* Score Team A */}
-          <div className="score-buttons">
+          <div className="score-buttons" style={{ flexShrink: 0 }}>
             <button className="plus" onClick={() => setScoreA((prev) => prev + 1)}>+</button>
             <button className="minus" onClick={() => setScoreA((prev) => Math.max(0, prev - 1))}>-</button>
           </div>
 
-          <div className="score-display">{scoreA}</div>
+          <div className="score-display" style={{ flexShrink: 0 }}>{scoreA}</div>
 
           {/* Team Row A */}
-          <div className="team-row" style={{ flex: 1, minWidth: '150px' }}>
+          <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
             <div className="color-picker-stack">
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input
@@ -1095,7 +1095,7 @@ export default function ScoreboardController() {
           </div>
 
           {/* Center Swapper */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             <button
               className="btn-warning"
               onClick={swapTeams}
@@ -1110,7 +1110,7 @@ export default function ScoreboardController() {
           </div>
 
           {/* Team Row B */}
-          <div className="team-row" style={{ flex: 1, minWidth: '150px' }}>
+          <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
             <div className="color-picker-stack">
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input
@@ -1218,9 +1218,9 @@ export default function ScoreboardController() {
             </div>
           </div>
 
-          <div className="score-display">{scoreB}</div>
+          <div className="score-display" style={{ flexShrink: 0 }}>{scoreB}</div>
 
-          <div className="score-buttons">
+          <div className="score-buttons" style={{ flexShrink: 0 }}>
             <button className="plus" onClick={() => setScoreB((prev) => prev + 1)}>+</button>
             <button className="minus" onClick={() => setScoreB((prev) => Math.max(0, prev - 1))}>-</button>
           </div>
@@ -1229,15 +1229,15 @@ export default function ScoreboardController() {
 
       {/* Labels display bar */}
       {excelData.length > 0 && (
-        <div className="card">
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: '200px', background: '#0f1115', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '8px 12px' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
               <strong>Label 1:</strong> {getHeaderIndex('label1') >= 0 ? excelData.slice(1).find((r) => parseInt(getMatchIdValue(r)) === matchIdInput)?.[getHeaderIndex('label1')] || '-' : '-'}
             </div>
-            <div style={{ flex: 1, minWidth: '200px', background: '#0f1115', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
               <strong>Label 2:</strong> {obsGetLabel2Value() || '-'}
             </div>
-            <div style={{ flex: 1, minWidth: '200px', background: '#0f1115', padding: '8px', borderRadius: '4px', textAlign: 'center' }}>
+            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
               <strong>Label 3:</strong> {getHeaderIndex('label3') >= 0 ? excelData.slice(1).find((r) => parseInt(getMatchIdValue(r)) === matchIdInput)?.[getHeaderIndex('label3')] || '-' : '-'}
             </div>
           </div>
@@ -1245,36 +1245,32 @@ export default function ScoreboardController() {
       )}
 
       {/* Timer and Half Controls */}
-      <div className="card">
-        <div className="row timer-area-container">
-          <div style={{ flex: '0 0 80px', display: 'flex' }}>
-            <button className="btn-secondary" onClick={timerHook.toggleHalf} style={{ width: '100%', flexDirection: 'column' }}>
-              <span style={{ fontSize: '0.75rem' }}>{trans.half}</span>
-              <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{timerHook.half || 'HT'}</span>
+      <div className="card" style={{ padding: '12px 16px' }}>
+        <div className="row timer-area-container" style={{ marginBottom: 0 }}>
+          <div style={{ flex: '0 0 65px', display: 'flex' }}>
+            <button className="btn-secondary btn-sm" onClick={timerHook.toggleHalf} style={{ width: '100%', flexDirection: 'column', padding: '6px 4px' }}>
+              <span style={{ fontSize: '0.7rem' }}>{trans.half}</span>
+              <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>{timerHook.customText || timerHook.half || '1st'}</span>
             </button>
           </div>
 
           <div className="timer-display-area">
             <div className="timer-display">{timerHook.formattedTime}</div>
-            <div className="row center" style={{ marginTop: '8px' }}>
-              <button className="btn-success" onClick={timerHook.start1}>
+            <div className="row center" style={{ marginTop: '4px', gap: '6px', marginBottom: 0 }}>
+              <button className="btn-success btn-sm" onClick={timerHook.start1}>
                 <i className="fas fa-play"></i> เริ่มครึ่งแรก
               </button>
-              <button className="btn-danger" onClick={timerHook.halfpause}>
+              <button className="btn-danger btn-sm" onClick={timerHook.halfpause}>
                 <i className="fas fa-pause"></i> พักครึ่งแรก
               </button>
-            </div>
-            <div className="row center" style={{ marginTop: '8px' }}>
-              <button className="btn-success" onClick={timerHook.start2}>
+              <button className="btn-success btn-sm" onClick={timerHook.start2}>
                 <i className="fas fa-play"></i> เริ่มครึ่งหลัง
               </button>
-              <button className="btn-danger" onClick={timerHook.fulltime}>
+              <button className="btn-danger btn-sm" onClick={timerHook.fulltime}>
                 <i className="fas fa-pause"></i> จบเกมส์
               </button>
-            </div>
-            <div className="row center" style={{ marginTop: '8px' }}>
               <button
-                className="btn-warning"
+                className="btn-warning btn-sm"
                 onClick={() => {
                   timerHook.pause();
                   obs.setText('time_counter', '');
@@ -1286,24 +1282,25 @@ export default function ScoreboardController() {
           </div>
 
           <div className="timer-right-controls">
-            <button className="btn-secondary" onClick={() => setShowPresetTimeModal(true)}>
+            <button className="btn-secondary btn-sm" onClick={() => setShowPresetTimeModal(true)}>
               <i className="fas fa-clock"></i> ปรับเวลา
             </button>
             <div
               style={{
-                fontSize: '0.9rem',
+                fontSize: '0.8rem',
                 fontWeight: 'bold',
                 color: '#10b981',
-                padding: '6px 12px',
+                padding: '4px 8px',
                 background: 'rgba(16, 185, 129, 0.1)',
                 border: '1px solid rgba(16, 185, 129, 0.3)',
-                borderRadius: '6px'
+                borderRadius: '6px',
+                textAlign: 'center'
               }}
             >
               ปัจจุบัน: {Math.floor(timerHook.countdownStartTime / 60)} นาที
             </div>
             <button
-              className="btn-primary"
+              className="btn-primary btn-sm"
               onClick={async () => {
                 // Show Penalty source and hide Main_events when opening modal
                 try {

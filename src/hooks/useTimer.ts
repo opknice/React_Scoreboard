@@ -82,6 +82,7 @@ export const useTimer = () => {
   };
 
   const toggleHalf = () => {
+    if (customText) setCustomText('');
     setHalf((prev) => (prev === '1st' ? '2nd' : '1st'));
   };
 
@@ -96,6 +97,7 @@ export const useTimer = () => {
     timer,
     isRunning,
     half,
+    customText,
     countdownStartTime,
     formattedTime,
     start1,

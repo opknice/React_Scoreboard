@@ -349,9 +349,14 @@ button:disabled {
   color: #fff;
 }
 
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 0.825rem;
+}
+
 .timer-area-container {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -364,21 +369,22 @@ button:disabled {
   justify-content: center;
   border-left: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
-  padding: 8px 16px;
+  padding: 4px 12px;
 }
 
 .timer-display {
-  font-size: 3rem;
+  font-size: 2rem;
   font-weight: 700;
   font-family: monospace;
-  letter-spacing: 2px;
-  margin-bottom: 8px;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+  line-height: 1;
 }
 
 .timer-right-controls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
 }
 
