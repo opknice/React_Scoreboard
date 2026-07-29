@@ -3,8 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
 import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
+import { useDisableZoom } from '../hooks/useDisableZoom';
 
 export default function LeagueTableStandalone() {
+  useDisableZoom();
   const [searchParams] = useSearchParams();
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
