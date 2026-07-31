@@ -1071,6 +1071,7 @@ export default function ScoreboardController() {
                 }
               }}
               style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
+              title="แมตช์ก่อนหน้า"
             >
               &lt;
             </button>
@@ -1080,7 +1081,14 @@ export default function ScoreboardController() {
               min="1"
               value={matchIdInput}
               onChange={(e) => setMatchIdInput(parseInt(e.target.value, 10) || 1)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = parseInt((e.target as HTMLInputElement).value, 10) || 1;
+                  applyMatch(val);
+                }
+              }}
               style={{ width: '48px', padding: '3px 6px', fontSize: '0.85rem', textAlign: 'center' }}
+              title="พิมพ์หมายเลขแมตช์แล้วกด Enter เพื่อโหลด"
             />
             <button
               onClick={() => {
@@ -1088,12 +1096,9 @@ export default function ScoreboardController() {
                 applyMatch(matchIdInput + 1);
               }}
               style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
+              title="แมตช์ถัดไป"
             >
               &gt;
-            </button>
-            <button className="btn-primary btn-sm" onClick={() => applyMatch()} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <i className="fas fa-check" style={{ fontSize: '0.8rem' }}></i>
-              <span>{trans.load}</span>
             </button>
           </div>
         </div>
