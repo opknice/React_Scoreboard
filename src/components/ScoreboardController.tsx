@@ -1022,16 +1022,16 @@ export default function ScoreboardController() {
       </div>
 
       {/* Controls Bar */}
-      <div className="card">
-        <div className="row space-between">
-          <div className="row" style={{ marginBottom: 0 }}>
+      <div className="card" style={{ padding: '8px 12px' }}>
+        <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
+          <div className="row" style={{ marginBottom: 0, gap: '6px' }}>
             <button
-              className="btn-success"
+              className="btn-success btn-sm"
               onClick={() => fileInputRef.current?.click()}
               title="นำเข้าตารางแข่งขันจากไฟล์ Excel (.xlsx, .xls)"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
             >
-              <i className="fas fa-file-excel" style={{ fontSize: '1.1rem' }}></i>
+              <i className="fas fa-file-excel" style={{ fontSize: '0.9rem' }}></i>
               <span>นำเข้าไฟล์ Excel</span>
             </button>
             <input
@@ -1042,27 +1042,27 @@ export default function ScoreboardController() {
               onChange={handleExcelUpload}
             />
             <button
-              className="btn-primary"
+              className="btn-primary btn-sm"
               onClick={() => setShowUrlModal(true)}
               title="ดึงข้อมูลตารางแข่งขันจาก URL หรือ Google Sheets"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
             >
-              <i className="fas fa-link" style={{ fontSize: '1.1rem' }}></i>
+              <i className="fas fa-link" style={{ fontSize: '0.9rem' }}></i>
               <span>นำเข้าจาก URL</span>
             </button>
             <button
-              className="btn-success"
+              className="btn-success btn-sm"
               onClick={() => setShowTeamLogosManagerModal(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Firebase Database ครั้งเดียว"
             >
-              <i className="fas fa-shield-halved"></i>
+              <i className="fas fa-shield-halved" style={{ fontSize: '0.9rem' }}></i>
               <span>🛡️ จัดการโลโก้ประจำลีก</span>
             </button>
           </div>
 
-          <div className="row" style={{ marginBottom: 0 }}>
-            <label htmlFor="matchIDInput" style={{ fontWeight: 600 }}>{trans.matchId}</label>
+          <div className="row" style={{ marginBottom: 0, gap: '4px' }}>
+            <label htmlFor="matchIDInput" style={{ fontWeight: 600, fontSize: '0.85rem' }}>{trans.matchId}</label>
             <button
               onClick={() => {
                 if (matchIdInput > 1) {
@@ -1070,7 +1070,7 @@ export default function ScoreboardController() {
                   applyMatch(matchIdInput - 1);
                 }
               }}
-              style={{ padding: '6px 10px', background: '#333', color: '#fff', borderRadius: '4px' }}
+              style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
             >
               &lt;
             </button>
@@ -1080,18 +1080,19 @@ export default function ScoreboardController() {
               min="1"
               value={matchIdInput}
               onChange={(e) => setMatchIdInput(parseInt(e.target.value, 10) || 1)}
+              style={{ width: '48px', padding: '3px 6px', fontSize: '0.85rem', textAlign: 'center' }}
             />
             <button
               onClick={() => {
                 setMatchIdInput((prev) => prev + 1);
                 applyMatch(matchIdInput + 1);
               }}
-              style={{ padding: '6px 10px', background: '#333', color: '#fff', borderRadius: '4px' }}
+              style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
             >
               &gt;
             </button>
-            <button className="btn-primary" onClick={() => applyMatch()}>
-              <i className="fas fa-check"></i>
+            <button className="btn-primary btn-sm" onClick={() => applyMatch()} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <i className="fas fa-check" style={{ fontSize: '0.8rem' }}></i>
               <span>{trans.load}</span>
             </button>
           </div>
