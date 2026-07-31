@@ -1434,18 +1434,30 @@ export default function ScoreboardController() {
             <button
               className="btn-primary btn-sm"
               onClick={async () => {
-                // Show Penalty source and hide Main_events when opening modal
+                // Read scene settings from localStorage (same config as PenaltyShootoutController)
+                const DEFAULT_PENALTY_SCENE = {
+                  sceneName: 'Main Stream',
+                  showSources: 'Penalty',
+                  hideSources: 'Main_events,Standings,Goal_Alert',
+                };
+                let penaltyScene = DEFAULT_PENALTY_SCENE;
                 try {
-                  const penaltyId = await obs.getSceneItemId('Main Stream', 'Penalty');
-                  if (penaltyId !== null) {
-                    await obs.setSceneItemEnabled('Main Stream', penaltyId, true);
-                    console.log('[Scoreboard] Penalty source shown');
-                  }
+                  const saved = localStorage.getItem('penalty_obs_scene');
+                  if (saved) penaltyScene = { ...DEFAULT_PENALTY_SCENE, ...JSON.parse(saved) };
+                } catch { /* fallback to default */ }
 
-                  const mainEventsId = await obs.getSceneItemId('Main Stream', 'Main_events');
-                  if (mainEventsId !== null) {
-                    await obs.setSceneItemEnabled('Main Stream', mainEventsId, false);
-                    console.log('[Scoreboard] Main_events source hidden');
+                const sceneName = penaltyScene.sceneName || 'Main Stream';
+                const showList = penaltyScene.showSources.split(',').map((s) => s.trim()).filter(Boolean);
+                const hideList = penaltyScene.hideSources.split(',').map((s) => s.trim()).filter(Boolean);
+
+                try {
+                  for (const source of showList) {
+                    const id = await obs.getSceneItemId(sceneName, source);
+                    if (id !== null) await obs.setSceneItemEnabled(sceneName, id, true);
+                  }
+                  for (const source of hideList) {
+                    const id = await obs.getSceneItemId(sceneName, source);
+                    if (id !== null) await obs.setSceneItemEnabled(sceneName, id, false);
                   }
                 } catch (err) {
                   console.error('[Scoreboard] Error toggling sources:', err);

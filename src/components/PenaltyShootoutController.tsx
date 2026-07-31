@@ -130,13 +130,13 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         try {
           const connected = await obs.connect('ws://localhost:4455');
           if (!connected || !isMounted) return;
-          
+
           console.log('[Penalty OBS] Connected, showing penalty overlay...');
           triggerToast(trans.toastObsSuccess, 'success');
-          
+
           // Wait a bit for OBS connection to stabilize
           await new Promise(resolve => setTimeout(resolve, 100));
-          
+
           // Auto-show penalty overlay on open
           await toggleSources(
             obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
@@ -198,7 +198,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         // Synchronous call - may not complete but worth trying
         const hideList = obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean);
         const showList = obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean);
-        
+
         // Attempt cleanup
         toggleSources(showList, hideList, true).catch(err => {
           console.error('[Penalty OBS] Beforeunload cleanup error:', err);
@@ -221,10 +221,10 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         window.removeEventListener('beforeunload', handleBeforeUnload);
       }
       channelRef.current?.close();
-      
+
       // Mark that we're cleaning up
       const shouldCleanup = obsIsConnectedRef.current;
-      
+
       // Cleanup for component unmount - but keep connection alive if using parent
       if (shouldCleanup && !isUsingParentObs) {
         console.log('[Penalty OBS] Component unmounting, hiding penalty overlay...');
@@ -313,7 +313,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
   const handleHidePenalty = async () => {
     console.log('[Penalty OBS] Hide button clicked, hiding penalty overlay...');
-    
+
     // Check if OBS is actually connected, if not try to reconnect
     if (!obsIsConnectedRef.current || !obs.isConnected) {
       console.warn('[Penalty OBS] OBS not connected, attempting to reconnect...');
@@ -326,7 +326,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         return;
       }
     }
-    
+
     try {
       await toggleSources(
         obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
@@ -343,7 +343,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
   const handleShowPenalty = async () => {
     console.log('[Penalty OBS] Show button clicked, showing penalty overlay...');
-    
+
     // Check if OBS is actually connected, if not try to reconnect
     if (!obsIsConnectedRef.current || !obs.isConnected) {
       console.warn('[Penalty OBS] OBS not connected, attempting to reconnect...');
@@ -356,7 +356,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         return;
       }
     }
-    
+
     try {
       await toggleSources(
         obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
@@ -514,10 +514,10 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
         {/* Action Panel */}
         <div className="row center" style={{ gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
-          <button 
-            className="btn-success" 
+          <button
+            className="btn-success"
             onClick={handleShowPenalty}
-            style={{ 
+            style={{
               padding: '12px 20px',
               fontSize: '1.05rem',
               fontWeight: 600
@@ -525,10 +525,10 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
           >
             <i className="fas fa-eye"></i> แสดงจุดโทษ
           </button>
-          <button 
-            className="btn-danger" 
+          <button
+            className="btn-danger"
             onClick={handleHidePenalty}
-            style={{ 
+            style={{
               padding: '12px 20px',
               fontSize: '1.05rem',
               fontWeight: 600
@@ -552,10 +552,10 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
         {/* Status Indicator - Manual control */}
         {obs.isConnected && (
-          <div style={{ 
-            textAlign: 'center', 
-            marginTop: '16px', 
-            padding: '10px', 
+          <div style={{
+            textAlign: 'center',
+            marginTop: '16px',
+            padding: '10px',
             background: 'rgba(59, 130, 246, 0.1)',
             border: '1px solid rgba(59, 130, 246, 0.3)',
             borderRadius: '6px',
@@ -719,7 +719,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
                   ระบบจะสลับสถานะอัตโนมัติให้
                 </li>
                 <li>
-                  <strong>ตั้งค่าขั้นสูง</strong>: หากต้องการปรับ source name หรือ scene name ให้เข้าไปตั้งค่าใน 
+                  <strong>ตั้งค่าขั้นสูง</strong>: หากต้องการปรับ source name หรือ scene name ให้เข้าไปตั้งค่าใน
                   localStorage ด้วย key: <code>penalty_obs_scene</code>
                 </li>
               </ol>
