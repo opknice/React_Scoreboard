@@ -143,5 +143,5 @@ export default defineConfig({
       }
     }
   ],
-  base: process.env.VERCEL ? '/' : '/React_Scoreboard/',
+  base: '/React_Scoreboard/',
 })
