@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 
 /**
  * Custom hook to disable zoom (wheel zoom, keyboard Ctrl+/-, touch pinch zoom)
- * specifically for display pages like overlays and standalone tables.
+ * and automatically lock scale against OBS CEF / Browser Zoom in display pages.
  */
-export function useDisableZoom() {
+export function useDisableZoom(lockScale = true) {
   useEffect(() => {
     // 1. Prevent wheel zoom (Ctrl + wheel)
     const handleWheel = (e: WheelEvent) => {
@@ -48,17 +48,44 @@ export function useDisableZoom() {
       document.head.appendChild(metaViewport);
     }
 
+    // 5. Anti-Zoom DPR Compensation (Cancels OBS CEF Browser Zoom)
+    const initialDpr = window.devicePixelRatio || 1;
+
+    const handleDprCompensation = () => {
+      if (!lockScale) return;
+      const currentDpr = window.devicePixelRatio || 1;
+      if (currentDpr > 0) {
+        const targetZoom = initialDpr / currentDpr;
+        (document.body.style as any).zoom = `${targetZoom}`;
+      }
+    };
+
+    handleDprCompensation();
+
     window.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('touchstart', handleTouchStart, { passive: false });
+    window.addEventListener('resize', handleDprCompensation);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleDprCompensation);
+    }
+
+    const interval = setInterval(handleDprCompensation, 300);
 
     return () => {
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('resize', handleDprCompensation);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleDprCompensation);
+      }
+      clearInterval(interval);
+      (document.body.style as any).zoom = '';
       if (metaViewport && originalContent !== null) {
         metaViewport.setAttribute('content', originalContent);
       }
     };
-  }, []);
+  }, [lockScale]);
 }
+
