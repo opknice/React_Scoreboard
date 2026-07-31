@@ -1105,8 +1105,8 @@ export default function ScoreboardController() {
       </div>
 
       {/* Team score and editor panel */}
-      <div className="card" style={{ padding: '20px', overflowX: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'nowrap', minWidth: '680px' }}>
+      <div className="card" style={{ padding: '12px', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap', minWidth: '540px' }}>
           {/* Score Team A */}
           <div className="score-buttons" style={{ flexShrink: 0 }}>
             <button className="plus" onClick={() => setScoreA((prev) => prev + 1)}>+</button>
@@ -1226,15 +1226,15 @@ export default function ScoreboardController() {
           </div>
 
           {/* Center Swapper */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
             <button
               className="btn-warning"
               onClick={swapTeams}
-              style={{ height: '55px', width: '55px', borderRadius: '50%', fontSize: '1.4rem' }}
+              style={{ height: '42px', width: '42px', borderRadius: '50%', fontSize: '1.1rem' }}
             >
               <i className="fas fa-exchange-alt"></i>
             </button>
-            <button className="btn-secondary" onClick={resetScore} style={{ borderRadius: '20px', fontSize: '0.85rem' }}>
+            <button className="btn-secondary" onClick={resetScore} style={{ borderRadius: '20px', fontSize: '0.75rem' }}>
               <i className="fas fa-sync-alt"></i>
               <span>{trans.reset}</span>
             </button>
