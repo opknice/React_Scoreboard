@@ -572,17 +572,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
       </div>
 
-      <div style={{ marginTop: '20px', color: 'var(--text-muted-color)', fontSize: '0.85rem', textAlign: 'center' }}>
-        OBS Dock UI – Penalty Shootout Controller V2.0<br />
-        <span style={{ color: obs.isConnected ? '#10b981' : '#ef4444' }}>
-          {obs.isConnected ? '● Connected to OBS WebSocket' : '○ Disconnected from OBS'}
-        </span>
-        {obs.isConnected && (
-          <span style={{ marginLeft: '12px', color: '#6d28d9' }}>
-            Scene: <strong>{obsSceneSettings.sceneName}</strong>
-          </span>
-        )}
-      </div>
 
       {/* --- Dots Settings Modal --- */}
       {showSettingsModal && (

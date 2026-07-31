@@ -607,9 +607,9 @@ const extractCellColor = (cell: ExcelJS.Cell, themeColors: string[]): string => 
   return '';
 };
 
-export const loadTeamSheetWithColors = async (file: File): Promise<TeamColorRow[]> => {
+export const loadTeamSheetWithColors = async (file: File | ArrayBuffer): Promise<TeamColorRow[]> => {
   try {
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = file instanceof ArrayBuffer ? file : await file.arrayBuffer();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(arrayBuffer);
 

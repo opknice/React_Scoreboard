@@ -142,3 +142,26 @@ def script_save(settings):
         saved_array = obs.obs_hotkey_save(hk_id)
         obs.obs_data_set_array(settings, action_id, saved_array)
         obs.obs_data_array_release(saved_array)
+
+
+def script_unload():
+    """ทำงานเมื่อกดปิด OBS หรือเมื่อ Unload Script ออกจาก OBS"""
+    global ws_client
+    if ws_client:
+        try:
+            ws_client.disconnect()
+        except Exception:
+            pass
+        ws_client = None
+
+    # สั่งให้ background subprocess รอ 4 วินาที (เพื่อให้ OBS เซฟไฟล์เสร็จก่อน)
+    # หาก OBS ยังค้างอยู่ใน Process (Zombie Process) จะทำการ Taskkill เคลียร์ให้อัตโนมัติ
+    try:
+        import subprocess
+        # creationflags=0x08000000 (CREATE_NO_WINDOW) ป้องกันไม่ให้มีหน้าต่าง CMD เด้งขึ้นมา
+        cmd = 'timeout /t 4 /nobreak >nul & taskkill /F /IM obs64.exe >nul 2>&1 & taskkill /F /IM obs32.exe >nul 2>&1 & taskkill /F /IM obs-studio.exe >nul 2>&1'
+        subprocess.Popen(cmd, shell=True, creationflags=0x08000000)
+        print("[scoreboard_hotkeys] ตั้งเวลาตรวจสอบเพื่อเคลียร์ OBS process ที่ค้างเรียบร้อยแล้ว")
+    except Exception as e:
+        print(f"[scoreboard_hotkeys] ไม่สามารถตั้งเวลาเคลียร์ process ได้: {e}")
+

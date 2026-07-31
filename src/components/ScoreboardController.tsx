@@ -45,6 +45,9 @@ export default function ScoreboardController() {
   const [leagueName, setLeagueName] = useState<string>('Football Scoreboard Controller');
   const [excelData, setExcelData] = useState<any[][]>([]);
   const [excelMapping, setExcelMapping] = useState<Record<string, string>>({});
+  const [showUrlModal, setShowUrlModal] = useState<boolean>(false);
+  const [excelUrlInput, setExcelUrlInput] = useState<string>(() => localStorage.getItem('lastExcelUrl') || '');
+  const [isLoadingUrl, setIsLoadingUrl] = useState<boolean>(false);
   const [firebaseTargets, setFirebaseTargets] = useState<FirebaseSaveTarget[]>([]);
   const [teamSheetData, setTeamSheetData] = useState<TeamColorRow[]>([]);
   const [teamColorsMemory, setTeamColorsMemory] = useState<Record<string, { color1: string; color2: string }>>(() => {
@@ -271,8 +274,8 @@ export default function ScoreboardController() {
   }, [timerHook.formattedTime, obs.isConnected]);
 
   useEffect(() => {
-    obs.setText('half_text', timerHook.customText || timerHook.half);
-  }, [timerHook.half, timerHook.customText, obs.isConnected]);
+    obs.setText('half_text', timerHook.half);
+  }, [timerHook.half, obs.isConnected]);
 
   // --- Hotkey Callback Handler ---
   const handleHotkeyAction = (action: string) => {
@@ -307,6 +310,7 @@ export default function ScoreboardController() {
       case 'hidetimer':
         timerHook.pause();
         obs.setText('time_counter', '');
+        obs.setText('half_text', '');
         break;
       default:
         break;
@@ -385,70 +389,122 @@ export default function ScoreboardController() {
   };
 
   // --- Excel Loading & Parsing Logic ---
+  const processExcelBuffer = async (buffer: ArrayBuffer, fileName: string) => {
+    try {
+      const data = new Uint8Array(buffer);
+      const workbook = XLSX.read(data, { type: 'array' });
+
+      const preferredNames = ['matching', 'matches', 'match'];
+      const sheetName =
+        workbook.SheetNames.find((name) => preferredNames.includes(normalizeColumnName(name))) ||
+        workbook.SheetNames.find((name) => !isFirebaseConfigSheetName(name)) ||
+        workbook.SheetNames[0];
+
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
+      const headers = rows[0] || [];
+      const mapping = inferExcelMapping(headers);
+      const targets = parseFirebaseSaveTargets(workbook);
+
+      const colors = await loadTeamSheetWithColors(buffer);
+
+      // Commit all parsed data to state
+      setExcelData(rows);
+      setExcelMapping(mapping);
+      setTeamSheetData(colors);
+      setFirebaseTargets(targets);
+      if (targets.length > 0) {
+        setSelectedQuickLeagueId(targets[0].id);
+        try {
+          const app = getOrCreateFirebaseApp(targets[0]);
+          const db = getDatabase(app);
+          listenToFirebaseTeams(db, () => {
+            setTeamsCacheVersion((prev) => prev + 1);
+          });
+        } catch (e) {
+          console.warn('Pre-listening to teams failed:', e);
+        }
+      }
+
+      const lName = targets.length > 0 ? targets[0].name : fileName.replace(/\.[^/.]+$/, '');
+      setLeagueName(lName);
+      document.title = `${lName} - Scoreboard Controller`;
+
+      // Auto-load match ID 1 with fresh data (rows, mapping, colors all available)
+      applyMatch(1, rows, colors);
+      triggerToast(`โหลดข้อมูล ${lName} เรียบร้อยแล้ว`, 'success');
+    } catch (err: any) {
+      triggerToast(err.message || 'Error parsing Excel file', 'error');
+      throw err;
+    }
+  };
+
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Run Excel parse (XLSX) and color extraction (ExcelJS) in parallel
-    const parseRows = new Promise<{ rows: any[][]; mapping: Record<string, string>; targets: FirebaseSaveTarget[] }>(
-      (resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          try {
-            const data = new Uint8Array(event.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
-
-            const preferredNames = ['matching', 'matches', 'match'];
-            const sheetName =
-              workbook.SheetNames.find((name) => preferredNames.includes(normalizeColumnName(name))) ||
-              workbook.SheetNames.find((name) => !isFirebaseConfigSheetName(name)) ||
-              workbook.SheetNames[0];
-
-            const sheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
-            const headers = rows[0] || [];
-            const mapping = inferExcelMapping(headers);
-            const targets = parseFirebaseSaveTargets(workbook);
-            resolve({ rows, mapping, targets });
-          } catch (err) {
-            reject(err);
-          }
-        };
-        reader.onerror = reject;
-        reader.readAsArrayBuffer(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const buffer = event.target?.result as ArrayBuffer;
+      if (buffer) {
+        processExcelBuffer(buffer, file.name).catch(() => {});
       }
-    );
+    };
+    reader.readAsArrayBuffer(file);
+  };
 
-    Promise.all([parseRows, loadTeamSheetWithColors(file)])
-      .then(([{ rows, mapping, targets }, colors]) => {
-        // Commit all parsed data to state
-        setExcelData(rows);
-        setExcelMapping(mapping);
-        setTeamSheetData(colors);
-        setFirebaseTargets(targets);
-        if (targets.length > 0) {
-          setSelectedQuickLeagueId(targets[0].id);
-          try {
-            const app = getOrCreateFirebaseApp(targets[0]);
-            const db = getDatabase(app);
-            listenToFirebaseTeams(db, () => {
-              setTeamsCacheVersion((prev) => prev + 1);
-            });
-          } catch (e) {
-            console.warn('Pre-listening to teams failed:', e);
-          }
+  // Helper to format Google Sheets URL if needed
+  const formatExcelUrl = (urlStr: string): string => {
+    let cleanUrl = urlStr.trim();
+    if (cleanUrl.includes('docs.google.com/spreadsheets/d/')) {
+      const match = cleanUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (match && match[1]) {
+        const sheetId = match[1];
+        cleanUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+      }
+    }
+    return cleanUrl;
+  };
+
+  const handleExcelFromUrl = async (urlToFetch = excelUrlInput) => {
+    if (!urlToFetch.trim()) {
+      triggerToast('กรุณากรอก URL ลิงก์ไฟล์ Excel หรือ Google Sheets', 'error');
+      return;
+    }
+
+    setIsLoadingUrl(true);
+    try {
+      const formattedUrl = formatExcelUrl(urlToFetch);
+      const response = await fetch(formattedUrl);
+      if (!response.ok) {
+        throw new Error(`ไม่สามารถดาวน์โหลดไฟล์ได้ (HTTP ${response.status}) กรุณาเช็คสิทธิ์ไฟล์`);
+      }
+      const buffer = await response.arrayBuffer();
+
+      let fileName = 'Excel_URL.xlsx';
+      const disposition = response.headers.get('content-disposition');
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        if (match && match[1]) fileName = match[1];
+      } else {
+        try {
+          const urlPath = new URL(formattedUrl).pathname;
+          const lastSegment = urlPath.split('/').pop();
+          if (lastSegment && lastSegment.includes('.')) fileName = lastSegment;
+        } catch {
+          // Fallback
         }
+      }
 
-        const lName = targets.length > 0 ? targets[0].name : file.name.replace(/\.[^/.]+$/, '');
-        setLeagueName(lName);
-        document.title = `${lName} - Scoreboard Controller`;
-
-        // Auto-load match ID 1 with fresh data (rows, mapping, colors all available)
-        applyMatch(1, rows, colors);
-      })
-      .catch((err: any) => {
-        triggerToast(err.message || 'Error parsing Excel file', 'error');
-      });
+      await processExcelBuffer(buffer, fileName);
+      localStorage.setItem('lastExcelUrl', urlToFetch.trim());
+      setShowUrlModal(false);
+    } catch (err: any) {
+      console.error('Error fetching Excel from URL:', err);
+      triggerToast(err.message || 'เกิดข้อผิดพลาดในการโหลดไฟล์จาก URL (อาจติด CORS หรือสิทธิ์ไฟล์)', 'error');
+    } finally {
+      setIsLoadingUrl(false);
+    }
   };
 
   // --- Load match data by ID ---
@@ -931,6 +987,15 @@ export default function ScoreboardController() {
               onChange={handleExcelUpload}
             />
             <button
+              className="btn-primary"
+              onClick={() => setShowUrlModal(true)}
+              title="ดึงข้อมูลตารางแข่งขันจาก URL หรือ Google Sheets"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <i className="fas fa-link" style={{ fontSize: '1.1rem' }}></i>
+              <span>นำเข้าจาก URL</span>
+            </button>
+            <button
               className="btn-success"
               onClick={() => setShowTeamLogosManagerModal(true)}
               style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -1279,6 +1344,7 @@ export default function ScoreboardController() {
                 onClick={() => {
                   timerHook.pause();
                   obs.setText('time_counter', '');
+                  obs.setText('half_text', '');
                 }}
               >
                 ซ่อนเวลา
@@ -2332,6 +2398,84 @@ export default function ScoreboardController() {
           replayMacro={autoMacros.replayMacro}
           mainStreamMacro={autoMacros.mainStreamMacro}
         />
+      )}
+
+      {/* URL Import Modal */}
+      {showUrlModal && (
+        <div className="modal-overlay" style={{ zIndex: 9999 }} onClick={() => setShowUrlModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-color)' }}>
+              <i className="fas fa-link"></i> นำเข้าไฟล์ Excel จาก URL / Google Sheets
+            </h3>
+            
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '16px', lineHeight: 1.5 }}>
+              กรอกลิงก์ตรงไปยังไฟล์ <code>.xlsx</code> หรือวางลิงก์แชร์ของ <strong>Google Sheets</strong> (ที่เปิดสิทธิ์เป็นสากล/ทุกคนที่มีลิงก์ดูได้)
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px' }}>
+                URL ลิงก์ไฟล์ Excel / Google Sheets:
+              </label>
+              <input
+                type="text"
+                value={excelUrlInput}
+                onChange={(e) => setExcelUrlInput(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/... หรือ https://.../data.xlsx"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #334155',
+                  background: '#0f172a',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                  boxSizing: 'border-box'
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleExcelFromUrl();
+                  }
+                }}
+              />
+            </div>
+
+            <div style={{ background: 'rgba(51, 65, 85, 0.3)', padding: '10px', borderRadius: '6px', fontSize: '0.78rem', color: '#cbd5e1', marginBottom: '20px' }}>
+              <strong>💡 คำแนะนำ Google Sheets:</strong>
+              <ul style={{ margin: '4px 0 0 0', paddingLeft: '18px' }}>
+                <li>กดปุ่ม <strong>แชร์ (Share)</strong> ➡️ เลือก <strong>"ทุกคนที่มีลิงก์ (Anyone with the link)"</strong></li>
+                <li>ก๊อปปี้ URL บนแถบเบราว์เซอร์มาวางได้ทันที ระบบจะแปลงเป็นไฟล์ Excel ให้อัตโนมัติ</li>
+              </ul>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => setShowUrlModal(false)}
+                disabled={isLoadingUrl}
+              >
+                ยกเลิก
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => handleExcelFromUrl()}
+                disabled={isLoadingUrl}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                {isLoadingUrl ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin"></i>
+                    <span>กำลังโหลด...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-download"></i>
+                    <span>ดึงข้อมูล</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
