@@ -1357,24 +1357,6 @@ export default function ScoreboardController() {
           </div>
         </div>
       </div>
-
-      {/* Labels display bar */}
-      {excelData.length > 0 && (
-        <div className="card" style={{ padding: '8px 12px' }}>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-              <strong>Label 1:</strong> {getHeaderIndex('label1') >= 0 ? excelData.slice(1).find((r) => parseInt(getMatchIdValue(r)) === matchIdInput)?.[getHeaderIndex('label1')] || '-' : '-'}
-            </div>
-            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-              <strong>Label 2:</strong> {obsGetLabel2Value() || '-'}
-            </div>
-            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-              <strong>Label 3:</strong> {getHeaderIndex('label3') >= 0 ? excelData.slice(1).find((r) => parseInt(getMatchIdValue(r)) === matchIdInput)?.[getHeaderIndex('label3')] || '-' : '-'}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Timer and Half Controls */}
       <div className="card" style={{ padding: '12px 16px' }}>
         <div className="row timer-area-container" style={{ marginBottom: 0 }}>
@@ -1508,6 +1490,23 @@ export default function ScoreboardController() {
           </button>
         </div>
       </div>
+
+      {/* Labels display bar */}
+      {excelData.length > 0 && (
+        <div className="card" style={{ padding: '8px 12px' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+              <strong>Label 1:</strong> {getHeaderIndex('label1') >= 0 ? excelData.slice(1).find((r) => parseInt(getMatchIdValue(r)) === matchIdInput)?.[getHeaderIndex('label1')] || '-' : '-'}
+            </div>
+            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+              <strong>Label 2:</strong> {obsGetLabel2Value() || '-'}
+            </div>
+            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+              <strong>Label 3:</strong> {getHeaderIndex('label3') >= 0 ? excelData.slice(1).find((r) => parseInt(getMatchIdValue(r)) === matchIdInput)?.[getHeaderIndex('label3')] || '-' : '-'}
+            </div>
+          </div>
+        </div>
+      )}
 
 
       {/* --- Settings Modal --- */}
