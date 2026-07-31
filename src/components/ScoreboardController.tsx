@@ -24,6 +24,13 @@ import AutoMacrosPanel from './AutoMacrosPanel';
 import LogoUploader from './LogoUploader';
 import TeamLogosManagerModal from './TeamLogosManagerModal';
 
+export interface SavedExcelUrl {
+  id: string;
+  name: string;
+  url: string;
+  createdAt: number;
+}
+
 export default function ScoreboardController() {
   const navigate = useNavigate();
   const timerHook = useTimer();
@@ -47,6 +54,15 @@ export default function ScoreboardController() {
   const [excelMapping, setExcelMapping] = useState<Record<string, string>>({});
   const [showUrlModal, setShowUrlModal] = useState<boolean>(false);
   const [excelUrlInput, setExcelUrlInput] = useState<string>(() => localStorage.getItem('lastExcelUrl') || '');
+  const [excelUrlNameInput, setExcelUrlNameInput] = useState<string>('');
+  const [savedExcelUrls, setSavedExcelUrls] = useState<SavedExcelUrl[]>(() => {
+    try {
+      const saved = localStorage.getItem('savedExcelUrls');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isLoadingUrl, setIsLoadingUrl] = useState<boolean>(false);
   const [firebaseTargets, setFirebaseTargets] = useState<FirebaseSaveTarget[]>([]);
   const [teamSheetData, setTeamSheetData] = useState<TeamColorRow[]>([]);
@@ -505,6 +521,45 @@ export default function ScoreboardController() {
     } finally {
       setIsLoadingUrl(false);
     }
+  };
+
+  // --- Saved URL Presets Logic ---
+  const handleSaveUrlPreset = () => {
+    const url = excelUrlInput.trim();
+    if (!url) {
+      triggerToast('กรุณากรอก URL ลิงก์ไฟล์ก่อนบันทึก', 'error');
+      return;
+    }
+    const name = excelUrlNameInput.trim() || `Excel Link (${new Date().toLocaleDateString('th-TH')})`;
+
+    const newPreset: SavedExcelUrl = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
+      name,
+      url,
+      createdAt: Date.now()
+    };
+
+    const updatedList = [newPreset, ...savedExcelUrls.filter((item) => item.url !== url)];
+    setSavedExcelUrls(updatedList);
+    localStorage.setItem('savedExcelUrls', JSON.stringify(updatedList));
+    setExcelUrlNameInput('');
+    triggerToast(`บันทึก "${name}" เรียบร้อยแล้ว`, 'success');
+  };
+
+  const handleDeleteUrlPreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updatedList = savedExcelUrls.filter((item) => item.id !== id);
+    setSavedExcelUrls(updatedList);
+    localStorage.setItem('savedExcelUrls', JSON.stringify(updatedList));
+    triggerToast('ลบรายการบันทึกเรียบร้อยแล้ว', 'info');
+  };
+
+  const handleSelectUrlPreset = (preset: SavedExcelUrl) => {
+    setExcelUrlInput(preset.url);
+    if (!excelUrlNameInput) {
+      setExcelUrlNameInput(preset.name);
+    }
+    handleExcelFromUrl(preset.url);
   };
 
   // --- Load match data by ID ---
@@ -2412,32 +2467,120 @@ export default function ScoreboardController() {
               กรอกลิงก์ตรงไปยังไฟล์ <code>.xlsx</code> หรือวางลิงก์แชร์ของ <strong>Google Sheets</strong> (ที่เปิดสิทธิ์เป็นสากล/ทุกคนที่มีลิงก์ดูได้)
             </p>
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px' }}>
-                URL ลิงก์ไฟล์ Excel / Google Sheets:
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>
+                ตั้งชื่อบันทึก / ชื่อลีก (อุปกรณ์เสริม):
               </label>
               <input
                 type="text"
-                value={excelUrlInput}
-                onChange={(e) => setExcelUrlInput(e.target.value)}
-                placeholder="https://docs.google.com/spreadsheets/d/... หรือ https://.../data.xlsx"
+                value={excelUrlNameInput}
+                onChange={(e) => setExcelUrlNameInput(e.target.value)}
+                placeholder="เช่น พรีเมียร์ลีก 2026, ฟุตบอล อบต."
                 style={{
                   width: '100%',
-                  padding: '10px 12px',
+                  padding: '8px 12px',
                   borderRadius: '6px',
                   border: '1px solid #334155',
                   background: '#0f172a',
                   color: '#fff',
-                  fontSize: '0.9rem',
+                  fontSize: '0.85rem',
                   boxSizing: 'border-box'
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleExcelFromUrl();
-                  }
                 }}
               />
             </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>
+                URL ลิงก์ไฟล์ Excel / Google Sheets:
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  value={excelUrlInput}
+                  onChange={(e) => setExcelUrlInput(e.target.value)}
+                  placeholder="https://docs.google.com/spreadsheets/d/... หรือ https://.../data.xlsx"
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #334155',
+                    background: '#0f172a',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    boxSizing: 'border-box'
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleExcelFromUrl();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={handleSaveUrlPreset}
+                  title="บันทึก URL นี้ไว้ใช้ครั้งต่อไป"
+                  style={{ whiteSpace: 'nowrap', padding: '8px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <i className="fas fa-bookmark"></i> บันทึก
+                </button>
+              </div>
+            </div>
+
+            {/* Saved Presets Section */}
+            {savedExcelUrls.length > 0 && (
+              <div style={{ marginBottom: '16px', background: 'rgba(15, 23, 42, 0.6)', padding: '10px 12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <i className="fas fa-star" style={{ color: '#f59e0b' }}></i>
+                  <span>รายการที่บันทึกไว้ (คลิกเพื่อดึงข้อมูลทันที):</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {savedExcelUrls.map((preset) => (
+                    <div
+                      key={preset.id}
+                      onClick={() => handleSelectUrlPreset(preset)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: '#1e293b',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s',
+                        border: '1px solid #334155'
+                      }}
+                      className="preset-item-card"
+                    >
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '8px' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem', color: '#38bdf8', marginRight: '8px' }}>
+                          📌 {preset.name}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          {preset.url}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteUrlPreset(preset.id, e)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                          fontSize: '0.8rem',
+                          flexShrink: 0
+                        }}
+                        title="ลบออกจากรายการบันทึก"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={{ background: 'rgba(51, 65, 85, 0.3)', padding: '10px', borderRadius: '6px', fontSize: '0.78rem', color: '#cbd5e1', marginBottom: '20px' }}>
               <strong>💡 คำแนะนำ Google Sheets:</strong>
