@@ -623,7 +623,7 @@ button:disabled {
 
 .overlay-title {
   margin: 0;
-  font-size: clamp(36px, 6vw, 72px);
+  font-size: 44px;
   font-weight: 400;
   line-height: 1.2;
   text-shadow: 0 3px 12px rgba(0, 0, 0, 0.9);
@@ -641,7 +641,8 @@ button:disabled {
 
 /* Table styling */
 .overlay-table {
-  width: min(1600px, 96vw);
+  width: 100%;
+  max-width: 1400px;
   margin: 0 auto;
   border-collapse: separate;
   border-spacing: 0;
@@ -658,7 +659,7 @@ button:disabled {
   padding: 18px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   text-align: center;
-  font-size: clamp(22px, 2.5vw, 38px);
+  font-size: 24px;
   font-weight: 400;
 }
 
@@ -704,7 +705,8 @@ button:disabled {
 
 /* Results styling */
 .overlay-results {
-  width: min(1400px, 96vw);
+  width: 100%;
+  max-width: 1200px;
   margin: 0 auto;
   display: grid;
   gap: 32px;
@@ -722,7 +724,7 @@ button:disabled {
 .overlay-date-title {
   padding: 16px 20px;
   color: #e2e8f0;
-  font-size: clamp(20px, 2.4vw, 32px);
+  font-size: 24px;
   font-weight: 500;
   text-align: center;
   border-bottom: 2px solid rgba(255, 255, 255, 0.15) !important;
@@ -736,7 +738,7 @@ button:disabled {
   gap: 20px;
   padding: 16px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  font-size: clamp(22px, 2.8vw, 42px);
+  font-size: 26px;
   font-weight: 400;
 }
 
@@ -789,7 +791,7 @@ button:disabled {
   gap: 36px;
   padding-left: 100%;
   color: #ffffff;
-  font-size: clamp(16px, 3vw, 42px);
+  font-size: 28px;
   font-weight: 400;
   white-space: nowrap;
   animation: scroll-left-overlay var(--ticker-duration, 75s) linear infinite;
