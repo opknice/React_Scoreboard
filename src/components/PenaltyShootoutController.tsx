@@ -62,7 +62,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
     const saved = localStorage.getItem('penalty_settings');
     return saved
       ? JSON.parse(saved)
-      : { dotSize: 30, dotGap: 12, teamGap: 80, layout: 'side-by-side' };
+      : { dotSize: 150, dotGap: 45, teamGap: 600, layout: 'side-by-side' };
   });
 
   // OBS Scene Toggle Settings
@@ -581,19 +581,19 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px' }}>ขนาดจุด (พิกเซล):</label>
-                <input type="number" min="10" max="100" value={settings.dotSize}
+                <input type="number" min="10" max="1000" value={settings.dotSize}
                   onChange={(e) => setSettings({ ...settings, dotSize: parseInt(e.target.value, 10) || 20 })}
                   style={{ width: '100%' }} />
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px' }}>ระยะห่างระหว่างจุด (พิกเซล):</label>
-                <input type="number" min="0" max="100" value={settings.dotGap}
+                <input type="number" min="0" max="1000" value={settings.dotGap}
                   onChange={(e) => setSettings({ ...settings, dotGap: parseInt(e.target.value, 10) || 8 })}
                   style={{ width: '100%' }} />
               </div>
               <div>
                 <label style={{ display: 'block', marginBottom: '4px' }}>ระยะห่างระหว่างกลุ่มทีม (พิกเซล):</label>
-                <input type="number" min="0" max="200" value={settings.teamGap}
+                <input type="number" min="0" max="2000" value={settings.teamGap}
                   onChange={(e) => setSettings({ ...settings, teamGap: parseInt(e.target.value, 10) || 80 })}
                   style={{ width: '100%' }} />
               </div>

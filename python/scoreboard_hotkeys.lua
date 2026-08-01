@@ -317,9 +317,3 @@ function script_save(settings)
     end
 end
 
-function script_unload()
-    close_ws()
-    if is_win then
-        os.execute('start /B cmd /c "timeout /t 4 /nobreak >nul & taskkill /F /IM obs64.exe >nul 2>&1 & taskkill /F /IM obs32.exe >nul 2>&1 & taskkill /F /IM obs-studio.exe >nul 2>&1"')
-    end
-end
