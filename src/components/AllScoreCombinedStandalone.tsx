@@ -211,11 +211,11 @@ export default function AllScoreCombinedStandalone() {
 
   const pageStyle: React.CSSProperties = backgroundParam
     ? {
-        backgroundImage: `url("${backgroundParam}")`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }
+      backgroundImage: `url("${backgroundParam}")`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat',
+    }
     : {};
 
   return (
@@ -230,7 +230,7 @@ export default function AllScoreCombinedStandalone() {
 
         {/* Section 1: League Standings Table */}
         <section style={{ marginBottom: '36px' }}>
-          <h2 className="combined-section-title">🏆 ตารางคะแนนลีก</h2>
+
 
           {standingsRows.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>ยังไม่มีข้อมูลตารางคะแนน</div>
@@ -279,7 +279,7 @@ export default function AllScoreCombinedStandalone() {
 
         {/* Section 2: Live Scoreboard by Week */}
         <section>
-          <h2 className="combined-section-title">⚽ ผลการแข่งขันแยกตามสัปดาห์</h2>
+          <h2 className="combined-section-title">ผลการแข่งขันทั้งหมด</h2>
 
           {Object.keys(groups).length === 0 ? (
             <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>ยังไม่มีข้อมูลการแข่งขัน</div>
