@@ -317,3 +317,8 @@ function script_save(settings)
     end
 end
 
+function script_unload()
+    close_ws()
+end
+
+

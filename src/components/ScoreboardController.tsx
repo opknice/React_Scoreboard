@@ -2467,8 +2467,7 @@ export default function ScoreboardController() {
         <AutoMacrosPanel
           obs={obs}
           onClose={() => setShowAutoMacrosModal(false)}
-          replayMacro={autoMacros.replayMacro}
-          mainStreamMacro={autoMacros.mainStreamMacro}
+          customMacrosHook={autoMacros}
         />
       )}
 
