@@ -3,6 +3,7 @@ import ScoreboardController from './components/ScoreboardController';
 import OverlayContainer from './components/OverlayContainer';
 import AllScoresStandalone from './components/AllScoresStandalone';
 import LeagueTableStandalone from './components/LeagueTableStandalone';
+import AllScoreCombinedStandalone from './components/AllScoreCombinedStandalone';
 import PenaltyShootoutController from './components/PenaltyShootoutController';
 import PenaltyDotsOverlay from './components/PenaltyDotsOverlay';
 import AuthGuard from './components/AuthGuard';
@@ -34,6 +35,7 @@ function App() {
         {/* Standalone Views */}
         <Route path="/all-scores" element={<AllScoresStandalone />} />
         <Route path="/league-table" element={<LeagueTableStandalone />} />
+        <Route path="/all-score-combined" element={<AllScoreCombinedStandalone />} />
         
         {/* Penalty Shootout */}
         <Route

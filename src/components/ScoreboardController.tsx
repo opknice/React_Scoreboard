@@ -923,6 +923,8 @@ export default function ScoreboardController() {
       urlString = `${host}/league-table?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
     } else if (standaloneFile === 'all-scores') {
       urlString = `${host}/all-scores?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+    } else if (standaloneFile === 'all-score-combined') {
+      urlString = `${host}/all-score-combined?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
     } else {
       urlString = `${host}/overlay?league=${target.id}&view=${viewType}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
       if (viewType === 'ticker') {
@@ -1952,6 +1954,13 @@ export default function ScoreboardController() {
               </button>
               <button className="btn-success" onClick={() => handleCopyOverlayUrl('results')}>
                 <i className="fas fa-list"></i> Copy Match Results URL
+              </button>
+              <button
+                className="btn-primary"
+                style={{ background: '#0ea5e9', borderColor: '#0ea5e9', fontWeight: 'bold' }}
+                onClick={() => handleCopyOverlayUrl('combined', 'all-score-combined')}
+              >
+                <i className="fas fa-trophy"></i> Copy Combined All Score & Table URL
               </button>
 
               {/* Ticker Speed & Copy Button Box */}
