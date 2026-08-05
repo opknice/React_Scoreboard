@@ -89,28 +89,18 @@ export default function AllScoreCombinedStandalone() {
 
   if (loading) {
     return (
-      <div className="overlay-status" style={{ minHeight: '100vh' }}>
-        กำลังโหลดข้อมูลการแข่งขันและตารางคะแนน...
+      <div className="combined-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '1.2rem', color: '#94a3b8' }}>กำลังโหลดข้อมูลการแข่งขันและตารางคะแนน...</div>
       </div>
     );
   }
 
   if (errorMsg) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          padding: '20px',
-          color: '#ef4444',
-          textAlign: 'center',
-        }}
-      >
+      <div className="combined-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' }}>
         <div>
-          <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>⚠️ เกิดข้อผิดพลาด</h1>
-          <p style={{ fontSize: '1.2rem', color: '#cbd5e1' }}>{errorMsg}</p>
+          <h1 style={{ fontSize: '1.8rem', color: '#ef4444', marginBottom: '1rem' }}>⚠️ เกิดข้อผิดพลาด</h1>
+          <p style={{ fontSize: '1.1rem', color: '#cbd5e1' }}>{errorMsg}</p>
         </div>
       </div>
     );
@@ -198,7 +188,7 @@ export default function AllScoreCombinedStandalone() {
     return (
       <img
         key={`${logoSrc}-${teamName}`}
-        className="overlay-logo"
+        className="combined-logo"
         src={logoSrc}
         alt={teamName}
         onError={(e) => {
@@ -219,52 +209,34 @@ export default function AllScoreCombinedStandalone() {
     return 'overlay-draw';
   };
 
-  const mainStyle: React.CSSProperties = backgroundParam
+  const pageStyle: React.CSSProperties = backgroundParam
     ? {
         backgroundImage: `url("${backgroundParam}")`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
-        minHeight: '100vh',
-        width: '100%',
-        paddingBottom: '40px',
       }
-    : {
-        minHeight: '100vh',
-        width: '100%',
-        paddingBottom: '40px',
-      };
+    : {};
 
   return (
-    <div style={mainStyle}>
-      <div className="overlay-app">
+    <div className="combined-page" style={pageStyle}>
+      <div className="combined-container">
         {showHeader && (
-          <header className="overlay-header">
-            {logoParam && <img src={logoParam} alt="" />}
-            <h1 className="overlay-title">{title}</h1>
+          <header className="combined-header">
+            {logoParam && <img src={logoParam} alt="" style={{ height: '48px', objectFit: 'contain', marginBottom: '8px' }} />}
+            <h1>{title}</h1>
           </header>
         )}
 
         {/* Section 1: League Standings Table */}
-        <section style={{ marginBottom: '40px' }}>
-          <h2
-            style={{
-              textAlign: 'center',
-              color: '#38bdf8',
-              fontSize: '1.8rem',
-              fontWeight: 700,
-              marginBottom: '16px',
-              textShadow: '0 2px 4px rgba(0,0,0,0.5)',
-            }}
-          >
-            🏆 ตารางคะแนนลีก
-          </h2>
+        <section style={{ marginBottom: '36px' }}>
+          <h2 className="combined-section-title">🏆 ตารางคะแนนลีก</h2>
 
           {standingsRows.length === 0 ? (
-            <div className="overlay-status">ยังไม่มีข้อมูลตารางคะแนน</div>
+            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>ยังไม่มีข้อมูลตารางคะแนน</div>
           ) : (
-            <div style={{ width: 'min(1600px, 96vw)', margin: '0 auto', overflowX: 'auto' }}>
-              <table className="overlay-table">
+            <div className="combined-table-wrapper">
+              <table className="combined-table">
                 <thead>
                   <tr>
                     <th>อันดับ</th>
@@ -282,10 +254,10 @@ export default function AllScoreCombinedStandalone() {
                 <tbody>
                   {standingsRows.map((row, index) => (
                     <tr key={row.team}>
-                      <td style={{ fontWeight: 400 }}>{index + 1}</td>
-                      <td className="overlay-team-cell">
+                      <td>{index + 1}</td>
+                      <td className="combined-team-cell">
                         {renderLogo(row.logo, row.team)}
-                        {row.team}
+                        <span>{row.team}</span>
                       </td>
                       <td>{row.P}</td>
                       <td>{row.W}</td>
@@ -306,60 +278,51 @@ export default function AllScoreCombinedStandalone() {
         </section>
 
         {/* Section 2: Live Scoreboard by Week */}
-        <section className="overlay-results">
-          <h2
-            style={{
-              textAlign: 'center',
-              color: '#fbbf24',
-              fontSize: '1.8rem',
-              fontWeight: 700,
-              marginBottom: '20px',
-              textShadow: '0 2px 4px rgba(0,0,0,0.5)',
-            }}
-          >
-            ⚽ ผลการแข่งขันแยกตามสัปดาห์
-          </h2>
+        <section>
+          <h2 className="combined-section-title">⚽ ผลการแข่งขันแยกตามสัปดาห์</h2>
 
           {Object.keys(groups).length === 0 ? (
-            <div className="overlay-status">ยังไม่มีข้อมูลการแข่งขัน</div>
+            <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>ยังไม่มีข้อมูลการแข่งขัน</div>
           ) : (
-            Object.keys(groups)
-              .sort((a, b) => {
-                const weekA = parseInt(a.split('|||')[1]) || 0;
-                const weekB = parseInt(b.split('|||')[1]) || 0;
-                if (weekA !== weekB) return weekA - weekB;
-                return a.split('|||')[0].localeCompare(b.split('|||')[0]);
-              })
-              .map((key) => {
-                const [date, weekNum] = key.split('|||');
-                return (
-                  <div key={key} className="overlay-date-group">
-                    <div className="overlay-date-title">
-                      วันที่ {date} (WEEK #{weekNum})
-                    </div>
+            <div className="combined-results">
+              {Object.keys(groups)
+                .sort((a, b) => {
+                  const weekA = parseInt(a.split('|||')[1]) || 0;
+                  const weekB = parseInt(b.split('|||')[1]) || 0;
+                  if (weekA !== weekB) return weekA - weekB;
+                  return a.split('|||')[0].localeCompare(b.split('|||')[0]);
+                })
+                .map((key) => {
+                  const [date, weekNum] = key.split('|||');
+                  return (
+                    <div key={key} className="combined-date-group">
+                      <div className="combined-date-title">
+                        วันที่ {date} (WEEK #{weekNum})
+                      </div>
 
-                    {groups[key].map((m) => {
-                      const scoreA = Number(m.scoreA) || 0;
-                      const scoreB = Number(m.scoreB) || 0;
-                      return (
-                        <div key={m.id} className="overlay-match-row">
-                          <div className={`overlay-team-side overlay-side-a ${getResultClassColor(scoreA, scoreB)}`}>
-                            <span>{m.teamA}</span>
-                            {renderLogo(extractMatchLogo(m, 'A'), m.teamA)}
+                      {groups[key].map((m) => {
+                        const scoreA = Number(m.scoreA) || 0;
+                        const scoreB = Number(m.scoreB) || 0;
+                        return (
+                          <div key={m.id} className="combined-match-row">
+                            <div className={`combined-team-side combined-side-a ${getResultClassColor(scoreA, scoreB)}`}>
+                              <span>{m.teamA}</span>
+                              {renderLogo(extractMatchLogo(m, 'A'), m.teamA)}
+                            </div>
+                            <div className="combined-score">
+                              {scoreA} - {scoreB}
+                            </div>
+                            <div className={`combined-team-side combined-side-b ${getResultClassColor(scoreB, scoreA)}`}>
+                              {renderLogo(extractMatchLogo(m, 'B'), m.teamB)}
+                              <span>{m.teamB}</span>
+                            </div>
                           </div>
-                          <div className="overlay-score">
-                            {scoreA} - {scoreB}
-                          </div>
-                          <div className={`overlay-team-side overlay-side-b ${getResultClassColor(scoreB, scoreA)}`}>
-                            {renderLogo(extractMatchLogo(m, 'B'), m.teamB)}
-                            <span>{m.teamB}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+            </div>
           )}
         </section>
       </div>
