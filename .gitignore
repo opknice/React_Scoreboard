@@ -28,5 +28,8 @@ dist-ssr
 *.zip
 *.7z
 
+# Preview cache folder (auto-generated, no need to commit)
+replays/_preview_cache/
+
 # Template files with secrets
 template/Untitled/basic.ini

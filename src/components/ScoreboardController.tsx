@@ -1453,6 +1453,13 @@ export default function ScoreboardController() {
             >
               ยิงจุดโทษ
             </button>
+            <button
+              className="btn-success btn-sm"
+              onClick={() => window.open('/instant-replay', '_blank', 'noopener,noreferrer')}
+              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', fontWeight: 'bold' }}
+            >
+              🎬 PlayInstant VAR & Replay
+            </button>
           </div>
         </div>
       </div>
