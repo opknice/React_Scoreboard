@@ -976,6 +976,15 @@ export default function ScoreboardController() {
     }
   };
 
+  const openVarReplay = () => {
+    const varUrl = `${import.meta.env.BASE_URL}var-replay`;
+    window.open(
+      varUrl,
+      'var-replay-control',
+      'popup=yes,width=520,height=900,resizable=yes,scrollbars=yes'
+    );
+  };
+
   return (
     <div className="container">
       {/* Toast Notifications */}
@@ -1452,6 +1461,15 @@ export default function ScoreboardController() {
               }}
             >
               ยิงจุดโทษ
+            </button>
+            <button
+              className="btn-warning btn-sm"
+              onClick={openVarReplay}
+              title="เปิดหน้า VAR Replay ในหน้าต่างใหม่"
+              style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+            >
+              <i className="fas fa-video" style={{ fontSize: '0.9rem' }}></i>
+              <span>VAR Replay</span>
             </button>
           </div>
         </div>

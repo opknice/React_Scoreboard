@@ -6,13 +6,16 @@ import LeagueTableStandalone from './components/LeagueTableStandalone';
 import AllScoreCombinedStandalone from './components/AllScoreCombinedStandalone';
 import PenaltyShootoutController from './components/PenaltyShootoutController';
 import PenaltyDotsOverlay from './components/PenaltyDotsOverlay';
+import VarReplayPage from './components/VarReplayPage';
 import AuthGuard from './components/AuthGuard';
 import AdminWhitelist from './components/AdminWhitelist';
 import './App.css';
 
 function App() {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <Routes>
         {/* Scoreboard Controller (main panel protected by Google Auth + Whitelist) */}
         <Route
@@ -47,6 +50,17 @@ function App() {
           }
         />
         <Route path="/dots" element={<PenaltyDotsOverlay />} />
+
+        {/* VAR Replay: control page and OBS Browser Source screen */}
+        <Route
+          path="/var-replay"
+          element={
+            <AuthGuard>
+              <VarReplayPage mode="control" />
+            </AuthGuard>
+          }
+        />
+        <Route path="/var-replay/screen" element={<VarReplayPage mode="screen" />} />
 
         {/* Catch-all redirect to main panel */}
         <Route path="*" element={<Navigate to="/" replace />} />
