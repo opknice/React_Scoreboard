@@ -93,11 +93,12 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
         'InputActiveStateChanged',
         'InputShowStateChanged',
         'InputMuteStateChanged',
-        // 'InputVolumeChanged' excluded — fires 60fps during audio playback, floods console & slows down app
-        // 'InputAudioBalanceChanged' excluded
-        // 'InputAudioSyncOffsetChanged' excluded
-        // 'InputAudioTracksChanged' excluded
-        // 'InputAudioMonitorTypeChanged' excluded
+        'InputVolumeChanged',
+        'InputAudioBalanceChanged',
+        'InputAudioSyncOffsetChanged',
+        'InputAudioTracksChanged',
+        'InputAudioMonitorTypeChanged',
+        'InputVolumeMeters',
         
         // Transitions events
         'CurrentSceneTransitionChanged',
@@ -120,7 +121,7 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
         'SceneItemEnableStateChanged',
         'SceneItemLockStateChanged',
         'SceneItemSelected',
-        // 'SceneItemTransformChanged' excluded — fires 60fps during media playback, floods console & slows down app
+        'SceneItemTransformChanged',
         
         // Outputs events
         'StreamStateChanged',
