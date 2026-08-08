@@ -54,14 +54,17 @@ function useReplayChannel() {
   return { channelRef, send };
 }
 
-function Header() {
+function Header({ onCopyUrl, copied }: { onCopyUrl: () => void; copied: boolean }) {
   return (
     <header className="var-header">
       <div>
         <div className="var-brand"><span>LIVE / </span>VAR REPLAY STUDIO</div>
         <div className="var-subtitle">MATCH REVIEW CONSOLE</div>
       </div>
-      <div className="var-status-pill"><span className="var-status-dot" /> SYSTEM READY</div>
+      <button className={`var-button var-button-header ${copied ? 'copied' : ''}`} type="button" onClick={onCopyUrl}>
+        <i className={copied ? 'fas fa-check' : 'fas fa-link'}></i>
+        <span>{copied ? 'COPIED!' : 'COPY OBS URL'}</span>
+      </button>
     </header>
   );
 }
@@ -176,11 +179,8 @@ function VarReplayScreen() {
 
 function VarReplayControl() {
   const timelineRef = useRef<HTMLDivElement>(null);
-  const navigatorRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const markerDragRef = useRef<Marker | null>(null);
-  const navigatorDragRef = useRef<{ action: 'left' | 'right' | 'window'; startX: number; startView: number; startWidth: number } | null>(null);
   const { channelRef, send } = useReplayChannel();
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [selectedFolderName, setSelectedFolderName] = useState('');
@@ -192,23 +192,31 @@ function VarReplayControl() {
   const [speed, setSpeed] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [viewStart, setViewStart] = useState(0);
-  const [viewWidth, setViewWidth] = useState(1);
-  const [dragOver, setDragOver] = useState(false);
-  const [message, setMessage] = useState('เลือกไฟล์หรือโฟลเดอร์เพื่อเริ่มรีวิว');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const timeToPercent = useCallback((time: number) => {
     if (!duration) return 0;
-    return Math.max(0, Math.min(100, ((time / duration - viewStart) / viewWidth) * 100));
-  }, [duration, viewStart, viewWidth]);
+    return Math.max(0, Math.min(100, (time / duration) * 100));
+  }, [duration]);
 
   const percentToTime = useCallback((percent: number) => {
-    return Math.max(0, Math.min(duration, (viewStart + (percent / 100) * viewWidth) * duration));
-  }, [duration, viewStart, viewWidth]);
+    return Math.max(0, Math.min(duration, (percent / 100) * duration));
+  }, [duration]);
 
   const sendCommand = useCallback((action: string, value?: number | Transform) => {
     send({ type: 'cmd', action, value });
   }, [send]);
+
+  const togglePlayPause = useCallback(() => {
+    if (isPlaying) {
+      sendCommand('pause');
+      setIsPlaying(false);
+    } else {
+      sendCommand('play');
+      setIsPlaying(true);
+    }
+  }, [isPlaying, sendCommand]);
 
   useEffect(() => {
     const channel = channelRef.current;
@@ -233,44 +241,28 @@ function VarReplayControl() {
         sendCommand(markerDragRef.current === 'A' ? 'setA' : 'setB', time);
         if (markerDragRef.current === 'A') setMarkerA(time); else setMarkerB(time);
       }
-      const navDrag = navigatorDragRef.current;
-      if (!navDrag || !navigatorRef.current) return;
-      const rect = navigatorRef.current.getBoundingClientRect();
-      const delta = (event.clientX - navDrag.startX) / rect.width;
-      if (navDrag.action === 'window') {
-        setViewStart(Math.max(0, Math.min(1 - viewWidth, navDrag.startView + delta)));
-      } else if (navDrag.action === 'left') {
-        const nextStart = Math.max(0, Math.min(navDrag.startView + navDrag.startWidth - 0.05, navDrag.startView + delta));
-        setViewStart(nextStart);
-        setViewWidth(navDrag.startWidth + navDrag.startView - nextStart);
-      } else {
-        setViewWidth(Math.max(0.05, Math.min(1 - navDrag.startView, navDrag.startWidth + delta)));
-      }
     };
-    const onPointerUp = () => { markerDragRef.current = null; navigatorDragRef.current = null; };
+    const onPointerUp = () => { markerDragRef.current = null; };
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     return () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, [percentToTime, sendCommand, viewWidth]);
+  }, [percentToTime, sendCommand]);
 
   const loadFile = useCallback(async (file: File) => {
-    setMessage(`กำลังโหลด ${file.name}`);
     const data = await file.arrayBuffer();
     send({ type: 'file', data, mime: file.type || 'video/mp4', name: file.name });
     setLoadedFileName(file.name);
-    setMessage(`พร้อมใช้งาน: ${file.name}`);
     setDuration(0);
     setCurrentTime(0);
     setMarkerA(null);
     setMarkerB(null);
-    setViewStart(0);
-    setViewWidth(1);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setSpeed(1);
+    setIsPlaying(true); // Auto-play after loading
   }, [send]);
 
   const setLatestFiles = (files: File[], folderName = '') => {
@@ -278,9 +270,6 @@ function VarReplayControl() {
     const latestFiles = allVideos.sort((a, b) => b.lastModified - a.lastModified).slice(0, 4);
     setSelectedFolderName(folderName);
     setVideoFiles(latestFiles);
-    setMessage(latestFiles.length
-      ? `${folderName ? `${folderName}: ` : ''}แสดง 4 ไฟล์ล่าสุดจาก ${allVideos.length} ไฟล์`
-      : 'ไม่พบไฟล์วิดีโอในโฟลเดอร์นี้');
   };
 
   const selectVideoFolder = async () => {
@@ -301,8 +290,9 @@ function VarReplayControl() {
       }
       setLatestFiles(files, directory.name);
     } catch (error) {
+      // User cancelled or error occurred
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        setMessage('ไม่สามารถเปิดโฟลเดอร์วิดีโอได้');
+        console.error('Failed to open folder:', error);
       }
     }
   };
@@ -311,13 +301,6 @@ function VarReplayControl() {
     const allFiles = Array.from(files || []);
     const folderName = allFiles[0]?.webkitRelativePath.split('/')[0] || '';
     setLatestFiles(allFiles, folderName);
-  };
-
-  const handleDrop = (event: React.DragEvent) => {
-    event.preventDefault();
-    setDragOver(false);
-    const file = Array.from(event.dataTransfer.files).find(isVideoFile);
-    if (file) void loadFile(file);
   };
 
   const seekFromPointer = (event: React.PointerEvent) => {
@@ -378,25 +361,27 @@ function VarReplayControl() {
 
   const screenUrl = `${window.location.origin}${import.meta.env.BASE_URL}var-replay/screen`;
 
+  const handleCopyUrl = useCallback(() => {
+    void navigator.clipboard?.writeText(screenUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [screenUrl]);
+
   return (
     <main className="var-control">
-      <Header />
+      <Header onCopyUrl={handleCopyUrl} copied={copied} />
       <section className="var-control-body">
-        <div
-          className={`var-drop-zone ${dragOver ? 'is-dragging' : ''}`}
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-        >
-          <span className="var-drop-icon">+</span>
-          <strong>เพิ่มไฟล์วิดีโอ</strong>
-          <span>{message}</span>
-          <small>คลิกหรือลากไฟล์วิดีโอมาวางที่นี่</small>
-        </div>
-        <input ref={fileInputRef} type="file" accept="video/*" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFile(file); }} />
         <input ref={folderInputRef} type="file" accept="video/*" hidden multiple {...({ webkitdirectory: true, directory: true } as Record<string, boolean>)} onChange={(event) => handleFolderSelection(event.target.files)} />
-        <button className="var-button var-button-outline var-folder-button" type="button" onClick={() => void selectVideoFolder()}>เลือกโฟลเดอร์วิดีโอ</button>
+        <button className="var-button var-button-primary var-folder-button" type="button" onClick={() => void selectVideoFolder()}>
+          <i className="fas fa-folder-open"></i>
+          <span>เลือกโฟลเดอร์วิดีโอ</span>
+          <i className="fas fa-chevron-right"></i>
+        </button>
+        {selectedFolderName && (
+          <div className="var-folder-info">
+            <i className="fas fa-folder"></i> {selectedFolderName} · {videoFiles.length} ไฟล์วิดีโอ
+          </div>
+        )}
         {videoFiles.length > 0 && (
           <section className="var-library">
             <div className="var-section-heading"><span>VIDEO LIBRARY {selectedFolderName && `· ${selectedFolderName}`}</span><b>ล่าสุด {videoFiles.length} ไฟล์</b></div>
@@ -418,40 +403,43 @@ function VarReplayControl() {
             {markerB !== null && <button className="var-marker var-marker-b" style={{ left: `${timeToPercent(markerB)}%` }} onPointerDown={(event) => { event.stopPropagation(); markerDragRef.current = 'B'; }}><b>B</b></button>}
           </div>
           <div className="var-time-row"><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
-          <div className="var-navigator" ref={navigatorRef}>
-            <div className="var-nav-window" style={{ left: `${viewStart * 100}%`, width: `${viewWidth * 100}%` }} onPointerDown={(event) => { event.stopPropagation(); navigatorDragRef.current = { action: 'window', startX: event.clientX, startView: viewStart, startWidth: viewWidth }; }}>
-              <button className="var-nav-handle" onPointerDown={(event) => { event.stopPropagation(); navigatorDragRef.current = { action: 'left', startX: event.clientX, startView: viewStart, startWidth: viewWidth }; }} aria-label="ปรับจุดเริ่มต้น timeline" />
-              <button className="var-nav-handle is-right" onPointerDown={(event) => { event.stopPropagation(); navigatorDragRef.current = { action: 'right', startX: event.clientX, startView: viewStart, startWidth: viewWidth }; }} aria-label="ปรับจุดสิ้นสุด timeline" />
-            </div>
-          </div>
-          <div className="var-navigator-label">Navigator · ลากขอบเพื่อซูม Timeline</div>
         </section>
 
         <div className="var-command-grid">
-          <button className="var-button var-button-play" type="button" onClick={() => sendCommand('play')}>PLAY</button>
-          <button className="var-button var-button-pause" type="button" onClick={() => sendCommand('pause')}>PAUSE</button>
-          <button className={`var-button ${markerA !== null ? 'is-active' : ''}`} type="button" onClick={() => setMarker('A')}>SET A</button>
-          <button className={`var-button ${markerB !== null ? 'is-active' : ''}`} type="button" onClick={() => setMarker('B')}>SET B</button>
+          <button 
+            className={`var-button ${isPlaying ? 'var-button-pause' : 'var-button-play'}`} 
+            type="button" 
+            onClick={togglePlayPause}
+          >
+            {isPlaying ? '⏸️ PAUSE' : '▶️ PLAY'}
+          </button>
+          <button className={`var-button var-button-marker ${markerA !== null ? 'is-active' : ''}`} type="button" onClick={() => setMarker('A')}>SET A</button>
+          <button className={`var-button var-button-marker ${markerB !== null ? 'is-active' : ''}`} type="button" onClick={() => setMarker('B')}>SET B</button>
         </div>
         <button className="var-button var-button-clear" type="button" onClick={() => { setMarkerA(null); setMarkerB(null); sendCommand('clearLoop'); }}>CLEAR LOOP</button>
 
         <section className="var-panel var-speed-panel">
           <div className="var-control-label"><span>SPEED</span><b>{speed.toFixed(2)}x</b></div>
+          <div className="var-speed-presets">
+            <button className={`var-button ${speed === 0.25 ? 'is-active' : ''}`} type="button" onClick={() => { setSpeed(0.25); sendCommand('speed', 0.25); }}>0.25x</button>
+            <button className={`var-button ${speed === 0.5 ? 'is-active' : ''}`} type="button" onClick={() => { setSpeed(0.5); sendCommand('speed', 0.5); }}>0.5x</button>
+            <button className={`var-button ${speed === 0.75 ? 'is-active' : ''}`} type="button" onClick={() => { setSpeed(0.75); sendCommand('speed', 0.75); }}>0.75x</button>
+            <button className={`var-button ${speed === 1 ? 'is-active' : ''}`} type="button" onClick={() => { setSpeed(1); sendCommand('speed', 1); }}>1x</button>
+          </div>
           <input type="range" min="0.01" max="2" step="0.01" value={speed} onChange={(event) => { const value = Number(event.target.value); setSpeed(value); sendCommand('speed', value); }} />
         </section>
 
         <section className="var-panel var-pan-panel">
-          <div className="var-zoom-control"><span>ZOOM</span><input type="range" min="1" max="10" step="0.1" value={zoom} onChange={(event) => updateZoom(Number(event.target.value))} /><b>{zoom.toFixed(1)}x</b></div>
           <div className="var-pan-area">
             <div className="var-pan-frame" onPointerDown={startPan}>
               <div className="var-pan-viewport" style={{ width: `${100 / zoom}%`, height: `${100 / zoom}%`, left: `${pan.x}%`, top: `${pan.y}%` }} />
             </div>
             <button className="var-button var-button-outline" type="button" onClick={resetTransform}>RESET ZOOM &amp; POSITION</button>
           </div>
+          <div className="var-zoom-control"><span>ZOOM</span><input type="range" min="1" max="10" step="0.1" value={zoom} onChange={(event) => updateZoom(Number(event.target.value))} /><b>{zoom.toFixed(1)}x</b></div>
         </section>
 
-        <div className="var-footer-actions">
-          <button className="var-button var-button-outline" type="button" onClick={() => { void navigator.clipboard?.writeText(screenUrl); setMessage('คัดลอก URL สำหรับ OBS แล้ว'); }}>COPY OBS SCREEN URL</button>
+        <div className="var-footer-info">
           <span>{loadedFileName || 'NO MEDIA LOADED'}</span>
         </div>
       </section>
