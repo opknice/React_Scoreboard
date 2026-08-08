@@ -257,7 +257,8 @@ export default function AllScoreCombinedStandalone() {
                       <td>{index + 1}</td>
                       <td className="combined-team-cell">
                         {renderLogo(row.logo, row.team)}
-                        <span>{row.team}</span>
+                        {/* Tooltip for truncated team names on mobile */}
+                        <span title={row.team}>{row.team}</span>
                       </td>
                       <td>{row.P}</td>
                       <td>{row.W}</td>

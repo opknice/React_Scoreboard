@@ -1035,17 +1035,92 @@ button:disabled {
 }
 
 @media (max-width: 576px) {
-  .combined-logo {
-    width: 24px;
-    height: 24px;
+  /* ========================================
+     MOBILE OPTIMIZATION FOR COMBINED TABLE
+     Feature: responsive-combined-table-mobile
+     Spec: .kiro/specs/responsive-combined-table-mobile
+     
+     This block optimizes the Combined Score Table
+     for mobile viewports (≤ 576px) by:
+     - Reducing typography sizes (Req 2)
+     - Optimizing spacing and padding (Req 3)
+     - Scaling down logos (Req 4)
+     - Abbreviating column headers (Req 5)
+     - Truncating long team names (Req 6)
+     - Preventing horizontal scroll (Req 1)
+     
+     All 10 columns remain visible without requiring
+     horizontal scrolling on screens 320px - 576px.
+     ======================================== */
+
+  /* Typography Scaling (Requirement 2) */
+  .combined-table th {
+    font-size: 0.75rem; /* Desktop: 1.05rem */
   }
 
+  .combined-table td {
+    font-size: 0.85rem; /* Desktop: 1.15rem */
+  }
+
+  .combined-team-cell {
+    font-size: 0.9rem; /* Desktop: 1.15rem */
+  }
+
+  /* Logo Scaling (Requirement 4) */
+  .combined-logo {
+    width: 20px; /* Desktop: 32px */
+    height: 20px; /* Desktop: 32px */
+  }
+
+  /* Spacing Optimization (Requirement 3) */
   .combined-table th,
   .combined-table td {
-    padding: 8px 10px;
-    font-size: 1rem;
+    padding: 6px 4px; /* Desktop: 10px 14px */
   }
 
+  .combined-team-cell {
+    gap: 6px; /* Desktop: 10px */
+  }
+
+  /* Header Abbreviation (Requirement 5) */
+  .combined-table thead tr th {
+    font-size: 0; /* Hide original text */
+  }
+
+  .combined-table thead tr th::before {
+    font-size: 0.75rem;
+  }
+
+  .combined-table thead tr th:nth-child(1)::before { content: '#'; }
+  .combined-table thead tr th:nth-child(2)::before { content: 'ทีม'; }
+  .combined-table thead tr th:nth-child(3)::before { content: 'P'; }
+  .combined-table thead tr th:nth-child(4)::before { content: 'W'; }
+  .combined-table thead tr th:nth-child(5)::before { content: 'D'; }
+  .combined-table thead tr th:nth-child(6)::before { content: 'L'; }
+  .combined-table thead tr th:nth-child(7)::before { content: 'GF'; }
+  .combined-table thead tr th:nth-child(8)::before { content: 'GA'; }
+  .combined-table thead tr th:nth-child(9)::before { content: 'GD'; }
+  .combined-table thead tr th:nth-child(10)::before { content: 'Pts'; }
+
+  /* Team Name Truncation (Requirement 6) */
+  .combined-team-cell {
+    max-width: 120px;
+  }
+
+  .combined-team-cell span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100px;
+    display: inline-block;
+  }
+
+  /* Prevent Horizontal Scroll (Requirement 1 & 7) */
+  .combined-table-wrapper {
+    overflow-x: hidden; /* Desktop: overflow-x: auto */
+  }
+
+  /* Match Results Sizing */
   .combined-match-row {
     font-size: 0.95rem;
     padding: 8px 10px;
