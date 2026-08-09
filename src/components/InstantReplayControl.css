@@ -34,6 +34,46 @@
   letter-spacing: 0.16em;
 }
 
+/* Header Copy URL Button (matching VAR style) */
+.var-button-header {
+  min-height: auto;
+  padding: 8px 16px;
+  background: rgba(57, 213, 255, 0.15);
+  border: 1px solid rgba(57, 213, 255, 0.4);
+  color: #39d5ff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.03em;
+}
+
+.var-button-header:hover {
+  background: rgba(57, 213, 255, 0.25);
+  border-color: #39d5ff;
+  transform: translateY(0);
+  filter: brightness(1.1);
+}
+
+.var-button-header i {
+  font-size: 0.75rem;
+}
+
+.var-button-header.copied {
+  background: rgba(40, 201, 139, 0.2);
+  border-color: #28c98b;
+  color: #28c98b;
+}
+
+.var-button-header.copied:hover {
+  background: rgba(40, 201, 139, 0.3);
+  border-color: #28c98b;
+}
+
 /* Body */
 .replay-control-body {
   width: min(100%, 760px);

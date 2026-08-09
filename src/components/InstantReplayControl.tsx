@@ -44,6 +44,7 @@ export default function InstantReplayControl() {
   const clipsListRef = useRef<HTMLDivElement | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [loadedFileName, setLoadedFileName] = useState('');
   const [duration, setDuration] = useState(0);
@@ -184,6 +185,26 @@ export default function InstantReplayControl() {
     sendCommand('setSpeed', speed);
   }, [sendCommand]);
 
+  const onCopyUrl = useCallback(async () => {
+    try {
+      const url = window.location.origin + '/React_Scoreboard/replay/screen';
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+      // Fallback: create temporary input element
+      const input = document.createElement('input');
+      input.value = window.location.origin + '/React_Scoreboard/replay/screen';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, []);
+
   const handleTimelineClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     if (duration <= 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -228,6 +249,10 @@ export default function InstantReplayControl() {
           <div className="replay-brand">INSTANT REPLAY CONTROL</div>
           <div className="replay-subtitle">LIVE BROADCAST REPLAY SYSTEM</div>
         </div>
+        <button className={`var-button var-button-header ${copied ? 'copied' : ''}`} type="button" onClick={onCopyUrl}>
+        <i className={copied ? 'fas fa-check' : 'fas fa-link'}></i>
+        <span>{copied ? 'COPIED!' : 'COPY OBS URL'}</span>
+      </button>
       </header>
 
       <section className="replay-control-body">

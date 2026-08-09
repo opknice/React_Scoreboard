@@ -993,12 +993,16 @@ export default function ScoreboardController() {
   const handleVideoFolderConnect = async () => {
     const result = await videoFolder.connect();
     if (result.success) {
+      const pathInfo = videoFolder.savedPath ? ` (${videoFolder.savedPath})` : '';
       triggerToast(
-        `เชื่อมต่อโฟลเดอร์วิดีโอแล้ว · ${result.folderName || videoFolder.folderName} (${result.fileCount ?? videoFolder.videoFiles.length} ไฟล์)`,
+        `เชื่อมต่อโฟลเดอร์ "${result.folderName || videoFolder.folderName}" แล้ว${pathInfo} · ${result.fileCount ?? videoFolder.videoFiles.length} ไฟล์`,
         'success'
       );
-      if (result.pathMismatch) {
-        triggerToast('ชื่อโฟลเดอร์ที่เลือกไม่ตรงกับ path ที่บันทึกไว้', 'info');
+      if (result.pathMismatch && videoFolder.savedPath) {
+        triggerToast(
+          `อัปเดต path: "${videoFolder.savedPath}" → "${result.folderName}"`,
+          'info'
+        );
       }
     } else if (result.error) {
       triggerToast(result.error, 'error');
@@ -1023,24 +1027,55 @@ export default function ScoreboardController() {
           {leagueName}
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            className={`video-folder-status ${videoFolder.isConnected ? 'is-connected' : 'is-disconnected'}`}
-            onClick={() => void handleVideoFolderConnect()}
-            disabled={videoFolder.isConnecting}
-            title={videoFolder.isConnected 
-              ? `คลิกเพื่อเปลี่ยนโฟลเดอร์วิดีโอ (ปัจจุบัน: ${videoFolder.folderName})` 
-              : 'คลิกเพื่อเลือกโฟลเดอร์วิดีโอ OBS Replay'}
-          >
-            <span className="video-folder-status-dot" />
-            {videoFolder.isConnecting ? (
-              <span>Video: กำลังเชื่อมต่อ...</span>
-            ) : videoFolder.isConnected ? (
-              <span>Video: เชื่อมต่อแล้ว · {videoFolder.folderName} ({videoFolder.videoFiles.length} ไฟล์)</span>
-            ) : (
-              <span>Video: คลิกเพื่อเลือกโฟลเดอร์</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button
+              type="button"
+              className={`video-folder-status ${videoFolder.isConnected ? 'is-connected' : 'is-disconnected'}`}
+              onClick={() => void handleVideoFolderConnect()}
+              disabled={videoFolder.isConnecting}
+              title={
+                videoFolder.isConnected 
+                  ? `โฟลเดอร์: ${videoFolder.folderName}\nPath: ${videoFolder.savedPath || 'ไม่ได้ระบุ'}\n\nคลิกเพื่อเปลี่ยนโฟลเดอร์` 
+                  : 'คลิกเพื่อเลือกโฟลเดอร์วิดีโอ OBS Replay'
+              }
+            >
+              <span className="video-folder-status-dot" />
+              {videoFolder.isConnecting ? (
+                <span>Video: กำลังเชื่อมต่อ...</span>
+              ) : videoFolder.isConnected ? (
+                <span>
+                  Video: {videoFolder.folderName} ({videoFolder.videoFiles.length} ไฟล์)
+                  {videoFolder.savedPath && (
+                    <span style={{ opacity: 0.6, fontSize: '0.85em', marginLeft: '4px' }}>
+                      · {videoFolder.savedPath}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span>Video: คลิกเพื่อเลือกโฟลเดอร์</span>
+              )}
+            </button>
+            {videoFolder.isConnected && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  videoFolder.disconnect();
+                  videoFolder.setSavedPath('');
+                  try {
+                    localStorage.removeItem('obsVideoFolderPath');
+                  } catch {
+                    // ignore
+                  }
+                  triggerToast('รีเซ็ตการเชื่อมต่อโฟลเดอร์แล้ว', 'info');
+                }}
+                style={{ padding: '4px 8px', fontSize: '0.8rem', height: '32px' }}
+                title="รีเซ็ตและเลือกโฟลเดอร์ใหม่"
+              >
+                ✕
+              </button>
             )}
-          </button>
+          </div>
           {currentUser && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
             {currentUser.photoURL && (
@@ -1805,11 +1840,48 @@ export default function ScoreboardController() {
               />
             </div>
 
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                🎬 Path โฟลเดอร์วิดีโอ (สำหรับอ้างอิง):
+              </label>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                  placeholder="เช่น D:\OBS_football\replays หรือ C:\Users\YourName\Videos"
+                  value={videoFolder.savedPath}
+                  onChange={(e) => videoFolder.setSavedPath(e.target.value)}
+                />
+                <button
+                  className="btn-secondary"
+                  onClick={() => {
+                    videoFolder.setSavedPath('');
+                    videoFolder.disconnect();
+                    try {
+                      localStorage.removeItem('obsVideoFolderPath');
+                    } catch {
+                      // ignore
+                    }
+                    triggerToast('ล้าง path แล้ว - คลิกปุ่ม Video เพื่อเลือกใหม่', 'info');
+                  }}
+                  title="ล้าง path และเลือกโฟลเดอร์ใหม่"
+                >
+                  🗑️
+                </button>
+              </div>
+              <p style={{ fontSize: '11px', color: '#888', marginTop: '4px', marginBottom: 0 }}>
+                💡 <strong>สำคัญ:</strong> Path นี้เป็นเพียงข้อมูลอ้างอิง ไม่ใช่ path จริง!<br />
+                <span style={{ color: '#6ee7b7' }}>ระบบจะจำโฟลเดอร์ที่คุณ "คลิกเลือก" ผ่านปุ่ม Video อัตโนมัติ</span><br />
+                <span style={{ color: '#fbbf24' }}>⚡ สำหรับผู้ใช้หลายคน: แต่ละคนเลือก path ของตัวเองได้ไม่ต้องตั้งค่าล่วงหน้า</span>
+              </p>
+            </div>
+
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '16px' }}>
               <button
                 className="btn-primary"
                 onClick={() => {
                   localStorage.setItem('logoFolderPath', logoFolderPath);
+                  videoFolder.savePathToStorage();
                   setShowLogoPathModal(false);
                   triggerToast(trans.toastSaved, 'success');
                 }}

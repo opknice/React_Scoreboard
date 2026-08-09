@@ -486,11 +486,17 @@ button:disabled {
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
-  transition: filter 0.2s;
+  transition: filter 0.2s, transform 0.1s;
+  max-width: 100%;
 }
 
 .video-folder-status:hover {
-  filter: brightness(1.08);
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+.video-folder-status:active {
+  transform: translateY(0);
 }
 
 .video-folder-status.is-connected {
@@ -505,12 +511,43 @@ button:disabled {
   color: #fca5a5;
 }
 
+.video-folder-status:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
+.video-folder-status span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+}
+
+@media (max-width: 768px) {
+  .video-folder-status span {
+    max-width: 200px;
+  }
+}
+
 .video-folder-status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .video-folder-setup-bar {

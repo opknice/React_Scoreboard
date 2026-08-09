@@ -7,7 +7,7 @@ export const STORAGE_KEYS = {
   LEGACY_NAME: 'replayFolderName',
 } as const;
 
-const DEFAULT_PATH = 'D:\\OBS_football\\replays';
+// No default path - let user choose on first launch
 const IDB_NAME = 'ObsVideoFolderDB';
 const IDB_KEY = 'obs_video_folder';
 const LEGACY_IDB_NAME = 'InstantReplayDB';
@@ -40,9 +40,9 @@ function migrateLegacyFolderName(): string {
 
 export function loadSavedVideoFolderPath(): string {
   try {
-    return localStorage.getItem(STORAGE_KEYS.PATH) || DEFAULT_PATH;
+    return localStorage.getItem(STORAGE_KEYS.PATH) || '';
   } catch {
-    return DEFAULT_PATH;
+    return '';
   }
 }
 
@@ -123,11 +123,16 @@ export async function scanVideosFromHandle(handle: FileSystemDirectoryHandle): P
   return files.sort((a, b) => b.lastModified - a.lastModified);
 }
 
+function extractFolderNameFromPath(path: string): string {
+  if (!path) return '';
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized.split('/').pop() || '';
+}
+
 function pathMatchesFolderName(savedPath: string, folderName: string): boolean {
   if (!savedPath || !folderName) return true;
-  const normalized = savedPath.replace(/\\/g, '/').replace(/\/+$/, '');
-  const tail = normalized.split('/').pop()?.toLowerCase();
-  return tail === folderName.toLowerCase();
+  const tail = extractFolderNameFromPath(savedPath);
+  return tail.toLowerCase() === folderName.toLowerCase();
 }
 
 type HandleWithPermission = FileSystemDirectoryHandle & {
@@ -188,7 +193,7 @@ export function useObsVideoFolder() {
   }, [savedPath]);
 
   const connectWithHandle = useCallback(
-    async (handle: FileSystemDirectoryHandle): Promise<ObsVideoFolderConnectResult> => {
+    async (handle: FileSystemDirectoryHandle, updatePath = true): Promise<ObsVideoFolderConnectResult> => {
       const hasPermission = await ensureReadPermission(handle);
       if (!hasPermission) {
         return { success: false, error: 'ไม่ได้รับอนุญาตให้อ่านโฟลเดอร์' };
@@ -199,9 +204,32 @@ export function useObsVideoFolder() {
       applyConnectedState(handle, files, handle.name);
 
       const pathMismatch = !pathMatchesFolderName(savedPath, handle.name);
+      
+      // Auto-update savedPath if needed
+      if (updatePath && (pathMismatch || !savedPath)) {
+        // If no saved path or mismatch, try to construct a reasonable path
+        // This is a best-effort approach since File System Access API doesn't expose full paths
+        let newPath = savedPath;
+        
+        if (!savedPath) {
+          // First time: just use the folder name (user can set full path later if needed)
+          newPath = handle.name;
+        } else if (pathMismatch) {
+          // Update the last segment of the path
+          newPath = savedPath.replace(/[^/\\]+$/, handle.name);
+        }
+        
+        setSavedPath(newPath);
+        try {
+          localStorage.setItem(STORAGE_KEYS.PATH, newPath);
+        } catch {
+          // ignore
+        }
+      }
+      
       return { success: true, pathMismatch, folderName: handle.name, fileCount: files.length };
     },
-    [applyConnectedState, savedPath]
+    [applyConnectedState, savedPath, setSavedPath]
   );
 
   const connect = useCallback(async (): Promise<ObsVideoFolderConnectResult> => {
