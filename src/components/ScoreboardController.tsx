@@ -20,9 +20,13 @@ import {
 import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParser';
 import { getLogoSrc as resolveLogoSrc, listenToFirebaseTeams } from '../utils/logoResolver';
 import PenaltyShootoutController from './PenaltyShootoutController';
+import VarReplayPage from './VarReplayPage';
+import InstantReplayControl from './InstantReplayControl';
 import AutoMacrosPanel from './AutoMacrosPanel';
 import LogoUploader from './LogoUploader';
 import TeamLogosManagerModal from './TeamLogosManagerModal';
+import { useObsVideoFolderContext } from '../context/ObsVideoFolderContext';
+import { useObsReplayBufferFolderRescan } from '../hooks/useObsReplayBufferFolderRescan';
 
 export interface SavedExcelUrl {
   id: string;
@@ -38,12 +42,20 @@ export default function ScoreboardController() {
   // without being re-registered every render (avoids stale closure on hotkeys)
   const hotkeyHandlerRef = useRef<((action: string) => void) | null>(null);
 
-  const obs = useOBSWebSocket(useCallback((action: string) => {
-    hotkeyHandlerRef.current?.(action);
-  }, []));
+  const videoFolder = useObsVideoFolderContext();
+  const handleObsReplayBufferSaved = useObsReplayBufferFolderRescan(videoFolder.rescan);
+
+  const obs = useOBSWebSocket(
+    useCallback((action: string) => {
+      hotkeyHandlerRef.current?.(action);
+    }, []),
+    handleObsReplayBufferSaved
+  );
 
   // Auto Macros Hook (runs in background always)
   const autoMacros = useAutoMacros(obs);
+
+
 
   // --- Local States ---
   const [currentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
@@ -136,6 +148,8 @@ export default function ScoreboardController() {
   const [showDatabaseModal, setShowDatabaseModal] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [showPenaltyModal, setShowPenaltyModal] = useState<boolean>(false);
+  const [showVarReplayModal, setShowVarReplayModal] = useState<boolean>(false);
+  const [showInstantReplayModal, setShowInstantReplayModal] = useState<boolean>(false);
   const [showDonateModal, setShowDonateModal] = useState<boolean>(false);
   const [showLogoPathModal, setShowLogoPathModal] = useState<boolean>(false);
   const [showPresetTimeModal, setShowPresetTimeModal] = useState<boolean>(false);
@@ -976,13 +990,19 @@ export default function ScoreboardController() {
     }
   };
 
-  const openVarReplay = () => {
-    const varUrl = `${import.meta.env.BASE_URL}var-replay`;
-    window.open(
-      varUrl,
-      'var-replay-control',
-      'popup=yes,width=520,height=900,resizable=yes,scrollbars=yes'
-    );
+  const handleVideoFolderConnect = async () => {
+    const result = await videoFolder.connect();
+    if (result.success) {
+      triggerToast(
+        `เชื่อมต่อโฟลเดอร์วิดีโอแล้ว · ${result.folderName || videoFolder.folderName} (${result.fileCount ?? videoFolder.videoFiles.length} ไฟล์)`,
+        'success'
+      );
+      if (result.pathMismatch) {
+        triggerToast('ชื่อโฟลเดอร์ที่เลือกไม่ตรงกับ path ที่บันทึกไว้', 'info');
+      }
+    } else if (result.error) {
+      triggerToast(result.error, 'error');
+    }
   };
 
   return (
@@ -1002,7 +1022,26 @@ export default function ScoreboardController() {
         <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-color)' }}>
           {leagueName}
         </h1>
-        {currentUser && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`video-folder-status ${videoFolder.isConnected ? 'is-connected' : 'is-disconnected'}`}
+            onClick={() => void handleVideoFolderConnect()}
+            disabled={videoFolder.isConnecting}
+            title={videoFolder.isConnected 
+              ? `คลิกเพื่อเปลี่ยนโฟลเดอร์วิดีโอ (ปัจจุบัน: ${videoFolder.folderName})` 
+              : 'คลิกเพื่อเลือกโฟลเดอร์วิดีโอ OBS Replay'}
+          >
+            <span className="video-folder-status-dot" />
+            {videoFolder.isConnecting ? (
+              <span>Video: กำลังเชื่อมต่อ...</span>
+            ) : videoFolder.isConnected ? (
+              <span>Video: เชื่อมต่อแล้ว · {videoFolder.folderName} ({videoFolder.videoFiles.length} ไฟล์)</span>
+            ) : (
+              <span>Video: คลิกเพื่อเลือกโฟลเดอร์</span>
+            )}
+          </button>
+          {currentUser && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
             {currentUser.photoURL && (
               <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
@@ -1029,8 +1068,11 @@ export default function ScoreboardController() {
               <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
             </button>
           </div>
-        )}
+          )}
+        </div>
       </div>
+
+
 
       {/* Controls Bar */}
       <div className="card" style={{ padding: '8px 12px' }}>
@@ -1464,12 +1506,21 @@ export default function ScoreboardController() {
             </button>
             <button
               className="btn-warning btn-sm"
-              onClick={openVarReplay}
-              title="เปิดหน้า VAR Replay ในหน้าต่างใหม่"
+              onClick={() => setShowVarReplayModal(true)}
+              title="เปิด VAR Replay Control"
               style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
             >
               <i className="fas fa-video" style={{ fontSize: '0.9rem' }}></i>
               <span>VAR Replay</span>
+            </button>
+            <button
+              className="btn-info btn-sm"
+              onClick={() => setShowInstantReplayModal(true)}
+              title="เปิด Instant Replay Control"
+              style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+            >
+              <i className="fas fa-play-circle" style={{ fontSize: '0.9rem' }}></i>
+              <span>Instant Replay Control</span>
             </button>
           </div>
         </div>
@@ -2405,6 +2456,58 @@ export default function ScoreboardController() {
                 {trans.close}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* VAR Replay Modal */}
+      {showVarReplayModal && (
+        <div
+          className="modal-overlay"
+          style={{ zIndex: 9999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowVarReplayModal(false);
+          }}
+        >
+          <div
+            className="modal-content replay-control-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="replay-modal-close"
+              onClick={() => setShowVarReplayModal(false)}
+              title="ปิด"
+            >
+              ×
+            </button>
+            <VarReplayPage mode="control" />
+          </div>
+        </div>
+      )}
+
+      {/* Instant Replay Control Modal */}
+      {showInstantReplayModal && (
+        <div
+          className="modal-overlay"
+          style={{ zIndex: 9999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowInstantReplayModal(false);
+          }}
+        >
+          <div
+            className="modal-content replay-control-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="replay-modal-close"
+              onClick={() => setShowInstantReplayModal(false)}
+              title="ปิด"
+            >
+              ×
+            </button>
+            <InstantReplayControl />
           </div>
         </div>
       )}

@@ -7,8 +7,10 @@ import AllScoreCombinedStandalone from './components/AllScoreCombinedStandalone'
 import PenaltyShootoutController from './components/PenaltyShootoutController';
 import PenaltyDotsOverlay from './components/PenaltyDotsOverlay';
 import VarReplayPage from './components/VarReplayPage';
+import InstantReplayPage from './components/InstantReplayPage';
 import AuthGuard from './components/AuthGuard';
 import AdminWhitelist from './components/AdminWhitelist';
+import { ObsVideoFolderProvider } from './context/ObsVideoFolderContext';
 import './App.css';
 
 function App() {
@@ -16,7 +18,8 @@ function App() {
 
   return (
     <BrowserRouter basename={basename}>
-      <Routes>
+      <ObsVideoFolderProvider>
+        <Routes>
         {/* Scoreboard Controller (main panel protected by Google Auth + Whitelist) */}
         <Route
           path="/"
@@ -62,9 +65,21 @@ function App() {
         />
         <Route path="/var-replay/screen" element={<VarReplayPage mode="screen" />} />
 
+        {/* Instant Replay: control panel and OBS Browser Source screen */}
+        <Route
+          path="/replay"
+          element={
+            <AuthGuard>
+              <InstantReplayPage mode="control" />
+            </AuthGuard>
+          }
+        />
+        <Route path="/replay/screen" element={<InstantReplayPage mode="screen" />} />
+
         {/* Catch-all redirect to main panel */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </ObsVideoFolderProvider>
     </BrowserRouter>
   );
 }

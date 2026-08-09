@@ -443,6 +443,116 @@ button:disabled {
   gap: 8px;
 }
 
+.modal-content.replay-control-modal {
+  max-width: 760px;
+  padding: 0;
+  background: #0a0f14;
+  border-color: #263746;
+  overflow: hidden;
+}
+
+.modal-content.replay-control-modal .var-control,
+.modal-content.replay-control-modal .instant-replay-control {
+  min-height: auto;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.replay-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.video-folder-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s;
+}
+
+.video-folder-status:hover {
+  filter: brightness(1.08);
+}
+
+.video-folder-status.is-connected {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
+.video-folder-status.is-disconnected {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+.video-folder-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.video-folder-setup-bar {
+  padding: 10px 14px;
+}
+
+.video-folder-setup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.video-folder-setup-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-color);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.video-folder-path-input {
+  flex: 1 1 260px;
+  min-width: 200px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: #1a1d24;
+  color: var(--text-color);
+  font-family: var(--sans-font);
+  font-size: 0.85rem;
+}
+
+.video-folder-setup-hint {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted-color);
+  line-height: 1.4;
+}
+
 /* Toast Notification */
 .toast-container {
   position: fixed;

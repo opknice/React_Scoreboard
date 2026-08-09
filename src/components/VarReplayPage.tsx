@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useObsVideoFolderContext } from '../context/ObsVideoFolderContext';
 import './VarReplayPage.css';
 
 const CHANNEL_NAME = 'scoreboard_var_replay_studio_v2';
@@ -16,6 +17,7 @@ type StatusMessage = {
   currentTime: number;
   markerA: number | null;
   markerB: number | null;
+  isPlaying: boolean; // [Fix 2] เพิ่ม field isPlaying
 };
 type ChannelMessage = Command | StatusMessage;
 
@@ -75,9 +77,25 @@ function VarReplayScreen() {
   const { channelRef, send } = useReplayChannel();
   const [loopA, setLoopA] = useState<number | null>(null);
   const [loopB, setLoopB] = useState<number | null>(null);
+  // [Fix 1 & 7] เพิ่ม refs เก็บค่า loop ล่าสุด ให้ message handler อ่านได้โดยไม่ต้องอยู่ใน dependency array
+  const loopARef = useRef<number | null>(null);
+  const loopBRef = useRef<number | null>(null);
   const [transform, setTransform] = useState<Transform>({ zoom: 1, x: 0, y: 0 });
   const [hasVideo, setHasVideo] = useState(false);
 
+  // Sync refs กับ state เสมอ
+  useEffect(() => { loopARef.current = loopA; }, [loopA]);
+  useEffect(() => { loopBRef.current = loopB; }, [loopB]);
+
+  // [Fix 7] แยก cleanup objectUrl ออกมาเป็น effect ของตัวเอง
+  // ทำให้ revoke เฉพาะตอน unmount จริง ๆ ไม่ใช่ทุกครั้งที่ loopA/B เปลี่ยน
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    };
+  }, []);
+
+  // [Fix 2] sendStatus อ่าน loop จาก refs และส่ง isPlaying จาก video.paused จริง
   const sendStatus = useCallback(() => {
     const video = videoRef.current;
     if (!video || !Number.isFinite(video.duration)) return;
@@ -85,11 +103,13 @@ function VarReplayScreen() {
       type: 'status',
       duration: video.duration,
       currentTime: video.currentTime,
-      markerA: loopA,
-      markerB: loopB,
+      markerA: loopARef.current,
+      markerB: loopBRef.current,
+      isPlaying: !video.paused,
     });
-  }, [loopA, loopB, send]);
+  }, [send]); // ไม่ต้อง depend on loopA, loopB อีกต่อไป
 
+  // [Fix 1 & 7] effect นี้ไม่ต้อง depend on loopA/loopB — ใช้ refs แทน
   useEffect(() => {
     const channel = channelRef.current;
     if (!channel) return;
@@ -105,8 +125,11 @@ function VarReplayScreen() {
         video.src = objectUrlRef.current;
         setHasVideo(true);
         video.playbackRate = 1;
+        // อัปเดต state และ refs พร้อมกัน
         setLoopA(null);
         setLoopB(null);
+        loopARef.current = null;
+        loopBRef.current = null;
         setTransform({ zoom: 1, x: 0, y: 0 });
         void video.play().catch(() => undefined);
         return;
@@ -121,21 +144,36 @@ function VarReplayScreen() {
       if (message.action === 'clearLoop') {
         setLoopA(null);
         setLoopB(null);
+        loopARef.current = null;
+        loopBRef.current = null;
       }
+      // [Fix 1] ใช้ refs อ่านค่าปัจจุบัน แทน closure state เก่า
       if (message.action === 'setA') {
         const value = typeof message.value === 'number' ? message.value : video.currentTime;
-        setLoopA(value);
-        if (loopB !== null && value > loopB) {
-          setLoopA(loopB);
+        const currentB = loopBRef.current;
+        if (currentB !== null && value > currentB) {
+          // swap: A ใหม่อยู่เกิน B → สลับ
+          setLoopA(currentB);
           setLoopB(value);
+          loopARef.current = currentB;
+          loopBRef.current = value;
+        } else {
+          setLoopA(value);
+          loopARef.current = value;
         }
       }
       if (message.action === 'setB') {
         const value = typeof message.value === 'number' ? message.value : video.currentTime;
-        setLoopB(value);
-        if (loopA !== null && value < loopA) {
-          setLoopB(loopA);
+        const currentA = loopARef.current;
+        if (currentA !== null && value < currentA) {
+          // swap: B ใหม่น้อยกว่า A → สลับ
+          setLoopB(currentA);
           setLoopA(value);
+          loopBRef.current = currentA;
+          loopARef.current = value;
+        } else {
+          setLoopB(value);
+          loopBRef.current = value;
         }
       }
       if (message.action === 'transform' && typeof message.value === 'object') setTransform(message.value);
@@ -143,25 +181,35 @@ function VarReplayScreen() {
 
     return () => {
       channel.onmessage = null;
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      // ไม่ revoke objectUrl ที่นี่แล้ว — จัดการใน effect แยกด้านบน
     };
-  }, [channelRef, loopA, loopB]);
+  }, [channelRef]); // [Fix 1 & 7] ตัด loopA, loopB ออกจาก deps
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const onTimeUpdate = () => {
-      if (loopA !== null && loopB !== null && video.currentTime > loopB) video.currentTime = loopA;
-      if (loopA !== null && loopB !== null && video.currentTime < loopA - 0.1) video.currentTime = loopA;
+      // [Fix 1] ใช้ refs แทน state ใน timeupdate handler
+      if (loopARef.current !== null && loopBRef.current !== null && video.currentTime > loopBRef.current) {
+        video.currentTime = loopARef.current;
+      }
+      if (loopARef.current !== null && loopBRef.current !== null && video.currentTime < loopARef.current - 0.1) {
+        video.currentTime = loopARef.current;
+      }
       sendStatus();
     };
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('loadedmetadata', sendStatus);
+    // [Fix 2] ฟัง play/pause events เพื่อส่งสถานะ isPlaying ที่ถูกต้องกลับไป Control
+    video.addEventListener('play', sendStatus);
+    video.addEventListener('pause', sendStatus);
     return () => {
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('loadedmetadata', sendStatus);
+      video.removeEventListener('play', sendStatus);
+      video.removeEventListener('pause', sendStatus);
     };
-  }, [loopA, loopB, sendStatus]);
+  }, [sendStatus]); // ตอนนี้ depend แค่ sendStatus อย่างเดียว
 
   return (
     <main className="var-screen">
@@ -178,22 +226,41 @@ function VarReplayScreen() {
 }
 
 function VarReplayControl() {
+  const videoFolder = useObsVideoFolderContext();
   const timelineRef = useRef<HTMLDivElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const markerDragRef = useRef<Marker | null>(null);
+  // [Fix 5] ref เก็บ cleanup function ของ startPan เพื่อ cancel ได้ตอน unmount
+  const panCleanupRef = useRef<(() => void) | null>(null);
   const { channelRef, send } = useReplayChannel();
-  const [videoFiles, setVideoFiles] = useState<File[]>([]);
-  const [selectedFolderName, setSelectedFolderName] = useState('');
   const [loadedFileName, setLoadedFileName] = useState('');
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [markerA, setMarkerA] = useState<number | null>(null);
   const [markerB, setMarkerB] = useState<number | null>(null);
+  // [Fix 3 & 6] refs เก็บค่า marker ล่าสุดสำหรับ drag handler ที่ไม่มี stale closure
+  const markerARef = useRef<number | null>(null);
+  const markerBRef = useRef<number | null>(null);
   const [speed, setSpeed] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPlaying, setIsPlaying] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Sync marker refs กับ state
+  useEffect(() => { markerARef.current = markerA; }, [markerA]);
+  useEffect(() => { markerBRef.current = markerB; }, [markerB]);
+
+  // [Fix 5] cleanup pan listeners ถ้า unmount ขณะกำลัง drag อยู่
+  useEffect(() => {
+    return () => { panCleanupRef.current?.(); };
+  }, []);
+
+  // [Fix 4] sort ตาม lastModified ก่อน slice เพื่อให้ได้ "ล่าสุด" จริง ๆ
+  const videoFiles = videoFolder.isConnected
+    ? videoFolder.videoFiles
+        .filter(isVideoFile)
+        .sort((a, b) => b.lastModified - a.lastModified)
+    : [];
 
   const timeToPercent = useCallback((time: number) => {
     if (!duration) return 0;
@@ -228,6 +295,7 @@ function VarReplayControl() {
       setCurrentTime(data.currentTime);
       setMarkerA(data.markerA);
       setMarkerB(data.markerB);
+      setIsPlaying(data.isPlaying); // [Fix 2] sync isPlaying จาก Screen จริง
     };
     return () => { channel.onmessage = null; };
   }, [channelRef]);
@@ -236,10 +304,37 @@ function VarReplayControl() {
     const onPointerMove = (event: PointerEvent) => {
       if (markerDragRef.current && timelineRef.current) {
         const rect = timelineRef.current.getBoundingClientRect();
+        if (rect.width === 0) return; // [Fix 6] guard กัน division by zero / Infinity
         const percent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
         const time = percentToTime(percent);
-        sendCommand(markerDragRef.current === 'A' ? 'setA' : 'setB', time);
-        if (markerDragRef.current === 'A') setMarkerA(time); else setMarkerB(time);
+        const dragging = markerDragRef.current;
+        sendCommand(dragging === 'A' ? 'setA' : 'setB', time);
+        // [Fix 3] mirror swap logic จาก Screen และอัปเดต refs ด้วย
+        if (dragging === 'A') {
+          const currentB = markerBRef.current;
+          if (currentB !== null && time > currentB) {
+            setMarkerA(currentB);
+            setMarkerB(time);
+            markerARef.current = currentB;
+            markerBRef.current = time;
+            markerDragRef.current = 'B'; // สลับ marker ที่กำลัง drag
+          } else {
+            setMarkerA(time);
+            markerARef.current = time;
+          }
+        } else {
+          const currentA = markerARef.current;
+          if (currentA !== null && time < currentA) {
+            setMarkerB(currentA);
+            setMarkerA(time);
+            markerBRef.current = currentA;
+            markerARef.current = time;
+            markerDragRef.current = 'A'; // สลับ marker ที่กำลัง drag
+          } else {
+            setMarkerB(time);
+            markerBRef.current = time;
+          }
+        }
       }
     };
     const onPointerUp = () => { markerDragRef.current = null; };
@@ -265,56 +360,34 @@ function VarReplayControl() {
     setIsPlaying(true); // Auto-play after loading
   }, [send]);
 
-  const setLatestFiles = (files: File[], folderName = '') => {
-    const allVideos = files.filter(isVideoFile);
-    const latestFiles = allVideos.sort((a, b) => b.lastModified - a.lastModified).slice(0, 4);
-    setSelectedFolderName(folderName);
-    setVideoFiles(latestFiles);
-  };
-
-  const selectVideoFolder = async () => {
-    const windowWithDirectoryPicker = window as Window & {
-      showDirectoryPicker?: () => Promise<{ name: string; values: () => AsyncIterableIterator<{ kind: string; getFile: () => Promise<File> }> }>;
-    };
-
-    if (!windowWithDirectoryPicker.showDirectoryPicker) {
-      folderInputRef.current?.click();
-      return;
-    }
-
-    try {
-      const directory = await windowWithDirectoryPicker.showDirectoryPicker();
-      const files: File[] = [];
-      for await (const entry of directory.values()) {
-        if (entry.kind === 'file') files.push(await entry.getFile());
-      }
-      setLatestFiles(files, directory.name);
-    } catch (error) {
-      // User cancelled or error occurred
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        console.error('Failed to open folder:', error);
-      }
-    }
-  };
-
-  const handleFolderSelection = (files: FileList | null) => {
-    const allFiles = Array.from(files || []);
-    const folderName = allFiles[0]?.webkitRelativePath.split('/')[0] || '';
-    setLatestFiles(allFiles, folderName);
-  };
-
   const seekFromPointer = (event: React.PointerEvent) => {
     if (!timelineRef.current || !duration) return;
     const rect = timelineRef.current.getBoundingClientRect();
+    if (rect.width === 0) return; // [Fix 6] guard กัน Infinity ใน seekFromPointer ด้วย
     const percent = ((event.clientX - rect.left) / rect.width) * 100;
     const time = percentToTime(percent);
     setCurrentTime(time);
     sendCommand('seek', time);
   };
 
+  // [Fix 3] setMarker มี swap logic ตรงกับ Screen
   const setMarker = (marker: Marker) => {
     sendCommand(marker === 'A' ? 'setA' : 'setB', currentTime);
-    if (marker === 'A') setMarkerA(currentTime); else setMarkerB(currentTime);
+    if (marker === 'A') {
+      if (markerB !== null && currentTime > markerB) {
+        setMarkerA(markerB);
+        setMarkerB(currentTime);
+      } else {
+        setMarkerA(currentTime);
+      }
+    } else {
+      if (markerA !== null && currentTime < markerA) {
+        setMarkerB(markerA);
+        setMarkerA(currentTime);
+      } else {
+        setMarkerB(currentTime);
+      }
+    }
   };
 
   const updateZoom = (nextZoom: number) => {
@@ -337,6 +410,7 @@ function VarReplayControl() {
     sendCommand('transform', { zoom: 1, x: 0, y: 0 });
   };
 
+  // [Fix 5] ลงทะเบียน cleanup ใน panCleanupRef เพื่อให้ unmount cancel ได้
   const startPan = (event: React.PointerEvent) => {
     if (zoom <= 1.01) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -354,7 +428,9 @@ function VarReplayControl() {
     const end = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', end);
+      panCleanupRef.current = null;
     };
+    panCleanupRef.current = end; // [Fix 5] เก็บ cleanup ไว้ให้ unmount เรียกได้
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
   };
@@ -371,26 +447,22 @@ function VarReplayControl() {
     <main className="var-control">
       <Header onCopyUrl={handleCopyUrl} copied={copied} />
       <section className="var-control-body">
-        <input ref={folderInputRef} type="file" accept="video/*" hidden multiple {...({ webkitdirectory: true, directory: true } as Record<string, boolean>)} onChange={(event) => handleFolderSelection(event.target.files)} />
-        <button className="var-button var-button-primary var-folder-button" type="button" onClick={() => void selectVideoFolder()}>
-          <i className="fas fa-folder-open"></i>
-          <span>เลือกโฟลเดอร์วิดีโอ</span>
-          <i className="fas fa-chevron-right"></i>
-        </button>
-        {selectedFolderName && (
-          <div className="var-folder-info">
-            <i className="fas fa-folder"></i> {selectedFolderName} · {videoFiles.length} ไฟล์วิดีโอ
+        {!videoFolder.isConnected && (
+          <div className="var-folder-info" style={{ marginBottom: '12px', color: '#fbbf24' }}>
+            <i className="fas fa-info-circle"></i> ใช้โฟลเดอร์จากหน้าหลัก — กลับไปกด Connect ที่แถบ &quot;โฟลเดอร์วิดีโอ OBS Replay&quot;
           </div>
         )}
         {videoFiles.length > 0 && (
           <section className="var-library">
-            <div className="var-section-heading"><span>VIDEO LIBRARY {selectedFolderName && `· ${selectedFolderName}`}</span><b>ล่าสุด {videoFiles.length} ไฟล์</b></div>
-            <div className="var-file-list">
-              {videoFiles.map((file) => (
-                <button className={`var-file-row ${loadedFileName === file.name ? 'is-selected' : ''}`} key={`${file.name}-${file.lastModified}`} type="button" onClick={() => void loadFile(file)}>
-                  <span>{file.name}</span><small>{formatSize(file.size)} · {new Date(file.lastModified).toLocaleString('th-TH')}</small>
-                </button>
-              ))}
+            <div className="var-section-heading"><span>VIDEO LIBRARY · {videoFolder.folderName}</span><b>ทั้งหมด {videoFiles.length} ไฟล์</b></div>
+            <div className="var-file-list-wrap">
+              <div className="var-file-list">
+                {videoFiles.map((file) => (
+                  <button className={`var-file-row ${loadedFileName === file.name ? 'is-selected' : ''}`} key={`${file.name}-${file.lastModified}`} type="button" onClick={() => void loadFile(file)}>
+                    <span>{file.name}</span><small>{formatSize(file.size)} · {new Date(file.lastModified).toLocaleString('th-TH')}</small>
+                  </button>
+                ))}
+              </div>
             </div>
           </section>
         )}
@@ -406,9 +478,9 @@ function VarReplayControl() {
         </section>
 
         <div className="var-command-grid">
-          <button 
-            className={`var-button ${isPlaying ? 'var-button-pause' : 'var-button-play'}`} 
-            type="button" 
+          <button
+            className={`var-button ${isPlaying ? 'var-button-pause' : 'var-button-play'}`}
+            type="button"
             onClick={togglePlayPause}
           >
             {isPlaying ? '⏸️ PAUSE' : '▶️ PLAY'}
