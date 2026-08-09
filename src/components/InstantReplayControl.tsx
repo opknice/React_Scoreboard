@@ -120,7 +120,7 @@ export default function InstantReplayControl() {
       sendCommand('play');
     } catch (error) {
       console.error('Failed to load file:', error);
-      setErrorMsg(`Failed to load replay file "${targetFile.name}".`);
+      setErrorMsg(`ไม่สามารถโหลดไฟล์รีเพลย์ "${targetFile.name}" ได้`);
     } finally {
       setIsLoadingFile(false);
     }
@@ -143,7 +143,7 @@ export default function InstantReplayControl() {
 
     const latestFile = findLatestFile(currentFiles);
     if (!latestFile) {
-      setErrorMsg('No video files found in the connected folder.');
+      setErrorMsg('ไม่พบไฟล์วิดีโอในโฟลเดอร์ที่เชื่อมต่อ');
       return;
     }
 
@@ -244,18 +244,22 @@ export default function InstantReplayControl() {
 
   return (
     <main className="instant-replay-control">
+      {/* ── Header ── */}
       <header className="replay-header">
         <div>
-          <div className="replay-brand">INSTANT REPLAY CONTROL</div>
-          <div className="replay-subtitle">LIVE BROADCAST REPLAY SYSTEM</div>
+          {/* VAR-style brand: cyan prefix + white label */}
+          <div className="replay-brand">Replay Controller</div>
+          {/* Animated live dot + subtitle */}
+
         </div>
         <button className={`var-button var-button-header ${copied ? 'copied' : ''}`} type="button" onClick={onCopyUrl}>
-        <i className={copied ? 'fas fa-check' : 'fas fa-link'}></i>
-        <span>{copied ? 'COPIED!' : 'COPY OBS URL'}</span>
-      </button>
+          <i className={copied ? 'fas fa-check' : 'fas fa-link'}></i>
+          <span>{copied ? 'คัดลอกแล้ว!' : 'คัดลอก URL สำหรับ OBS'}</span>
+        </button>
       </header>
 
       <section className="replay-control-body">
+        {/* ── Alerts ── */}
         {errorMsg && (
           <div className="replay-alert replay-alert-error">
             <i className="fas fa-exclamation-triangle"></i>
@@ -265,27 +269,33 @@ export default function InstantReplayControl() {
         )}
 
         {!videoFolder.isConnected && (
-          <div className="replay-alert replay-alert-info">
-            <i className="fas fa-info-circle"></i>
-            <span>ใช้โฟลเดอร์วิดีโอจากหน้าหลัก — กลับไปกด Connect ที่แถบ &quot;โฟลเดอร์วิดีโอ OBS Replay&quot;</span>
+          <div className="var-folder-info" style={{ color: '#d9534f' }}>
+            <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }} />
+            <span>ใช้โฟลเดอร์จากหน้าหลัก — กลับไปกด Connect ที่แถบ &quot;โฟลเดอร์วิดีโอ OBS Replay&quot;</span>
           </div>
         )}
 
+        {/* ── 1-Click action ── */}
         <div className="one-click-action-bar">
           <button
             className={`one-click-btn ${isLoadingFile ? 'loading' : ''}`}
             onClick={() => void loadAndPlayLatestFile()}
             disabled={isLoadingFile || !videoFolder.isConnected}
-            title="1-Click to scan, load, trim, and stream the latest replay file instantly"
+            title="คลิกเดียวเพื่อสแกน โหลด ตัด และเล่นไฟล์รีเพลย์ล่าสุดทันที"
           >
             <i className={`fas ${isLoadingFile ? 'fa-spinner fa-spin' : 'fa-bolt'}`}></i>
-            <span>{isLoadingFile ? 'LOADING REPLAY...' : '⚡ 1-CLICK LOAD & PLAY LATEST REPLAY'}</span>
+            <span>{isLoadingFile ? 'กำลังโหลดรีเพลย์...' : '⚡ คลิกเดียว โหลดและเล่นรีเพลย์ล่าสุด'}</span>
           </button>
         </div>
 
+        {/* ── Recent clips ── */}
         {recentClips.length > 0 && (
           <div className="replay-section">
-            <h3>🎬 Recent Replay Clips ({recentClips.length})</h3>
+            {/* VAR-style heading: label left, cyan value right */}
+            <div className="replay-section-heading">
+              <span>คลังวิดีโอ</span>
+              <b>{recentClips.length} คลิป</b>
+            </div>
             <div
               ref={clipsListRef}
               className="recent-clips-list"
@@ -302,11 +312,11 @@ export default function InstantReplayControl() {
                       <div className="clip-name">
                         <i className="fas fa-file-video"></i>
                         <span>{file.name}</span>
-                        {isCurrent && <span className="active-badge">PLAYING</span>}
+                        {isCurrent && <span className="active-badge">กำลังเล่น</span>}
                       </div>
                       <div className="clip-sub">
                         <span>{formatSize(file.size)}</span>
-                        <span>•</span>
+                        <span>·</span>
                         <span>{new Date(file.lastModified).toLocaleTimeString('th-TH')}</span>
                       </div>
                     </div>
@@ -317,7 +327,7 @@ export default function InstantReplayControl() {
                       disabled={isLoadingFile}
                     >
                       <i className={`fas ${isCurrent ? 'fa-redo' : 'fa-play'}`}></i>
-                      <span>{isCurrent ? 'Replay' : 'Play'}</span>
+                      <span>{isCurrent ? 'เล่นซ้ำ' : 'เล่น'}</span>
                     </button>
                   </div>
                 );
@@ -326,23 +336,14 @@ export default function InstantReplayControl() {
           </div>
         )}
 
+        {/* ── Playback speed ── */}
         {loadedFileName && (
-          <div className="replay-section" style={{ position: 'relative' }}>
-            <div style={{ 
-              position: 'absolute', 
-              top: '12px', 
-              right: '16px', 
-              fontSize: '0.7rem', 
-              fontWeight: 700, 
-              color: '#39d5ff',
-              background: 'rgba(57, 213, 255, 0.1)',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              border: '1px solid rgba(57, 213, 255, 0.3)'
-            }}>
-              {playbackSpeed.toFixed(2)}×
+          <div className="replay-section">
+            {/* Speed value shown in heading (replaces inline-style badge) */}
+            <div className="replay-section-heading">
+              <span>ความเร็วการเล่น</span>
+              <b>{playbackSpeed.toFixed(2)}×</b>
             </div>
-            <h3>🎚️ Playback Speed</h3>
             <div className="speed-control">
               <div className="speed-presets">
                 {[0.2, 0.4, 0.6, 0.8, 1, 1.25, 1.5].map((speed) => (
@@ -369,14 +370,18 @@ export default function InstantReplayControl() {
                 />
                 <span className="speed-label-max">2×</span>
               </div>
-              
             </div>
           </div>
         )}
 
+        {/* ── Timeline ── */}
         {loadedFileName && duration > 0 && (
           <div className="replay-section">
-            <h3>⏱️ Timeline & Markers</h3>
+            {/* Duration shown in heading, current time in timeline-labels */}
+            <div className="replay-section-heading">
+              <span>ไทม์ไลน์ · จุดตัด</span>
+              
+            </div>
             <div className="timeline-container">
               <div className="timeline-labels">
                 <span>00:00</span>
@@ -396,7 +401,7 @@ export default function InstantReplayControl() {
                 )}
                 {trimStart !== null && (
                   <div className="timeline-marker timeline-marker-trim" style={{ left: `${(trimStart / duration) * 100}%` }}>
-                    <span>TRIM</span>
+                    <span>ตัด</span>
                   </div>
                 )}
                 <div className="timeline-playhead" style={{ left: `${(currentTime / duration) * 100}%` }} />
@@ -405,13 +410,14 @@ export default function InstantReplayControl() {
           </div>
         )}
 
+        {/* ── Settings ── */}
         <div className="replay-section">
-          <h3>⚙️ Settings</h3>
+          {/* Replay duration value shown in heading, replaces setting-label */}
+          <div className="replay-section-heading">
+            <span>ระยะเวลารีเพลย์</span>
+            <b>{replayDuration} วินาที</b>
+          </div>
           <div className="setting-group">
-            <div className="setting-label">
-              <span>Replay Duration</span>
-              <span className="setting-value">{replayDuration}s</span>
-            </div>
             <div className="preset-buttons">
               {[5, 8, 10, 15].map((preset) => (
                 <button
@@ -436,7 +442,7 @@ export default function InstantReplayControl() {
                 }}
                 disabled={duration === 0}
               >
-                Full
+                เต็ม
               </button>
             </div>
             <input
@@ -451,7 +457,6 @@ export default function InstantReplayControl() {
           </div>
         </div>
 
-        
       </section>
     </main>
   );

@@ -1448,15 +1448,32 @@ export default function ScoreboardController() {
       {/* Timer and Half Controls */}
       <div className="card" style={{ padding: '12px 16px' }}>
         <div className="row timer-area-container" style={{ marginBottom: 0 }}>
-          <div style={{ flex: '0 0 65px', display: 'flex' }}>
-            <button className="btn-secondary btn-sm" onClick={timerHook.toggleHalf} style={{ width: '100%', flexDirection: 'column', padding: '6px 4px' }}>
-              <span style={{ fontSize: '0.7rem' }}>{trans.half}</span>
-              <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>{timerHook.customText || timerHook.half || '1st'}</span>
+          <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+
+            
+            <button className="btn-secondary btn-sm" onClick={() => setShowPresetTimeModal(true)}>
+              <i className="fas fa-clock"></i> ปรับเวลา
             </button>
+            
+            <div
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: 'bold',
+                color: '#10b981',
+                padding: '4px 8px',
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '6px',
+                textAlign: 'center'
+              }}
+            >
+              ปัจจุบัน: {Math.floor(timerHook.countdownStartTime / 60)} นาที
+            </div>
           </div>
 
           <div className="timer-display-area">
-            <div className="timer-display">{timerHook.formattedTime}</div>
+
+            <div className="timer-display"><span style={{ fontSize: '1rem', fontWeight: 'bold' }}>{timerHook.customText || timerHook.half || '1st'}</span> {timerHook.formattedTime}</div>
             <div className="row center" style={{ marginTop: '4px', gap: '6px', marginBottom: 0 }}>
               <button className="btn-success btn-sm" onClick={timerHook.start1}>
                 <i className="fas fa-play"></i> เริ่มครึ่งแรก
@@ -1484,23 +1501,7 @@ export default function ScoreboardController() {
           </div>
 
           <div className="timer-right-controls">
-            <button className="btn-secondary btn-sm" onClick={() => setShowPresetTimeModal(true)}>
-              <i className="fas fa-clock"></i> ปรับเวลา
-            </button>
-            <div
-              style={{
-                fontSize: '0.8rem',
-                fontWeight: 'bold',
-                color: '#10b981',
-                padding: '4px 8px',
-                background: 'rgba(16, 185, 129, 0.1)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                borderRadius: '6px',
-                textAlign: 'center'
-              }}
-            >
-              ปัจจุบัน: {Math.floor(timerHook.countdownStartTime / 60)} นาที
-            </div>
+
             <button
               className="btn-primary btn-sm"
               onClick={async () => {
@@ -1540,7 +1541,7 @@ export default function ScoreboardController() {
               ยิงจุดโทษ
             </button>
             <button
-              className="btn-warning btn-sm"
+              className="btn-danger btn-sm"
               onClick={() => setShowVarReplayModal(true)}
               title="เปิด VAR Replay Control"
               style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
@@ -1549,13 +1550,13 @@ export default function ScoreboardController() {
               <span>VAR Replay</span>
             </button>
             <button
-              className="btn-info btn-sm"
+              className="btn-warning btn-sm"
               onClick={() => setShowInstantReplayModal(true)}
               title="เปิด Instant Replay Control"
               style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
             >
               <i className="fas fa-play-circle" style={{ fontSize: '0.9rem' }}></i>
-              <span>Instant Replay Control</span>
+              <span>Replay Control</span>
             </button>
           </div>
         </div>
