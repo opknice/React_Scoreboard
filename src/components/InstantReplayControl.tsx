@@ -187,7 +187,7 @@ export default function InstantReplayControl() {
 
   const onCopyUrl = useCallback(async () => {
     try {
-      const url = window.location.origin + '/React_Scoreboard/replay/screen';
+      const url = window.location.origin + '/replay/screen';
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -195,7 +195,7 @@ export default function InstantReplayControl() {
       console.error('Failed to copy URL:', error);
       // Fallback: create temporary input element
       const input = document.createElement('input');
-      input.value = window.location.origin + '/React_Scoreboard/replay/screen';
+      input.value = window.location.origin + '/replay/screen';
       document.body.appendChild(input);
       input.select();
       document.execCommand('copy');
