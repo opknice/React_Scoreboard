@@ -83,6 +83,45 @@ export function isVideoFile(file: File): boolean {
   return videoExtensions.test(file.name);
 }
 
+const BROWSER_VIDEO_MIME_BY_EXTENSION: Record<string, string> = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  m4v: 'video/mp4',
+  mkv: 'video/x-matroska',
+};
+
+const BROWSER_VIDEO_MIME_TYPES = new Set([
+  'video/mp4',
+  'video/webm',
+  'video/x-m4v',
+  'video/matroska',
+  'video/x-matroska',
+]);
+
+/**
+ * Return the MIME type that should be sent to the Browser Source.
+ * Prefer the extension for known containers because File.type can be empty
+ * or incorrectly reported by the File System Access API.
+ */
+export function getBrowserVideoMimeType(file: Pick<File, 'name' | 'type'>): string | null {
+  const extension = file.name.match(/\.([a-z0-9]+)$/i)?.[1].toLowerCase();
+  if (extension && BROWSER_VIDEO_MIME_BY_EXTENSION[extension]) {
+    return BROWSER_VIDEO_MIME_BY_EXTENSION[extension];
+  }
+
+  const mime = file.type.split(';', 1)[0].trim().toLowerCase();
+  return BROWSER_VIDEO_MIME_TYPES.has(mime) ? mime : null;
+}
+
+/**
+ * Browser/OBS Chromium can reliably play these container formats without
+ * transcoding. Keep broader `isVideoFile` for folder discovery, but use this
+ * guard before sending a replay to the Browser Source.
+ */
+export function isBrowserPlayableVideoFile(file: File): boolean {
+  return getBrowserVideoMimeType(file) !== null;
+}
+
 /**
  * Find the most recently modified file from an array of files
  * 

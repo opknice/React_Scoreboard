@@ -1,28 +1,20 @@
-/* Full-viewport output for the OBS Browser Source.
-   This is intentionally scoped to Instant Replay so the VAR screen keeps
-   its existing layout and crop behavior. */
+/* Full-screen canvas for the OBS Browser Source replay output. */
 .instant-replay-screen {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  min-width: 0;
-  min-height: 0;
+  min-height: 100vh;
   overflow: hidden;
-  display: block;
   background: #000;
 }
 
 .instant-replay-screen-video {
   display: block;
-  position: absolute;
-  inset: 0;
   width: 100%;
   height: 100%;
-  max-width: none;
-  max-height: none;
-  object-fit: cover;
-  object-position: center;
+  object-fit: contain;
+  background: #000;
 }
 
 .instant-replay-screen-empty {
@@ -31,7 +23,7 @@
   display: grid;
   place-items: center;
   color: rgba(255, 255, 255, 0.35);
-  font-size: clamp(.8rem, 2vw, 1.4rem);
-  letter-spacing: .16em;
+  font-size: clamp(0.8rem, 2vw, 1.4rem);
+  letter-spacing: 0.16em;
   user-select: none;
 }

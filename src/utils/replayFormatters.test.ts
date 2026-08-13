@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime, formatSize, isVideoFile, findLatestFile } from './replayFormatters';
+import { formatTime, formatSize, getBrowserVideoMimeType, isVideoFile, isBrowserPlayableVideoFile, findLatestFile } from './replayFormatters';
 
 describe('formatTime', () => {
   it('should format zero seconds as "0:00"', () => {
@@ -140,6 +140,25 @@ describe('isVideoFile', () => {
   it('should handle mixed case extensions correctly', () => {
     expect(isVideoFile(new File([], 'Test.Mp4', { type: '' }))).toBe(true);
     expect(isVideoFile(new File([], 'VIDEO.wEbM', { type: '' }))).toBe(true);
+  });
+});
+
+describe('isBrowserPlayableVideoFile', () => {
+  it('should allow formats supported by OBS Chromium playback', () => {
+    expect(isBrowserPlayableVideoFile(new File([], 'replay.mp4', { type: '' }))).toBe(true);
+    expect(isBrowserPlayableVideoFile(new File([], 'replay.webm', { type: '' }))).toBe(true);
+    expect(isBrowserPlayableVideoFile(new File([], 'replay.m4v', { type: '' }))).toBe(true);
+    expect(isBrowserPlayableVideoFile(new File([], 'replay.mkv', { type: '' }))).toBe(true);
+  });
+
+  it('should reject container formats outside the direct Browser Source path', () => {
+    expect(isBrowserPlayableVideoFile(new File([], 'replay.avi', { type: 'video/x-msvideo' }))).toBe(false);
+    expect(isBrowserPlayableVideoFile(new File([], 'replay.mov', { type: 'video/quicktime' }))).toBe(false);
+  });
+
+  it('should use the container MIME inferred from the extension', () => {
+    expect(getBrowserVideoMimeType(new File([], 'replay.mkv', { type: 'video/mp4' }))).toBe('video/x-matroska');
+    expect(getBrowserVideoMimeType(new File([], 'replay.webm', { type: '' }))).toBe('video/webm');
   });
 });
 
