@@ -6,11 +6,6 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { useReplayChannel } from '../hooks/useReplayChannel';
 import type { ChannelMessage } from '../types/instantReplay';
 import { isFileMessage as checkIsFileMessage, isCommandMessage as checkIsCommandMessage } from '../types/instantReplay';
-import {
-  getLatestReplayHttpReference,
-  getLatestReplayReference,
-  readReplayFile,
-} from '../utils/replayFileStore';
 import './InstantReplayScreen.css';
 
 /**
@@ -29,7 +24,6 @@ export default function InstantReplayScreen() {
   // Blob URL reference for cleanup
   const objectUrlRef = useRef<string | null>(null);
   const canPlayHandlerRef = useRef<(() => void) | null>(null);
-  const errorHandlerRef = useRef<(() => void) | null>(null);
   
   // BroadcastChannel hook integration (Requirement 10.4)
   const { channelRef, send } = useReplayChannel();
@@ -64,7 +58,6 @@ export default function InstantReplayScreen() {
   const loopARef = useRef<number | null>(null);
   const loopBRef = useRef<number | null>(null);
   const lastStatusAtRef = useRef(0);
-  const loadGenerationRef = useRef(0);
 
   // Bug #2 fix: keep refs in sync with state so handleTimeUpdate always reads latest values
   useEffect(() => { loopARef.current = loopA; }, [loopA]);
@@ -88,75 +81,8 @@ export default function InstantReplayScreen() {
       currentTime: video.currentTime,
       markerA: loopARef.current,
       markerB: loopBRef.current,
-      isPlaying: !video.paused,
     });
   }, [send]);
-
-  const loadVideoSource = useCallback((source: Blob | string) => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    if (canPlayHandlerRef.current) {
-      video.removeEventListener('canplay', canPlayHandlerRef.current);
-      canPlayHandlerRef.current = null;
-    }
-    if (errorHandlerRef.current) {
-      video.removeEventListener('error', errorHandlerRef.current);
-      errorHandlerRef.current = null;
-    }
-
-    const url = typeof source === 'string' ? source : URL.createObjectURL(source);
-    objectUrlRef.current = typeof source === 'string' ? null : url;
-    video.src = url;
-    video.load();
-    setHasVideo(true);
-
-    video.playbackRate = 0.85;
-    setLoopA(null);
-    setLoopB(null);
-    loopARef.current = null;
-    loopBRef.current = null;
-
-    const onCanPlay = () => {
-      void video.play().catch((error: unknown) => {
-        console.warn('[InstantReplayScreen] Browser rejected replay playback', error);
-        send({
-          type: 'playbackError',
-          name: video.currentSrc,
-          message: 'OBS Browser ไม่สามารถเล่นไฟล์นี้ได้ อาจไม่รองรับ MKV Codec ภายในไฟล์',
-          code: video.error?.code,
-        });
-      });
-      video.removeEventListener('canplay', onCanPlay);
-      canPlayHandlerRef.current = null;
-    };
-    const onError = () => {
-      const error = video.error;
-      console.warn('[InstantReplayScreen] Replay media error', {
-        code: error?.code,
-        message: error?.message,
-        source: video.currentSrc,
-      });
-      send({
-        type: 'playbackError',
-        name: video.currentSrc,
-        message: 'OBS Browser ไม่สามารถถอดรหัสไฟล์นี้ได้ อาจไม่รองรับ MKV Codec ภายในไฟล์',
-        code: error?.code,
-      });
-    };
-    canPlayHandlerRef.current = onCanPlay;
-    errorHandlerRef.current = onError;
-    video.addEventListener('canplay', onCanPlay);
-    video.addEventListener('error', onError);
-  }, [send]);
-
-  const loadFileReference = useCallback(async (fileReference: { id: string }) => {
-    const generation = ++loadGenerationRef.current;
-    const storedFile = await readReplayFile(fileReference.id);
-    if (!storedFile || generation !== loadGenerationRef.current) return;
-    loadVideoSource(storedFile.blob);
-  }, [loadVideoSource]);
 
   /**
    * Handle incoming BroadcastChannel messages
@@ -173,32 +99,42 @@ export default function InstantReplayScreen() {
       const video = videoRef.current;
       if (!video) return;
 
-      // New path: only metadata crosses BroadcastChannel. The video Blob is
-      // read from IndexedDB in this browser context.
-      if (message.type === 'fileRef') {
-        if (message.file && typeof message.file.id === 'string') {
-          void loadFileReference(message.file);
-        }
-        return;
-      }
-
-      if (message.type === 'fileUrl') {
-        try {
-          const url = new URL(message.file.url, window.location.origin);
-          if (url.origin === window.location.origin && url.pathname.startsWith('/api/replay/')) {
-            loadGenerationRef.current += 1;
-            loadVideoSource(url.toString());
-          }
-        } catch {
-          console.warn('[InstantReplayScreen] Ignored invalid replay URL');
-        }
-        return;
-      }
-
       // Handle file message (Requirement 2.5)
       if (checkIsFileMessage(message)) {
-        loadGenerationRef.current += 1;
-        loadVideoSource(new Blob([message.data], { type: message.mime }));
+        // Revoke previous Blob URL to free memory (Requirement 10.9)
+        if (objectUrlRef.current) {
+          URL.revokeObjectURL(objectUrlRef.current);
+        }
+        if (canPlayHandlerRef.current) {
+          video.removeEventListener('canplay', canPlayHandlerRef.current);
+          canPlayHandlerRef.current = null;
+        }
+
+        // Create new Blob URL and assign to video element
+        const blob = new Blob([message.data], { type: message.mime });
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        // objectUrlRef is the source of truth — no redundant state needed (Bug #1 fix)
+        video.src = url;
+        video.load();
+        setHasVideo(true);
+
+        // Reset playback state (Requirement 10.5, 7.6)
+        video.playbackRate = 0.85;
+        setLoopA(null);
+        setLoopB(null);
+        loopARef.current = null;
+        loopBRef.current = null;
+
+        // Bug #3 fix: wait for canplay before calling play() so the video element
+        // is actually ready — avoids NotAllowedError / silent failure in OBS/browsers
+        const onCanPlay = () => {
+          void video.play().catch(() => undefined);
+          video.removeEventListener('canplay', onCanPlay);
+          canPlayHandlerRef.current = null;
+        };
+        canPlayHandlerRef.current = onCanPlay;
+        video.addEventListener('canplay', onCanPlay);
         return;
       }
 
@@ -250,19 +186,6 @@ export default function InstantReplayScreen() {
       }
     };
 
-    // If OBS opens the screen after the controller, recover the latest clip
-    // from IndexedDB instead of depending on a missed BroadcastChannel event.
-    void getLatestReplayHttpReference().then(async (latestHttpReference) => {
-      if (latestHttpReference) {
-        loadGenerationRef.current += 1;
-        loadVideoSource(latestHttpReference.url);
-        return;
-      }
-
-      const latestIndexedDbReference = await getLatestReplayReference();
-      if (latestIndexedDbReference) void loadFileReference(latestIndexedDbReference);
-    });
-
     // Cleanup: revoke Blob URL on unmount (Requirement 10.9)
     return () => {
       channel.onmessage = null;
@@ -270,17 +193,15 @@ export default function InstantReplayScreen() {
         video?.removeEventListener('canplay', canPlayHandlerRef.current);
         canPlayHandlerRef.current = null;
       }
-      if (errorHandlerRef.current) {
-        video?.removeEventListener('error', errorHandlerRef.current);
-        errorHandlerRef.current = null;
-      }
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
       }
     };
-  // This effect also owns the channel handler, so keep its dependencies stable.
-  }, [channelRef, loadFileReference, loadVideoSource]);
+  // Bug #1 fix: removed `send` from deps — this effect only sets channel.onmessage
+  // and does not call send. Including send caused unnecessary re-registration every
+  // time send's identity changed, risking a brief window where onmessage was null.
+  }, [channelRef]);
 
   /**
    * Enforce loop playback boundaries and send status updates
@@ -351,8 +272,6 @@ export default function InstantReplayScreen() {
     // Attach event listeners (Requirement 7.4)
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
-    video.addEventListener('playing', sendStatusMessage);
-    video.addEventListener('pause', sendStatusMessage);
     video.addEventListener('ended', handleVideoEnded);
 
     // Cleanup event listeners
@@ -360,8 +279,6 @@ export default function InstantReplayScreen() {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('ended', handleVideoEnded);
-      video.removeEventListener('playing', sendStatusMessage);
-      video.removeEventListener('pause', sendStatusMessage);
     };
   // loopA/loopB removed from deps: loop enforcement now reads loopARef/loopBRef
   // directly so the listener doesn't need to re-register on every marker change.
