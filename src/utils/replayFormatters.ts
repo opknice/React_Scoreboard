@@ -84,6 +84,34 @@ export function isVideoFile(file: File): boolean {
 }
 
 /**
+ * Resolve the MIME type used when creating a Blob URL for replay playback.
+ * Some File System Access API files may have an empty type, so extension-based
+ * fallback keeps the video element from receiving a misleading generic Blob.
+ */
+export function getVideoMimeType(file: File): string {
+  if (file.type && file.type.startsWith('video/')) {
+    return file.type;
+  }
+
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'webm':
+      return 'video/webm';
+    case 'mov':
+      return 'video/quicktime';
+    case 'm4v':
+      return 'video/x-m4v';
+    case 'avi':
+      return 'video/x-msvideo';
+    case 'mkv':
+      return 'video/x-matroska';
+    case 'mp4':
+    default:
+      return 'video/mp4';
+  }
+}
+
+/**
  * Find the most recently modified file from an array of files
  * 
  * @param files - Array of File objects to search

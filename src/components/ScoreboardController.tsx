@@ -869,6 +869,11 @@ export default function ScoreboardController() {
     }
   };
 
+  const handleVideoFolderReset = async () => {
+    await videoFolder.clearStoredFolder();
+    triggerToast('ลืมโฟลเดอร์วิดีโอแล้ว - คลิกปุ่ม Video เพื่อเลือกใหม่', 'info');
+  };
+
   const closePenaltyModal = () => {
     setShowPenaltyModal(false);
     obs.getSceneItemId('Main Stream', 'Penalty').then((id) => {
@@ -971,16 +976,7 @@ export default function ScoreboardController() {
               <button
                 type="button"
                 className="btn-secondary"
-                onClick={() => {
-                  videoFolder.disconnect();
-                  videoFolder.setSavedPath('');
-                  try {
-                    localStorage.removeItem('obsVideoFolderPath');
-                  } catch {
-                    // ignore
-                  }
-                  triggerToast('รีเซ็ตการเชื่อมต่อโฟลเดอร์แล้ว', 'info');
-                }}
+                onClick={() => void handleVideoFolderReset()}
                 style={{ padding: '4px 8px', fontSize: '0.8rem', height: '32px' }}
                 title="รีเซ็ตและเลือกโฟลเดอร์ใหม่"
               >
@@ -1560,16 +1556,7 @@ export default function ScoreboardController() {
                 />
                 <button
                   className="btn-secondary"
-                  onClick={() => {
-                    videoFolder.setSavedPath('');
-                    videoFolder.disconnect();
-                    try {
-                      localStorage.removeItem('obsVideoFolderPath');
-                    } catch {
-                      // ignore
-                    }
-                    triggerToast('ล้าง path แล้ว - คลิกปุ่ม Video เพื่อเลือกใหม่', 'info');
-                  }}
+                  onClick={() => void handleVideoFolderReset()}
                   title="ล้าง path และเลือกโฟลเดอร์ใหม่"
                 >
                   🗑️

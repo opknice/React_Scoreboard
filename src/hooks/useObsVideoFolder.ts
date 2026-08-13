@@ -99,6 +99,28 @@ async function saveHandleToIdb(handle: FileSystemDirectoryHandle): Promise<void>
   }
 }
 
+async function deleteHandleFromIdb(dbName: string, key: string): Promise<void> {
+  try {
+    const db = await openIdb(dbName);
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    });
+  } catch {
+    // ignore
+  }
+}
+
+async function clearStoredHandle(): Promise<void> {
+  await Promise.all([
+    deleteHandleFromIdb(IDB_NAME, IDB_KEY),
+    deleteHandleFromIdb(LEGACY_IDB_NAME, LEGACY_IDB_KEY),
+  ]);
+}
+
 async function loadStoredHandle(): Promise<FileSystemDirectoryHandle | null> {
   let handle = await loadHandleFromIdb(IDB_NAME, IDB_KEY);
   if (handle) return handle;
@@ -309,6 +331,23 @@ export function useObsVideoFolder() {
     setLastScanTimestamp(0);
   }, []);
 
+  const clearStoredFolder = useCallback(async () => {
+    disconnect();
+    setSavedPath('');
+    setFolderName('');
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
+    }
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PATH);
+      localStorage.removeItem(STORAGE_KEYS.NAME);
+      localStorage.removeItem(STORAGE_KEYS.LEGACY_NAME);
+    } catch {
+      // ignore
+    }
+    await clearStoredHandle();
+  }, [disconnect]);
+
   const rescan = useCallback(async (): Promise<File[]> => {
     if (!folderHandle) {
       return videoFiles;
@@ -341,6 +380,7 @@ export function useObsVideoFolder() {
     folderInputRef,
     connect,
     disconnect,
+    clearStoredFolder,
     rescan,
     handleFallbackFolderChange,
   };

@@ -716,22 +716,35 @@
 
 /* ── Screen / output view ────────────────────────────────── */
 .var-screen {
+  position: fixed;
+  inset: 0;
   display: grid;
   place-items: center;
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
   overflow: hidden;
   background: #000;
 }
 
 .var-screen-video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
   will-change: transform;
   transform-origin: center;
+  background: #000;
 }
 
 .var-screen-empty {
   position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   color: rgba(232, 241, 247, .3);
   font-size: clamp(.8rem, 2vw, 1.4rem);
   letter-spacing: .16em;

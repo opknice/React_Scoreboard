@@ -6,6 +6,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { useReplayChannel } from '../hooks/useReplayChannel';
 import type { ChannelMessage } from '../types/instantReplay';
 import { isFileMessage as checkIsFileMessage, isCommandMessage as checkIsCommandMessage } from '../types/instantReplay';
+import './InstantReplayScreen.css';
 
 /**
  * InstantReplayScreen Component
@@ -23,6 +24,7 @@ export default function InstantReplayScreen() {
   // Blob URL reference for cleanup
   const objectUrlRef = useRef<string | null>(null);
   const canPlayHandlerRef = useRef<(() => void) | null>(null);
+  const videoErrorHandlerRef = useRef<(() => void) | null>(null);
   
   // BroadcastChannel hook integration (Requirement 10.4)
   const { channelRef, send } = useReplayChannel();
@@ -67,11 +69,11 @@ export default function InstantReplayScreen() {
    * Contains video metadata and current playback state
    * Validates: Requirement 6.5, 6.6, 6.7
    */
-  const sendStatusMessage = useCallback(() => {
+  const sendStatusMessage = useCallback((force = false) => {
     const video = videoRef.current;
     if (!video || !Number.isFinite(video.duration)) return;
     const now = performance.now();
-    if (now - lastStatusAtRef.current < 200) return;
+    if (!force && now - lastStatusAtRef.current < 200) return;
     lastStatusAtRef.current = now;
 
     send({
@@ -93,6 +95,19 @@ export default function InstantReplayScreen() {
     if (!channel) return;
     const video = videoRef.current;
 
+    const cleanupPendingPlaybackHandlers = () => {
+      if (!video) return;
+      if (canPlayHandlerRef.current) {
+        video.removeEventListener('canplay', canPlayHandlerRef.current);
+        video.removeEventListener('loadeddata', canPlayHandlerRef.current);
+        canPlayHandlerRef.current = null;
+      }
+      if (videoErrorHandlerRef.current) {
+        video.removeEventListener('error', videoErrorHandlerRef.current);
+        videoErrorHandlerRef.current = null;
+      }
+    };
+
     channel.onmessage = (event: MessageEvent<ChannelMessage>) => {
       const message = event.data;
       const video = videoRef.current;
@@ -100,13 +115,10 @@ export default function InstantReplayScreen() {
 
       // Handle file message (Requirement 2.5)
       if (checkIsFileMessage(message)) {
+        cleanupPendingPlaybackHandlers();
         // Revoke previous Blob URL to free memory (Requirement 10.9)
         if (objectUrlRef.current) {
           URL.revokeObjectURL(objectUrlRef.current);
-        }
-        if (canPlayHandlerRef.current) {
-          video.removeEventListener('canplay', canPlayHandlerRef.current);
-          canPlayHandlerRef.current = null;
         }
 
         // Create new Blob URL and assign to video element
@@ -115,7 +127,6 @@ export default function InstantReplayScreen() {
         objectUrlRef.current = url;
         // objectUrlRef is the source of truth — no redundant state needed (Bug #1 fix)
         video.src = url;
-        video.load();
         setHasVideo(true);
 
         // Reset playback state (Requirement 10.5, 7.6)
@@ -124,16 +135,31 @@ export default function InstantReplayScreen() {
         setLoopB(null);
         loopARef.current = null;
         loopBRef.current = null;
+        lastStatusAtRef.current = 0;
 
         // Bug #3 fix: wait for canplay before calling play() so the video element
         // is actually ready — avoids NotAllowedError / silent failure in OBS/browsers
         const onCanPlay = () => {
-          void video.play().catch(() => undefined);
-          video.removeEventListener('canplay', onCanPlay);
-          canPlayHandlerRef.current = null;
+          cleanupPendingPlaybackHandlers();
+          void video.play().catch((error) => {
+            console.warn('[InstantReplayScreen] Video play was blocked or failed:', error);
+          });
+        };
+        const onVideoError = () => {
+          const detail = video.error ? `code ${video.error.code}` : 'unknown media error';
+          console.error(`[InstantReplayScreen] Failed to load replay video "${message.name}" (${message.mime}): ${detail}`);
+          cleanupPendingPlaybackHandlers();
         };
         canPlayHandlerRef.current = onCanPlay;
-        video.addEventListener('canplay', onCanPlay);
+        videoErrorHandlerRef.current = onVideoError;
+        video.addEventListener('canplay', onCanPlay, { once: true });
+        video.addEventListener('loadeddata', onCanPlay, { once: true });
+        video.addEventListener('error', onVideoError, { once: true });
+        video.load();
+
+        if (video.readyState >= 2) {
+          onCanPlay();
+        }
         return;
       }
 
@@ -188,10 +214,7 @@ export default function InstantReplayScreen() {
     // Cleanup: revoke Blob URL on unmount (Requirement 10.9)
     return () => {
       channel.onmessage = null;
-      if (canPlayHandlerRef.current) {
-        video?.removeEventListener('canplay', canPlayHandlerRef.current);
-        canPlayHandlerRef.current = null;
-      }
+      cleanupPendingPlaybackHandlers();
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
@@ -238,7 +261,7 @@ export default function InstantReplayScreen() {
 
     const handleLoadedMetadata = () => {
       // Send initial status with duration (Requirement 6.6)
-      sendStatusMessage();
+      sendStatusMessage(true);
     };
 
     const handleVideoEnded = () => {
@@ -285,18 +308,19 @@ export default function InstantReplayScreen() {
   }, [sendStatusMessage]);
 
   return (
-    <main className="var-screen">
+    <main className="instant-replay-screen">
       {/* Video element with required attributes (Requirement 10.2) */}
       <video
         ref={videoRef}
         muted
         playsInline
-        className="var-screen-video"
+        preload="auto"
+        className="instant-replay-screen-video"
       />
       
       {/* Waiting placeholder when no video loaded (Requirement 10.3) */}
       {!hasVideo && (
-        <div className="var-screen-empty">WAITING FOR REPLAY FEED</div>
+        <div className="instant-replay-screen-empty">WAITING FOR REPLAY FEED</div>
       )}
     </main>
   );

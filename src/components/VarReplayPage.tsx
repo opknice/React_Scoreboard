@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
+import { getVideoMimeType } from '../utils/replayFormatters';
 import './VarReplayPage.css';
 
 const CHANNEL_NAME = 'scoreboard_var_replay_studio_v2';
@@ -80,6 +81,8 @@ function Header({ onCopyUrl, copied }: { onCopyUrl: () => void; copied: boolean 
 function VarReplayScreen() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const canPlayHandlerRef = useRef<(() => void) | null>(null);
+  const videoErrorHandlerRef = useRef<(() => void) | null>(null);
   const { channelRef, send } = useReplayChannel();
   const [loopA, setLoopA] = useState<number | null>(null);
   const [loopB, setLoopB] = useState<number | null>(null);
@@ -98,11 +101,11 @@ function VarReplayScreen() {
     };
   }, []);
 
-  const sendStatus = useCallback(() => {
+  const sendStatus = useCallback((force = false) => {
     const video = videoRef.current;
     if (!video || !Number.isFinite(video.duration)) return;
     const now = performance.now();
-    if (now - lastStatusAtRef.current < 200) return;
+    if (!force && now - lastStatusAtRef.current < 200) return;
     lastStatusAtRef.current = now;
     send({
       type: 'status',
@@ -117,6 +120,20 @@ function VarReplayScreen() {
   useEffect(() => {
     const channel = channelRef.current;
     if (!channel) return;
+    const mountedVideo = videoRef.current;
+
+    const cleanupPendingPlaybackHandlers = () => {
+      if (!mountedVideo) return;
+      if (canPlayHandlerRef.current) {
+        mountedVideo.removeEventListener('canplay', canPlayHandlerRef.current);
+        mountedVideo.removeEventListener('loadeddata', canPlayHandlerRef.current);
+        canPlayHandlerRef.current = null;
+      }
+      if (videoErrorHandlerRef.current) {
+        mountedVideo.removeEventListener('error', videoErrorHandlerRef.current);
+        videoErrorHandlerRef.current = null;
+      }
+    };
 
     channel.onmessage = (event: MessageEvent<ChannelMessage>) => {
       const message = event.data;
@@ -124,6 +141,7 @@ function VarReplayScreen() {
       if (!video) return;
 
       if (message.type === 'file') {
+        cleanupPendingPlaybackHandlers();
         if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = URL.createObjectURL(new Blob([message.data], { type: message.mime }));
         video.src = objectUrlRef.current;
@@ -134,7 +152,29 @@ function VarReplayScreen() {
         loopARef.current = null;
         loopBRef.current = null;
         setTransform({ zoom: 1, x: 0, y: 0 });
-        void video.play().catch(() => undefined);
+        lastStatusAtRef.current = 0;
+
+        const onCanPlay = () => {
+          cleanupPendingPlaybackHandlers();
+          void video.play().catch((error) => {
+            console.warn('[VarReplayScreen] Video play was blocked or failed:', error);
+          });
+        };
+        const onVideoError = () => {
+          const detail = video.error ? `code ${video.error.code}` : 'unknown media error';
+          console.error(`[VarReplayScreen] Failed to load VAR replay video "${message.name}" (${message.mime}): ${detail}`);
+          cleanupPendingPlaybackHandlers();
+        };
+        canPlayHandlerRef.current = onCanPlay;
+        videoErrorHandlerRef.current = onVideoError;
+        video.addEventListener('canplay', onCanPlay, { once: true });
+        video.addEventListener('loadeddata', onCanPlay, { once: true });
+        video.addEventListener('error', onVideoError, { once: true });
+        video.load();
+
+        if (video.readyState >= 2) {
+          onCanPlay();
+        }
         return;
       }
 
@@ -142,7 +182,7 @@ function VarReplayScreen() {
 
       if (message.action === 'play')  void video.play().catch(() => undefined);
       if (message.action === 'pause') video.pause();
-      if (message.action === 'speed' && typeof message.value === 'number') video.playbackRate = message.value;
+      if ((message.action === 'speed' || message.action === 'setSpeed') && typeof message.value === 'number') video.playbackRate = message.value;
       if (message.action === 'seek'  && typeof message.value === 'number') video.currentTime = message.value;
       if (message.action === 'clearLoop') {
         setLoopA(null);
@@ -177,7 +217,10 @@ function VarReplayScreen() {
       }
     };
 
-    return () => { channel.onmessage = null; };
+    return () => {
+      channel.onmessage = null;
+      cleanupPendingPlaybackHandlers();
+    };
   }, [channelRef]);
 
   useEffect(() => {
@@ -194,16 +237,19 @@ function VarReplayScreen() {
       sendStatus();
     };
 
+    const onLoadedMetadata = () => sendStatus(true);
+    const onPlaybackStatus = () => sendStatus();
+
     video.addEventListener('timeupdate', onTimeUpdate);
-    video.addEventListener('loadedmetadata', sendStatus);
-    video.addEventListener('play', sendStatus);
-    video.addEventListener('pause', sendStatus);
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('play', onPlaybackStatus);
+    video.addEventListener('pause', onPlaybackStatus);
 
     return () => {
       video.removeEventListener('timeupdate', onTimeUpdate);
-      video.removeEventListener('loadedmetadata', sendStatus);
-      video.removeEventListener('play', sendStatus);
-      video.removeEventListener('pause', sendStatus);
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('play', onPlaybackStatus);
+      video.removeEventListener('pause', onPlaybackStatus);
     };
   }, [sendStatus]);
 
@@ -213,6 +259,7 @@ function VarReplayScreen() {
         ref={videoRef}
         muted
         playsInline
+        preload="auto"
         className="var-screen-video"
         style={{ transform: `scale(${transform.zoom}) translate(${transform.x}%, ${transform.y}%)` }}
       />
@@ -338,7 +385,7 @@ function VarReplayControl() {
 
   const loadFile = useCallback(async (file: File) => {
     const data = await file.arrayBuffer();
-    send({ type: 'file', data, mime: file.type || 'video/mp4', name: file.name });
+    send({ type: 'file', data, mime: getVideoMimeType(file), name: file.name });
     setLoadedFileName(file.name);
     setDuration(0);
     setCurrentTime(0);

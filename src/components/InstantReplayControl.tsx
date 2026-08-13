@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useReplayChannel } from '../hooks/useReplayChannel';
-import { formatTime, formatSize, findLatestFile } from '../utils/replayFormatters';
+import { formatTime, formatSize, findLatestFile, getVideoMimeType } from '../utils/replayFormatters';
 import type { CommandMessage } from '../types/instantReplay';
 import './InstantReplayControl.css';
 
@@ -104,7 +104,7 @@ export default function InstantReplayControl() {
       send({
         type: 'file',
         data,
-        mime: targetFile.type || 'video/mp4',
+        mime: getVideoMimeType(targetFile),
         name: targetFile.name,
       });
 
@@ -186,16 +186,16 @@ export default function InstantReplayControl() {
   }, [sendCommand]);
 
   const onCopyUrl = useCallback(async () => {
+    const screenUrl = `${window.location.origin}${import.meta.env.BASE_URL}replay/screen`;
     try {
-      const url = window.location.origin + '/replay/screen';
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(screenUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       console.error('Failed to copy URL:', error);
       // Fallback: create temporary input element
       const input = document.createElement('input');
-      input.value = window.location.origin + '/replay/screen';
+      input.value = screenUrl;
       document.body.appendChild(input);
       input.select();
       document.execCommand('copy');

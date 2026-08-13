@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime, formatSize, isVideoFile, findLatestFile } from './replayFormatters';
+import { formatTime, formatSize, isVideoFile, getVideoMimeType, findLatestFile } from './replayFormatters';
 
 describe('formatTime', () => {
   it('should format zero seconds as "0:00"', () => {
@@ -140,6 +140,25 @@ describe('isVideoFile', () => {
   it('should handle mixed case extensions correctly', () => {
     expect(isVideoFile(new File([], 'Test.Mp4', { type: '' }))).toBe(true);
     expect(isVideoFile(new File([], 'VIDEO.wEbM', { type: '' }))).toBe(true);
+  });
+});
+
+describe('getVideoMimeType', () => {
+  it('should return the browser-provided video MIME type when available', () => {
+    expect(getVideoMimeType(new File([], 'test.mp4', { type: 'video/mp4' }))).toBe('video/mp4');
+    expect(getVideoMimeType(new File([], 'test.mov', { type: 'video/quicktime' }))).toBe('video/quicktime');
+  });
+
+  it('should infer MIME type from extension when File.type is empty', () => {
+    expect(getVideoMimeType(new File([], 'test.webm', { type: '' }))).toBe('video/webm');
+    expect(getVideoMimeType(new File([], 'test.mov', { type: '' }))).toBe('video/quicktime');
+    expect(getVideoMimeType(new File([], 'test.m4v', { type: '' }))).toBe('video/x-m4v');
+    expect(getVideoMimeType(new File([], 'test.avi', { type: '' }))).toBe('video/x-msvideo');
+    expect(getVideoMimeType(new File([], 'test.mkv', { type: '' }))).toBe('video/x-matroska');
+  });
+
+  it('should fall back to mp4 for unknown extensions', () => {
+    expect(getVideoMimeType(new File([], 'test.unknown', { type: '' }))).toBe('video/mp4');
   });
 });
 
