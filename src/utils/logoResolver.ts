@@ -21,13 +21,21 @@ export function updateGlobalTeamsCache(teamsData: Record<string, any>) {
   if (!teamsData) return;
   Object.keys(teamsData).forEach((key) => {
     const item = teamsData[key];
-    const teamName = typeof item === 'object' ? item.name || key : key;
-    const logoUrl = typeof item === 'object' ? item.logo || item.url || '' : String(item);
+    const teamName = typeof item === 'object' && item !== null ? item.name || key : key;
+    const logoUrl = typeof item === 'object' && item !== null ? item.logo || item.url || '' : String(item || '');
+    const cleanKey = normalizeTeamKey(teamName);
     if (logoUrl) {
-      const cleanKey = normalizeTeamKey(teamName);
       globalTeamsCache[cleanKey] = logoUrl;
+    } else {
+      delete globalTeamsCache[cleanKey];
     }
   });
+}
+
+/** Replaces the cache so removed/blank Firebase entries cannot stay visible. */
+export function replaceGlobalTeamsCache(teamsData: Record<string, any> | null | undefined) {
+  Object.keys(globalTeamsCache).forEach((key) => delete globalTeamsCache[key]);
+  if (teamsData) updateGlobalTeamsCache(teamsData);
 }
 
 /**
@@ -142,21 +150,19 @@ export function listenToFirebaseTeams(
   try {
     const teamsRef = ref(db, 'teams');
     return onValue(teamsRef, (snapshot) => {
-      const val = snapshot.val();
-      if (val) {
-        updateGlobalTeamsCache(val);
-        if (onUpdate) {
-          const parsedMap: Record<string, { name: string; logo: string }> = {};
-          Object.keys(val).forEach((k) => {
-            const item = val[k];
-            if (typeof item === 'object') {
-              parsedMap[k] = { name: item.name || k, logo: item.logo || item.url || '' };
-            } else {
-              parsedMap[k] = { name: k, logo: String(item) };
-            }
-          });
-          onUpdate(parsedMap);
-        }
+      const val = snapshot.val() as Record<string, any> | null;
+      replaceGlobalTeamsCache(val);
+      if (onUpdate) {
+        const parsedMap: Record<string, { name: string; logo: string }> = {};
+        Object.keys(val || {}).forEach((k) => {
+          const item = val?.[k];
+          if (typeof item === 'object' && item !== null) {
+            parsedMap[k] = { name: item.name || k, logo: item.logo || item.url || '' };
+          } else {
+            parsedMap[k] = { name: k, logo: String(item || '') };
+          }
+        });
+        onUpdate(parsedMap);
       }
     });
   } catch (err) {

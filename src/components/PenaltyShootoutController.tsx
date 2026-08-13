@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { translations } from '../constants/translations';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 
@@ -31,6 +31,15 @@ interface PenaltyShootoutControllerProps {
   teamNameA?: string; // Team A name from parent
   teamNameB?: string; // Team B name from parent
   onClose?: () => void; // Callback when closing
+}
+
+function getShotsForPage(team: 'A' | 'B', page: number, currentShots: PenaltyShots): (boolean | null)[] {
+  const pageShots = currentShots[team][page] || [];
+  const displayArray = Array<boolean | null>(5).fill(null);
+  for (let i = 0; i < pageShots.length; i += 1) {
+    displayArray[i] = pageShots[i];
+  }
+  return displayArray;
 }
 
 const DEFAULT_OBS_SCENE: OBSSceneSettings = {
@@ -103,14 +112,29 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
   // Keep ref in sync so cleanup function can read latest connection state
   obsIsConnectedRef.current = obs.isConnected;
 
+  const obsRef = useRef(obs);
+  const propsRef = useRef({ propTeamNameA, propTeamNameB });
+  const sceneSettingsRef = useRef(obsSceneSettings);
+  const transRef = useRef(trans);
+  const triggerToastRef = useRef(triggerToast);
+  const toggleSourcesRef = useRef<((showList: string[], hideList: string[], force?: boolean) => Promise<void>) | null>(null);
+  obsRef.current = obs;
+  propsRef.current = { propTeamNameA, propTeamNameB };
+  sceneSettingsRef.current = obsSceneSettings;
+  transRef.current = trans;
+  triggerToastRef.current = triggerToast;
+
   // --- Initialize BroadcastChannel & OBS connection ---
   useEffect(() => {
     channelRef.current = new BroadcastChannel('penalty_channel');
     let isMounted = true;
+    const runToggle = (showList: string[], hideList: string[], force = false) => (
+      toggleSourcesRef.current ? toggleSourcesRef.current(showList, hideList, force) : Promise.resolve()
+    );
 
     // Listen for team name updates from main controller (only if not using parent OBS)
     const handleStorageChange = () => {
-      if (!propTeamNameA && !propTeamNameB) {
+      if (!propsRef.current.propTeamNameA && !propsRef.current.propTeamNameB) {
         const nameA = localStorage.getItem('penalty_teamA');
         const nameB = localStorage.getItem('penalty_teamB');
         if (nameA) setTeamNameA(nameA);
@@ -128,26 +152,26 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
     if (!isUsingParentObs) {
       const connectAndShowPenalty = async () => {
         try {
-          const connected = await obs.connect('ws://localhost:4455');
+          const connected = await obsRef.current.connect('ws://localhost:4455');
           if (!connected || !isMounted) return;
 
           console.log('[Penalty OBS] Connected, showing penalty overlay...');
-          triggerToast(trans.toastObsSuccess, 'success');
+          triggerToastRef.current(transRef.current.toastObsSuccess, 'success');
 
           // Wait a bit for OBS connection to stabilize
           await new Promise(resolve => setTimeout(resolve, 100));
 
           // Auto-show penalty overlay on open
-          await toggleSources(
-            obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-            obsSceneSettings.hideSources.split(',').map((s) => s.trim()).filter(Boolean),
+          await runToggle(
+            sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
+            sceneSettingsRef.current.hideSources.split(',').map((s) => s.trim()).filter(Boolean),
             true // force = true to bypass connection check
           );
           console.log('[Penalty OBS] Penalty overlay shown');
         } catch (err) {
           console.error('[Penalty OBS] Connection error:', err);
           if (isMounted) {
-            triggerToast(trans.toastObsError, 'error');
+            triggerToastRef.current(transRef.current.toastObsError, 'error');
           }
         }
       };
@@ -162,9 +186,9 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       if (document.visibilityState === 'hidden' && obsIsConnectedRef.current && !isUsingParentObs) {
         console.log('[Penalty OBS] Page hidden (visibilitychange), hiding penalty overlay...');
         try {
-          await toggleSources(
-            obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-            obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
+          await runToggle(
+            sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
+            sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
             true
           );
           console.log('[Penalty OBS] Penalty overlay hidden on visibility change');
@@ -179,9 +203,9 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       if (obsIsConnectedRef.current && !isUsingParentObs) {
         console.log('[Penalty OBS] Page hiding (pagehide), hiding penalty overlay...');
         try {
-          await toggleSources(
-            obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-            obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
+          await runToggle(
+            sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
+            sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
             true
           );
           console.log('[Penalty OBS] Penalty overlay hidden on pagehide');
@@ -196,11 +220,11 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       if (obsIsConnectedRef.current && !isUsingParentObs) {
         console.log('[Penalty OBS] Page unloading (beforeunload), attempting cleanup...');
         // Synchronous call - may not complete but worth trying
-        const hideList = obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean);
-        const showList = obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean);
+        const hideList = sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean);
+        const showList = sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean);
 
         // Attempt cleanup
-        toggleSources(showList, hideList, true).catch(err => {
+        runToggle(showList, hideList, true).catch(err => {
           console.error('[Penalty OBS] Beforeunload cleanup error:', err);
         });
       }
@@ -228,9 +252,9 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       // Cleanup for component unmount - but keep connection alive if using parent
       if (shouldCleanup && !isUsingParentObs) {
         console.log('[Penalty OBS] Component unmounting, hiding penalty overlay...');
-        toggleSources(
-          obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-          obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
+        runToggle(
+          sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
+          sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
           true
         ).then(() => {
           console.log('[Penalty OBS] Penalty overlay hidden on unmount');
@@ -241,28 +265,23 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
     };
   }, [isUsingParentObs]);
 
-  // Sync state to BroadcastChannel when state changes
-  useEffect(() => {
-    broadcastUpdate();
-  }, [shots, currentPage, settings]);
-
   // --- OBS Scene Source Toggle ---
-  const toggleSources = async (showList: string[], hideList: string[], force = false) => {
+  const toggleSources = useCallback(async (showList: string[], hideList: string[], force = false) => {
     // Allow force bypass for timing issues after connect
-    if (!force && !obs.isConnected) {
+    if (!force && !obsRef.current.isConnected) {
       console.warn('[Penalty OBS] toggleSources called but OBS not connected');
-      triggerToast('ไม่ได้เชื่อมต่อกับ OBS', 'error');
+      triggerToastRef.current('ไม่ได้เชื่อมต่อกับ OBS', 'error');
       return;
     }
-    const sceneName = obsSceneSettings.sceneName;
+    const sceneName = sceneSettingsRef.current.sceneName;
     console.log(`[Penalty OBS] toggleSources - Scene: ${sceneName}, Show: [${showList.join(', ')}], Hide: [${hideList.join(', ')}]`);
 
     try {
       for (const sourceName of showList) {
         if (!sourceName) continue;
-        const id = await obs.getSceneItemId(sceneName, sourceName);
+        const id = await obsRef.current.getSceneItemId(sceneName, sourceName);
         if (id !== null) {
-          await obs.setSceneItemEnabled(sceneName, id, true);
+          await obsRef.current.setSceneItemEnabled(sceneName, id, true);
           console.log(`[Penalty OBS] ✓ SHOW: ${sourceName} (id=${id})`);
         } else {
           console.warn(`[Penalty OBS] ⚠ Cannot find source "${sourceName}" in scene "${sceneName}"`);
@@ -270,9 +289,9 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       }
       for (const sourceName of hideList) {
         if (!sourceName) continue;
-        const id = await obs.getSceneItemId(sceneName, sourceName);
+        const id = await obsRef.current.getSceneItemId(sceneName, sourceName);
         if (id !== null) {
-          await obs.setSceneItemEnabled(sceneName, id, false);
+          await obsRef.current.setSceneItemEnabled(sceneName, id, false);
           console.log(`[Penalty OBS] ✓ HIDE: ${sourceName} (id=${id})`);
         } else {
           console.warn(`[Penalty OBS] ⚠ Cannot find source "${sourceName}" in scene "${sceneName}"`);
@@ -282,34 +301,31 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       console.error('[Penalty OBS] Error in toggleSources:', err);
       throw err; // Re-throw so caller can handle
     }
-  };
+  }, []);
+  toggleSourcesRef.current = toggleSources;
 
   const updateOBSScore = (team: 'A' | 'B', val: number) => {
     const sourceName = team === 'A' ? 'Score_A' : 'Score_B';
     obs.setText(sourceName, String(val));
   };
 
-  const getShotsForCurrentPage = (team: 'A' | 'B', currentShots = shots) => {
-    const pageShots = currentShots[team][currentPage] || [];
-    const displayArray = Array(5).fill(null);
-    for (let i = 0; i < pageShots.length; i++) {
-      displayArray[i] = pageShots[i];
-    }
-    return displayArray;
-  };
-
-  const broadcastUpdate = (currentShots = shots, currentSettings = settings) => {
+  const broadcastUpdate = useCallback((currentShots = shots, currentSettings = settings) => {
     if (channelRef.current) {
       channelRef.current.postMessage({
         type: 'update',
         data: {
-          shotsA: getShotsForCurrentPage('A', currentShots),
-          shotsB: getShotsForCurrentPage('B', currentShots),
+          shotsA: getShotsForPage('A', currentPage, currentShots),
+          shotsB: getShotsForPage('B', currentPage, currentShots),
           settings: currentSettings
         }
       });
     }
-  };
+  }, [currentPage, settings, shots]);
+
+  // Sync state to BroadcastChannel when state changes
+  useEffect(() => {
+    broadcastUpdate();
+  }, [broadcastUpdate]);
 
   const handleHidePenalty = async () => {
     console.log('[Penalty OBS] Hide button clicked, hiding penalty overlay...');
@@ -373,6 +389,22 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
   // --- Penalty Control Actions ---
   const handleShoot = (team: 'A' | 'B', isGoal: boolean) => {
+    // Broadcast button event
+    try {
+      const channel = new BroadcastChannel('button-events');
+      channel.postMessage({
+        type: 'ButtonClicked',
+        buttonId: team === 'A' ? 'penalty_A' : 'penalty_B',
+        team: team,
+        isGoal: isGoal,
+        timestamp: Date.now()
+      });
+      channel.close();
+      console.log(`[PenaltyEvent] Broadcasted: penalty_${team}, isGoal: ${isGoal}`);
+    } catch (e) {
+      console.error('[PenaltyEvent] Failed to broadcast:', e);
+    }
+
     const pageShots = shots[team][currentPage] || [];
     const isStartingNewPage = pageShots.length === 5;
 
@@ -434,7 +466,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
   };
 
   const renderDotsPreview = (team: 'A' | 'B') => {
-    const list = getShotsForCurrentPage(team);
+    const list = getShotsForPage(team, currentPage, shots);
     return (
       <div className="dots" style={{ display: 'flex', gap: '8px', justifyContent: 'center', margin: '12px 0' }}>
         {list.map((shot, idx) => {

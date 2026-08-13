@@ -1,7 +1,6 @@
-import { createContext, useContext, type ReactNode } from 'react';
-import { useObsVideoFolder, type ObsVideoFolderContextValue } from '../hooks/useObsVideoFolder';
-
-const ObsVideoFolderContext = createContext<ObsVideoFolderContextValue | null>(null);
+import type { ReactNode } from 'react';
+import { useObsVideoFolder } from '../hooks/useObsVideoFolder';
+import { ObsVideoFolderContext } from './obsFolderContext';
 
 export function ObsVideoFolderProvider({ children }: { children: ReactNode }) {
   const value = useObsVideoFolder();
@@ -19,12 +18,4 @@ export function ObsVideoFolderProvider({ children }: { children: ReactNode }) {
       />
     </ObsVideoFolderContext.Provider>
   );
-}
-
-export function useObsVideoFolderContext(): ObsVideoFolderContextValue {
-  const context = useContext(ObsVideoFolderContext);
-  if (!context) {
-    throw new Error('useObsVideoFolderContext must be used within ObsVideoFolderProvider');
-  }
-  return context;
 }

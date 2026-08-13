@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useObsVideoFolderContext } from '../context/ObsVideoFolderContext';
+import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import './VarReplayPage.css';
 
 const CHANNEL_NAME = 'scoreboard_var_replay_studio_v2';
@@ -85,6 +85,7 @@ function VarReplayScreen() {
   const [loopB, setLoopB] = useState<number | null>(null);
   const loopARef = useRef<number | null>(null);
   const loopBRef = useRef<number | null>(null);
+  const lastStatusAtRef = useRef(0);
   const [transform, setTransform] = useState<Transform>({ zoom: 1, x: 0, y: 0 });
   const [hasVideo, setHasVideo] = useState(false);
 
@@ -100,6 +101,9 @@ function VarReplayScreen() {
   const sendStatus = useCallback(() => {
     const video = videoRef.current;
     if (!video || !Number.isFinite(video.duration)) return;
+    const now = performance.now();
+    if (now - lastStatusAtRef.current < 200) return;
+    lastStatusAtRef.current = now;
     send({
       type: 'status',
       duration: video.duration,

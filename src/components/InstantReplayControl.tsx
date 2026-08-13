@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useObsVideoFolderContext } from '../context/ObsVideoFolderContext';
+import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useReplayChannel } from '../hooks/useReplayChannel';
 import { formatTime, formatSize, findLatestFile } from '../utils/replayFormatters';
 import type { CommandMessage } from '../types/instantReplay';
@@ -237,6 +237,35 @@ export default function InstantReplayControl() {
     return () => channel.removeEventListener('message', handleMessage);
   // duration removed from deps — durationRef handles it without causing re-registration
   }, [channelRef, applyAutoTrim]);
+
+  // Listen for BroadcastChannel commands from Macros
+  useEffect(() => {
+    let replayControlChannel: BroadcastChannel | null = null;
+
+    try {
+      replayControlChannel = new BroadcastChannel('replay-control');
+      console.log('[InstantReplayControl] Replay control channel created, listening for commands...');
+
+      replayControlChannel.onmessage = (event) => {
+        const eventData = event.data;
+        console.log('[InstantReplayControl] Received broadcast event:', eventData);
+
+        if (eventData.type === 'LoadLatestReplay') {
+          console.log('[InstantReplayControl] LoadLatestReplay triggered, calling loadAndPlayLatestFile...');
+          void loadAndPlayLatestFile();
+        }
+      };
+    } catch (e) {
+      console.error('[InstantReplayControl] Failed to create replay control channel:', e);
+    }
+
+    return () => {
+      if (replayControlChannel) {
+        replayControlChannel.close();
+        console.log('[InstantReplayControl] Replay control channel closed');
+      }
+    };
+  }, [loadAndPlayLatestFile]);
 
   const trimStart = duration > 0
     ? calculateTrimStartTime(duration, replayDuration)

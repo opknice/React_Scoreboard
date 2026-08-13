@@ -47,7 +47,7 @@ export class OBSSetupService {
     try {
       await this.obsRef.call('GetInputSettings', { inputName: sourceName });
       return true;
-    } catch (err) {
+    } catch {
       return false;
     }
   }

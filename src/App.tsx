@@ -1,17 +1,19 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import ScoreboardController from './components/ScoreboardController';
-import OverlayContainer from './components/OverlayContainer';
-import AllScoresStandalone from './components/AllScoresStandalone';
-import LeagueTableStandalone from './components/LeagueTableStandalone';
-import AllScoreCombinedStandalone from './components/AllScoreCombinedStandalone';
-import PenaltyShootoutController from './components/PenaltyShootoutController';
-import PenaltyDotsOverlay from './components/PenaltyDotsOverlay';
-import VarReplayPage from './components/VarReplayPage';
-import InstantReplayPage from './components/InstantReplayPage';
 import AuthGuard from './components/AuthGuard';
 import AdminWhitelist from './components/AdminWhitelist';
 import { ObsVideoFolderProvider } from './context/ObsVideoFolderContext';
 import './App.css';
+
+const ScoreboardController = lazy(() => import('./components/ScoreboardController'));
+const OverlayContainer = lazy(() => import('./components/OverlayContainer'));
+const AllScoresStandalone = lazy(() => import('./components/AllScoresStandalone'));
+const LeagueTableStandalone = lazy(() => import('./components/LeagueTableStandalone'));
+const AllScoreCombinedStandalone = lazy(() => import('./components/AllScoreCombinedStandalone'));
+const PenaltyShootoutController = lazy(() => import('./components/PenaltyShootoutController'));
+const PenaltyDotsOverlay = lazy(() => import('./components/PenaltyDotsOverlay'));
+const VarReplayPage = lazy(() => import('./components/VarReplayPage'));
+const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
 
 function App() {
   const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
@@ -19,66 +21,68 @@ function App() {
   return (
     <BrowserRouter basename={basename}>
       <ObsVideoFolderProvider>
-        <Routes>
-        {/* Scoreboard Controller (main panel protected by Google Auth + Whitelist) */}
-        <Route
-          path="/"
-          element={
-            <AuthGuard>
-              <ScoreboardController />
-            </AuthGuard>
-          }
-        />
-        <Route path="/controller" element={<Navigate to="/" replace />} />
+        <Suspense fallback={<div className="app-loading">กำลังโหลดหน้าจอ...</div>}>
+          <Routes>
+          {/* Scoreboard Controller (main panel protected by Google Auth + Whitelist) */}
+          <Route
+            path="/"
+            element={
+              <AuthGuard>
+                <ScoreboardController />
+              </AuthGuard>
+            }
+          />
+          <Route path="/controller" element={<Navigate to="/" replace />} />
 
-        {/* Admin Whitelist Management (Super Admin only: thanakrit_kas@hotmail.com) */}
-        <Route path="/admin/whitelist" element={<AdminWhitelist />} />
-        <Route path="/whitelist" element={<AdminWhitelist />} />
+          {/* Admin Whitelist Management (Super Admin only: thanakrit_kas@hotmail.com) */}
+          <Route path="/admin/whitelist" element={<AdminWhitelist />} />
+          <Route path="/whitelist" element={<AdminWhitelist />} />
 
-        {/* Dynamic OBS overlays (accessed by OBS Browser Source) */}
-        <Route path="/overlay" element={<OverlayContainer />} />
+          {/* Dynamic OBS overlays (accessed by OBS Browser Source) */}
+          <Route path="/overlay" element={<OverlayContainer />} />
 
-        {/* Standalone Views */}
-        <Route path="/all-scores" element={<AllScoresStandalone />} />
-        <Route path="/league-table" element={<LeagueTableStandalone />} />
-        <Route path="/all-score-combined" element={<AllScoreCombinedStandalone />} />
-        
-        {/* Penalty Shootout */}
-        <Route
-          path="/penalty-shootout"
-          element={
-            <AuthGuard>
-              <PenaltyShootoutController />
-            </AuthGuard>
-          }
-        />
-        <Route path="/dots" element={<PenaltyDotsOverlay />} />
+          {/* Standalone Views */}
+          <Route path="/all-scores" element={<AllScoresStandalone />} />
+          <Route path="/league-table" element={<LeagueTableStandalone />} />
+          <Route path="/all-score-combined" element={<AllScoreCombinedStandalone />} />
 
-        {/* VAR Replay: control page and OBS Browser Source screen */}
-        <Route
-          path="/var-replay"
-          element={
-            <AuthGuard>
-              <VarReplayPage mode="control" />
-            </AuthGuard>
-          }
-        />
-        <Route path="/var-replay/screen" element={<VarReplayPage mode="screen" />} />
+          {/* Penalty Shootout */}
+          <Route
+            path="/penalty-shootout"
+            element={
+              <AuthGuard>
+                <PenaltyShootoutController />
+              </AuthGuard>
+            }
+          />
+          <Route path="/dots" element={<PenaltyDotsOverlay />} />
 
-        {/* Instant Replay: control panel and OBS Browser Source screen */}
-        <Route
-          path="/replay"
-          element={
-            <AuthGuard>
-              <InstantReplayPage mode="control" />
-            </AuthGuard>
-          }
-        />
-        <Route path="/replay/screen" element={<InstantReplayPage mode="screen" />} />
+          {/* VAR Replay: control page and OBS Browser Source screen */}
+          <Route
+            path="/var-replay"
+            element={
+              <AuthGuard>
+                <VarReplayPage mode="control" />
+              </AuthGuard>
+            }
+          />
+          <Route path="/var-replay/screen" element={<VarReplayPage mode="screen" />} />
 
-        {/* Catch-all redirect to main panel */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          {/* Instant Replay: control panel and OBS Browser Source screen */}
+          <Route
+            path="/replay"
+            element={
+              <AuthGuard>
+                <InstantReplayPage mode="control" />
+              </AuthGuard>
+            }
+          />
+          <Route path="/replay/screen" element={<InstantReplayPage mode="screen" />} />
+
+          {/* Catch-all redirect to main panel */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </ObsVideoFolderProvider>
     </BrowserRouter>
   );

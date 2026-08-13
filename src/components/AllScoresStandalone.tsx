@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
 import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
+import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
 
 export default function AllScoresStandalone() {
@@ -20,31 +21,7 @@ export default function AllScoresStandalone() {
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
 
-  const decodeUrlSafeBase64 = (val: string) => {
-    try {
-      const normalized = val.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
-      return atob(padded);
-    } catch (e) {
-      return '';
-    }
-  };
-
-  const getFirebaseConfig = () => {
-    const encoded = searchParams.get('fb') || searchParams.get('firebaseConfig');
-    if (!encoded) return null;
-    try {
-      return JSON.parse(decodeUrlSafeBase64(encoded));
-    } catch (e) {
-      try {
-        return JSON.parse(decodeURIComponent(encoded));
-      } catch (err) {
-        return null;
-      }
-    }
-  };
-
-  const firebaseConfig = getFirebaseConfig();
+  const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
     if (!firebaseConfig) {
@@ -85,7 +62,7 @@ export default function AllScoresStandalone() {
       setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
       setLoading(false);
     }
-  }, [searchParams]);
+  }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {
     return (

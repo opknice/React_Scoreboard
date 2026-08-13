@@ -1,249 +1,78 @@
-import type { CustomMacro } from '../types/macro';
+import { useState, type CSSProperties } from 'react';
+import type { CustomMacro, MacroRuntimeStatus } from '../types/macro';
+import { describeMacroActions, describeMacroTrigger } from '../macros/macroSummary';
 
 interface CustomMacroCardProps {
-  obs: any;
+  isObsConnected: boolean;
   macro: CustomMacro;
+  runtimeStatus?: MacroRuntimeStatus;
   onToggle: (enabled: boolean) => void;
+  onRun: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onClearLogs: () => void;
 }
 
+const STATUS_LABELS: Record<MacroRuntimeStatus, { label: string; color: string }> = {
+  idle: { label: 'พร้อมทำงาน', color: '#94a3b8' },
+  running: { label: 'กำลังทำงาน', color: '#fbbf24' },
+  success: { label: 'สำเร็จล่าสุด', color: '#6ee7b7' },
+  error: { label: 'ทำงานไม่สำเร็จ', color: '#fca5a5' },
+  offline: { label: 'รอ OBS เชื่อมต่อ', color: '#fca5a5' },
+};
+
 export default function CustomMacroCard({
-  obs,
+  isObsConnected,
   macro,
+  runtimeStatus = 'idle',
   onToggle,
+  onRun,
   onEdit,
   onDelete,
-  onClearLogs
+  onClearLogs,
 }: CustomMacroCardProps) {
-  const { name, color, isEnabled, trigger, actions, logs, lastTrigger } = macro;
-
-  const renderActionSummary = (step: any) => {
-    switch (step.type) {
-      case 'wait':
-        return `⏳ หน่วงเวลา ${(step.delayMs / 1000).toFixed(1)} วินาที`;
-      case 'switchScene':
-        return `🔄 สลับ Scene ไปที่ "${step.sceneName || '?'}"`;
-      case 'showSource':
-        return `👁️ แสดง Source "${step.sourceName || '?'}" ใน Scene "${step.sourceScene || 'Main Stream'}"`;
-      case 'hideSource':
-        return `🙈 ซ่อน Source "${step.sourceName || '?'}" ใน Scene "${step.sourceScene || 'Main Stream'}"`;
-      default:
-        return step.type;
-    }
-  };
+  const [showDetails, setShowDetails] = useState(false);
+  const status = STATUS_LABELS[runtimeStatus];
 
   return (
-    <div className="card" style={{ marginTop: '16px', borderTop: `4px solid ${color}` }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-        <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <i className="fas fa-bolt" style={{ color }}></i>
-          <span>{name}</span>
-          {isEnabled && (
-            <span
-              style={{
-                fontSize: '0.7rem',
-                background: '#10b981',
-                color: '#fff',
-                padding: '2px 8px',
-                borderRadius: '12px',
-                fontWeight: 'normal'
-              }}
-            >
-              ทำงานอยู่ (ACTIVE)
-            </span>
-          )}
-        </h3>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Edit & Delete Buttons */}
-          <button
-            onClick={onEdit}
-            title="แก้ไข Macro"
-            style={{
-              background: '#334155',
-              border: 'none',
-              color: '#cbd5e1',
-              padding: '4px 10px',
-              borderRadius: '4px',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            <i className="fas fa-edit"></i> แก้ไข
-          </button>
-          <button
-            onClick={onDelete}
-            title="ลบ Macro"
-            style={{
-              background: '#7f1d1d',
-              border: 'none',
-              color: '#fca5a5',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '0.75rem',
-              cursor: 'pointer'
-            }}
-          >
-            <i className="fas fa-trash"></i>
-          </button>
-
-          {/* Toggle Switch */}
-          <label
-            style={{
-              position: 'relative',
-              display: 'inline-block',
-              width: '50px',
-              height: '26px',
-              cursor: 'pointer',
-              userSelect: 'none'
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={isEnabled}
-              onChange={(e) => onToggle(e.target.checked)}
-              disabled={!obs.isConnected}
-              style={{ opacity: 0, width: 0, height: 0 }}
-            />
-            <span
-              style={{
-                position: 'absolute',
-                cursor: obs.isConnected ? 'pointer' : 'not-allowed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: isEnabled ? color : '#4b5563',
-                borderRadius: '26px',
-                transition: '0.3s',
-                opacity: obs.isConnected ? 1 : 0.5
-              }}
-            >
-              <span
-                style={{
-                  position: 'absolute',
-                  content: '""',
-                  height: '18px',
-                  width: '18px',
-                  left: isEnabled ? '28px' : '4px',
-                  bottom: '4px',
-                  background: '#fff',
-                  borderRadius: '50%',
-                  transition: '0.3s'
-                }}
-              ></span>
-            </span>
-          </label>
+    <article style={{ border: '1px solid #334155', borderLeft: `4px solid ${macro.color}`, borderRadius: 9, background: '#1e293b', padding: '14px 16px', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button
+          type="button"
+          onClick={() => onToggle(!macro.isEnabled)}
+          disabled={!isObsConnected}
+          aria-label={macro.isEnabled ? 'ปิด Automation' : 'เปิด Automation'}
+          style={{ width: 42, height: 24, border: 0, borderRadius: 20, padding: 3, cursor: isObsConnected ? 'pointer' : 'not-allowed', background: macro.isEnabled ? macro.color : '#475569', opacity: isObsConnected ? 1 : 0.55 }}
+        >
+          <span style={{ display: 'block', width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: macro.isEnabled ? 'translateX(18px)' : 'translateX(0)', transition: 'transform .2s' }} />
+        </button>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <strong style={{ color: '#f8fafc', fontSize: '0.95rem' }}>{macro.name}</strong>
+            <span style={{ color: status.color, fontSize: '0.72rem' }}>● {status.label}</span>
+          </div>
+          <div style={{ color: '#7dd3fc', fontSize: '0.8rem', marginTop: 5 }}>{describeMacroTrigger(macro)}</div>
+          <div style={{ color: '#94a3b8', fontSize: '0.78rem', marginTop: 3 }}>{describeMacroActions(macro.actions)}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button type="button" title="ทดสอบ Automation" onClick={onRun} disabled={runtimeStatus === 'running'} style={{ ...smallButton('#0f766e'), opacity: runtimeStatus === 'running' ? 0.5 : 1 }}>▶</button>
+          <button type="button" title="แก้ไข Automation" onClick={onEdit} style={smallButton('#334155')}>แก้ไข</button>
+          <button type="button" title="แสดงรายละเอียด" onClick={() => setShowDetails((value) => !value)} style={smallButton('#334155')}>{showDetails ? 'ซ่อน' : 'รายละเอียด'}</button>
         </div>
       </div>
-
-      {/* Description & Steps */}
-      <div
-        style={{
-          padding: '12px',
-          background: '#1e293b',
-          borderRadius: '6px',
-          marginBottom: '12px',
-          borderLeft: `4px solid ${color}`
-        }}
-      >
-        <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginBottom: '8px' }}>
-          <strong>🎯 รายละเอียดการทำงาน:</strong>
-        </div>
-        <div style={{ fontSize: '0.8rem', color: '#94a3b8', lineHeight: '1.6' }}>
-          <div>
-            <strong>เหตุการณ์จุดชนวน:</strong> {trigger.event}
-            {trigger.filterKey && (
-              <span style={{ color: '#38bdf8', marginLeft: '6px' }}>
-                (กรองข้อมูล: {trigger.filterKey} = "{trigger.filterValue}")
-              </span>
-            )}
-          </div>
-          <div style={{ marginTop: '4px' }}>
-            <strong>ลำดับขั้นตอนการทำงาน:</strong>
-          </div>
-          <div style={{ paddingLeft: '16px' }}>
-            {actions.map((act, idx) => (
-              <div key={act.id || idx}>
-                {idx + 1}. {renderActionSummary(act)}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Last triggered */}
-      {lastTrigger && (
-        <div
-          style={{
-            padding: '8px 12px',
-            background: '#064e3b',
-            borderRadius: '6px',
-            fontSize: '0.8rem',
-            color: '#6ee7b7',
-            marginBottom: '12px'
-          }}
-        >
-          <i className="fas fa-check-circle"></i> ทำงานล่าสุดเมื่อ: {lastTrigger}
+      {showDetails && (
+        <div style={{ borderTop: '1px solid #334155', marginTop: 12, paddingTop: 12 }}>
+          <div style={{ color: '#cbd5e1', fontSize: '0.8rem', marginBottom: 8 }}>ขั้นตอนการทำงาน</div>
+          {macro.actions.map((action, index) => <div key={action.id} style={{ color: '#94a3b8', fontSize: '0.78rem', marginTop: 4 }}>{index + 1}. {describeMacroActions([action])}</div>)}
+          {macro.lastTrigger && <div style={{ color: '#6ee7b7', fontSize: '0.76rem', marginTop: 10 }}>ทำงานล่าสุด: {macro.lastTrigger}</div>}
+          {macro.logs?.length > 0 && <details style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer', color: '#cbd5e1', fontSize: '0.78rem' }}>Activity Logs ({macro.logs.length})</summary><div style={{ maxHeight: 150, overflow: 'auto', marginTop: 7, padding: 8, background: '#0f172a', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.7rem' }}>{macro.logs.map((log, index) => <div key={`${log}-${index}`} style={{ marginBottom: 3 }}>{log}</div>)}</div><button type="button" onClick={onClearLogs} style={{ ...smallButton('#475569'), marginTop: 7 }}>ล้างประวัติ</button></details>}
+          <button type="button" onClick={onDelete} style={{ ...smallButton('#7f1d1d'), color: '#fecaca', marginTop: 12 }}>ลบ Automation</button>
         </div>
       )}
-
-      {/* Activity Logs */}
-      {logs && logs.length > 0 && (
-        <div
-          style={{
-            marginTop: '12px',
-            padding: '12px',
-            background: '#0f172a',
-            borderRadius: '6px',
-            maxHeight: '200px',
-            overflowY: 'auto',
-            fontFamily: 'monospace',
-            fontSize: '0.75rem'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <strong style={{ color: '#cbd5e1' }}>ประวัติการทำงาน (Activity Logs)</strong>
-            <button
-              onClick={onClearLogs}
-              style={{
-                background: '#374151',
-                border: 'none',
-                color: '#9ca3af',
-                padding: '2px 8px',
-                borderRadius: '4px',
-                fontSize: '0.7rem',
-                cursor: 'pointer'
-              }}
-            >
-              <i className="fas fa-trash"></i> ล้างประวัติ
-            </button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column-reverse' }}>
-            {logs.map((log, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '4px 6px',
-                  marginBottom: '2px',
-                  background: '#1e293b',
-                  borderLeft: `3px solid ${color}`,
-                  borderRadius: '3px',
-                  color: '#cbd5e1'
-                }}
-              >
-                {log}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    </article>
   );
+}
+
+function smallButton(background: string): CSSProperties {
+  return { border: 0, borderRadius: 6, padding: '6px 9px', background, color: '#e2e8f0', cursor: 'pointer', fontSize: '0.72rem', whiteSpace: 'nowrap' };
 }

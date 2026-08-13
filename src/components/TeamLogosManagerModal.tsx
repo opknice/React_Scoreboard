@@ -367,7 +367,7 @@ export default function TeamLogosManagerModal({
                             handleUpdateLogo(item.name, text);
                             onToast?.(`คัดลอก URL ให้ ${item.name} แล้ว`, 'success');
                           }
-                        } catch (e) {
+                } catch {
                           onToast?.('อ่านคลิปบอร์ดไม่สำเร็จ', 'error');
                         }
                       }}

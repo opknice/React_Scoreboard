@@ -22,9 +22,30 @@ export default function InstantReplayScreen() {
   
   // Blob URL reference for cleanup
   const objectUrlRef = useRef<string | null>(null);
+  const canPlayHandlerRef = useRef<(() => void) | null>(null);
   
   // BroadcastChannel hook integration (Requirement 10.4)
   const { channelRef, send } = useReplayChannel();
+  
+  // BroadcastChannel for replay events (cross-tab/cross-process communication)
+  const replayEventChannelRef = useRef<BroadcastChannel | null>(null);
+  
+  // Initialize replay events channel
+  useEffect(() => {
+    try {
+      const channel = new BroadcastChannel('replay-events');
+      replayEventChannelRef.current = channel;
+      console.log('[InstantReplayScreen] Replay events channel initialized');
+      
+      return () => {
+        channel.close();
+        replayEventChannelRef.current = null;
+        console.log('[InstantReplayScreen] Replay events channel closed');
+      };
+    } catch (e) {
+      console.error('[InstantReplayScreen] Failed to create BroadcastChannel:', e);
+    }
+  }, []);
   
   // Component state (Requirement 10.1, 10.2)
   const [hasVideo, setHasVideo] = useState(false);
@@ -35,6 +56,7 @@ export default function InstantReplayScreen() {
   // handleTimeUpdate reads these directly so loop enforcement is always current
   const loopARef = useRef<number | null>(null);
   const loopBRef = useRef<number | null>(null);
+  const lastStatusAtRef = useRef(0);
 
   // Bug #2 fix: keep refs in sync with state so handleTimeUpdate always reads latest values
   useEffect(() => { loopARef.current = loopA; }, [loopA]);
@@ -48,15 +70,18 @@ export default function InstantReplayScreen() {
   const sendStatusMessage = useCallback(() => {
     const video = videoRef.current;
     if (!video || !Number.isFinite(video.duration)) return;
+    const now = performance.now();
+    if (now - lastStatusAtRef.current < 200) return;
+    lastStatusAtRef.current = now;
 
     send({
       type: 'status',
       duration: video.duration,
       currentTime: video.currentTime,
-      markerA: loopA,
-      markerB: loopB,
+      markerA: loopARef.current,
+      markerB: loopBRef.current,
     });
-  }, [loopA, loopB, send]);
+  }, [send]);
 
   /**
    * Handle incoming BroadcastChannel messages
@@ -66,6 +91,7 @@ export default function InstantReplayScreen() {
   useEffect(() => {
     const channel = channelRef.current;
     if (!channel) return;
+    const video = videoRef.current;
 
     channel.onmessage = (event: MessageEvent<ChannelMessage>) => {
       const message = event.data;
@@ -77,6 +103,10 @@ export default function InstantReplayScreen() {
         // Revoke previous Blob URL to free memory (Requirement 10.9)
         if (objectUrlRef.current) {
           URL.revokeObjectURL(objectUrlRef.current);
+        }
+        if (canPlayHandlerRef.current) {
+          video.removeEventListener('canplay', canPlayHandlerRef.current);
+          canPlayHandlerRef.current = null;
         }
 
         // Create new Blob URL and assign to video element
@@ -92,13 +122,17 @@ export default function InstantReplayScreen() {
         video.playbackRate = 0.85;
         setLoopA(null);
         setLoopB(null);
+        loopARef.current = null;
+        loopBRef.current = null;
 
         // Bug #3 fix: wait for canplay before calling play() so the video element
         // is actually ready — avoids NotAllowedError / silent failure in OBS/browsers
         const onCanPlay = () => {
           void video.play().catch(() => undefined);
           video.removeEventListener('canplay', onCanPlay);
+          canPlayHandlerRef.current = null;
         };
+        canPlayHandlerRef.current = onCanPlay;
         video.addEventListener('canplay', onCanPlay);
         return;
       }
@@ -126,18 +160,22 @@ export default function InstantReplayScreen() {
         if (action === 'setA') {
           const markerValue = typeof value === 'number' ? value : video.currentTime;
           setLoopA(markerValue);
+          loopARef.current = markerValue;
         }
 
         // Set loop marker B (Requirement 7.1)
         if (action === 'setB') {
           const markerValue = typeof value === 'number' ? value : video.currentTime;
           setLoopB(markerValue);
+          loopBRef.current = markerValue;
         }
 
         // Clear loop markers (Requirement 7.6)
         if (action === 'clearLoop') {
           setLoopA(null);
           setLoopB(null);
+          loopARef.current = null;
+          loopBRef.current = null;
         }
 
         // Set playback speed
@@ -150,6 +188,10 @@ export default function InstantReplayScreen() {
     // Cleanup: revoke Blob URL on unmount (Requirement 10.9)
     return () => {
       channel.onmessage = null;
+      if (canPlayHandlerRef.current) {
+        video?.removeEventListener('canplay', canPlayHandlerRef.current);
+        canPlayHandlerRef.current = null;
+      }
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
@@ -177,7 +219,10 @@ export default function InstantReplayScreen() {
       // Check loop boundaries when both markers are set (Requirement 7.1, 7.4)
       if (a !== null && b !== null) {
         // If currentTime exceeds markerB, seek to markerA (Requirement 7.2)
-        if (video.currentTime > b) {
+        // BUT: Allow video to reach natural end if markerB is at the end
+        const isMarkerBAtEnd = Math.abs(b - video.duration) < 0.5; // Within 0.5s of end
+        
+        if (video.currentTime > b && !isMarkerBAtEnd) {
           video.currentTime = a;
         }
 
@@ -196,14 +241,43 @@ export default function InstantReplayScreen() {
       sendStatusMessage();
     };
 
+    const handleVideoEnded = () => {
+      // Emit replay event via BroadcastChannel for cross-process communication
+      const channel = replayEventChannelRef.current;
+      if (channel) {
+        const eventData = {
+          type: 'ReplayVideoEnded',
+          videoElement: 'InstantReplayScreen',
+          timestamp: Date.now(),
+          duration: video.duration,
+          currentTime: video.currentTime,
+          videoSrc: video.src
+        };
+        
+        console.log('[InstantReplay] Video playback ended - broadcasting event');
+        console.log('[InstantReplay] Event data:', eventData);
+        
+        try {
+          channel.postMessage(eventData);
+          console.log('[InstantReplay] ReplayVideoEnded event broadcast successfully');
+        } catch (e) {
+          console.error('[InstantReplay] Failed to broadcast event:', e);
+        }
+      } else {
+        console.warn('[InstantReplay] Video playback ended - replay events channel not available');
+      }
+    };
+
     // Attach event listeners (Requirement 7.4)
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('ended', handleVideoEnded);
 
     // Cleanup event listeners
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('ended', handleVideoEnded);
     };
   // loopA/loopB removed from deps: loop enforcement now reads loopARef/loopBRef
   // directly so the listener doesn't need to re-register on every marker change.

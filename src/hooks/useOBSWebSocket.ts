@@ -6,6 +6,7 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
   const obsRef = useRef<OBSWebSocket | null>(null);
   // Track whether we are in the middle of a connect attempt (suppress false ConnectionClosed events)
   const isConnectingRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
   // Always hold the latest callback — avoids stale closure when state changes
   const onHotkeyActionRef = useRef(onHotkeyAction);
   const onEventRef = useRef(onEvent);
@@ -27,12 +28,14 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     // Claim a new generation for this connect call
     const myGen = ++connectGenRef.current;
 
+    isConnectingRef.current = true;
+
     // Disconnect and fully discard any existing instance first
     if (obsRef.current) {
       try {
         obsRef.current.removeAllListeners();
         await obsRef.current.disconnect();
-      } catch (e) {
+      } catch {
         // Safe to ignore
       }
       obsRef.current = null;
@@ -41,7 +44,6 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     // Bail out if a newer connect/disconnect invalidated us during the await above
     if (myGen !== connectGenRef.current) return false;
 
-    isConnectingRef.current = true;
     let lastErr: unknown;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -154,6 +156,12 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
         if (!isConnectingRef.current) {
           setIsConnected(false);
           console.log('[OBS Connection] Connection closed');
+          if (reconnectTimerRef.current === null) {
+            reconnectTimerRef.current = window.setTimeout(() => {
+              reconnectTimerRef.current = null;
+              void connect().catch(() => undefined);
+            }, 1500);
+          }
         }
       });
 
@@ -201,12 +209,17 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
   const disconnect = async () => {
     // Invalidate any in-progress connect() calls
     connectGenRef.current++;
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    isConnectingRef.current = false;
 
     if (obsRef.current) {
       try {
         obsRef.current.removeAllListeners();
         await obsRef.current.disconnect();
-      } catch (e) {
+      } catch {
         // Ignore
       }
       obsRef.current = null;

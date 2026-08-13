@@ -121,7 +121,7 @@ export const parseFirebaseConfigFromJSON = (jsonString: string): Record<string, 
     if (cleaned.startsWith('{')) {
       return JSON.parse(cleaned);
     }
-  } catch (e) {
+    } catch {
     // Treat as inline config string
   }
 
@@ -196,7 +196,7 @@ const parseFirebaseConfigFromJavaScript = (jsCode: string): Record<string, strin
   try {
     const jsonString = cleaned.replace(/(\w+):/g, '"$1":');
     return JSON.parse(jsonString);
-  } catch (e) {
+    } catch {
     // Try manual extraction
   }
 
