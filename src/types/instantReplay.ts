@@ -1,6 +1,8 @@
 // Instant Replay TypeScript Type Definitions
 // Requirements: 6.3, 6.4, 6.5
 
+import type { ReplayFileReference, ReplayHttpReference } from '../utils/replayFileStore';
+
 // ============================================================================
 // Channel Message Types (Discriminated Union)
 // ============================================================================
@@ -14,6 +16,18 @@ export interface FileMessage {
   data: ArrayBuffer;
   mime: string;
   name: string;
+}
+
+/** Metadata-only message. The actual video is shared through IndexedDB. */
+export interface FileReferenceMessage {
+  type: 'fileRef';
+  file: ReplayFileReference;
+}
+
+/** URL message for OBS Browser Source streaming from the local dev server. */
+export interface FileUrlMessage {
+  type: 'fileUrl';
+  file: ReplayHttpReference;
 }
 
 /**
@@ -36,13 +50,23 @@ export interface StatusMessage {
   currentTime: number;
   markerA: number | null;
   markerB: number | null;
+  /** Optional for backwards compatibility with older Screen builds. */
+  isPlaying?: boolean;
+}
+
+/** Playback failure reported by the Screen so the Controller can show a useful error. */
+export interface PlaybackErrorMessage {
+  type: 'playbackError';
+  name?: string;
+  message: string;
+  code?: number;
 }
 
 /**
  * Discriminated union of all channel message types
  * Used for type-safe BroadcastChannel communication
  */
-export type ChannelMessage = FileMessage | CommandMessage | StatusMessage;
+export type ChannelMessage = FileMessage | FileReferenceMessage | FileUrlMessage | CommandMessage | StatusMessage | PlaybackErrorMessage;
 
 // ============================================================================
 // Component State Interfaces

@@ -1,0 +1,29 @@
+/* Full-screen canvas for the OBS Browser Source replay output. */
+.instant-replay-screen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+.instant-replay-screen-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.instant-replay-screen-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: clamp(0.8rem, 2vw, 1.4rem);
+  letter-spacing: 0.16em;
+  user-select: none;
+}
