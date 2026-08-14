@@ -1,4 +1,5 @@
 import type { CustomMacro } from '../types/macro';
+import { isMacroEvent } from './macroTrigger';
 
 export const CUSTOM_MACROS_STORAGE_KEY = 'customMacrosList';
 
@@ -7,6 +8,7 @@ const ACTION_TYPES = new Set([
   'openVarReplay', 'closeVarReplay', 'openReplayControl', 'closeReplayControl',
   'saveReplayBuffer', 'loadLatestReplay',
 ]);
+const FILTER_KINDS = new Set(['any', 'button', 'key', 'hotkey', 'scene', 'input']);
 
 function isCustomMacro(value: unknown): value is CustomMacro {
   if (!value || typeof value !== 'object') return false;
@@ -16,7 +18,7 @@ function isCustomMacro(value: unknown): value is CustomMacro {
     && typeof macro.color === 'string'
     && typeof macro.isEnabled === 'boolean'
     && !!macro.trigger
-    && typeof macro.trigger.event === 'string'
+    && isMacroEvent(macro.trigger.event)
     && Array.isArray(macro.actions)
     && macro.actions.every((action) => (
       !!action
@@ -27,18 +29,22 @@ function isCustomMacro(value: unknown): value is CustomMacro {
 }
 
 function normalizeMacro(macro: CustomMacro): CustomMacro {
+  const filter = macro.trigger.filter;
+
   return {
     ...macro,
     logs: Array.isArray(macro.logs) ? macro.logs.filter((log): log is string => typeof log === 'string').slice(-15) : [],
     lastTrigger: typeof macro.lastTrigger === 'string' ? macro.lastTrigger : '',
-    trigger: macro.trigger.filter
+    trigger: filter
       ? {
         ...macro.trigger,
         filter: {
-          kind: macro.trigger.filter.kind || 'any',
-          value: macro.trigger.filter.value || '',
-          modifiers: macro.trigger.filter.modifiers || [],
-          keyField: macro.trigger.filter.keyField || 'code',
+          kind: FILTER_KINDS.has(filter.kind) ? filter.kind : 'any',
+          value: typeof filter.value === 'string' ? filter.value : '',
+          modifiers: Array.isArray(filter.modifiers)
+            ? filter.modifiers.filter((modifier): modifier is string => typeof modifier === 'string')
+            : [],
+          keyField: filter.keyField === 'key' ? 'key' : 'code',
         },
       }
       : macro.trigger,

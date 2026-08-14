@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import type { ActionStep, ActionType, CustomMacro, MacroEvent, MacroFilter } from '../types/macro';
 import {
   MACRO_EVENT_OPTIONS,
@@ -81,6 +81,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   const [actions, setActions] = useState<ActionStep[]>(macro?.actions || [makeStep('wait')]);
   const [scenes, setScenes] = useState<string[]>([]);
   const [allInputs, setAllInputs] = useState<string[]>([]);
+  const [mediaInputs, setMediaInputs] = useState<string[]>([]);
   const [sceneItemsMap, setSceneItemsMap] = useState<Record<string, string[]>>({});
   const [isLoadingObs, setIsLoadingObs] = useState(false);
   const [error, setError] = useState('');
@@ -99,7 +100,15 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
         const sceneResult = await currentObs.call('GetSceneList');
         const fetchedScenes = (sceneResult?.scenes || []).map((item: any) => item.sceneName).reverse();
         const inputResult = await currentObs.call('GetInputList');
-        const fetchedInputs = (inputResult?.inputs || []).map((item: any) => item.inputName);
+        const inputItems = inputResult?.inputs || [];
+        const fetchedInputs = inputItems.map((item: any) => item.inputName);
+        const fetchedMediaInputs = inputItems
+          .filter((item: any) => {
+            const inputKind = String(item?.inputKind || '').toLowerCase();
+            return inputKind.includes('media')
+              || ['ffmpeg_source', 'vlc_source', 'mpv_source'].includes(inputKind);
+          })
+          .map((item: any) => item.inputName);
         const itemMap: Record<string, string[]> = {};
         for (const sceneName of fetchedScenes) {
           try {
@@ -112,6 +121,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
         if (mounted) {
           setScenes(fetchedScenes);
           setAllInputs(fetchedInputs);
+          setMediaInputs(fetchedMediaInputs);
           setSceneItemsMap(itemMap);
         }
       } catch {
@@ -129,17 +139,32 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   }, [allInputs, sceneItemsMap]);
 
   const updateFilter = (updates: Partial<MacroFilter>) => {
+    setError('');
     setFilter((previous) => ({ ...previous, ...updates }));
   };
 
   const selectEvent = (nextEvent: MacroEvent) => {
     const nextOption = getMacroEventOption(nextEvent);
+    setError('');
     setEvent(nextEvent);
     setFilter({ kind: nextOption.filterKind, value: '', modifiers: [], keyField: 'code' });
   };
 
   const updateAction = (id: string, updates: Partial<ActionStep>) => {
     setActions((previous) => previous.map((item) => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const handleActionTypeChange = (id: string, event: ChangeEvent<HTMLSelectElement>) => {
+    const selectedType = event.currentTarget.value as ActionType;
+    setActions((previous) => previous.map((item) => item.id === id ? makeStep(selectedType) : item));
+  };
+
+  const handleAddAction = (event: ChangeEvent<HTMLSelectElement>) => {
+    const selectedType = event.currentTarget.value as ActionType;
+    if (!selectedType) return;
+
+    setActions((previous) => [...previous, makeStep(selectedType)]);
+    event.currentTarget.value = '';
   };
 
   const removeAction = (id: string) => {
@@ -177,6 +202,12 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   };
 
   const goTo = (targetStep: number) => {
+    if (targetStep <= step) {
+      setError('');
+      setStep(targetStep);
+      return;
+    }
+
     const message = validateStep(targetStep);
     if (message) {
       setError(message);
@@ -212,7 +243,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     if (eventOption.filterKind === 'button') {
       return (
         <>
-          <ToggleChoice label="ทุกปุ่ม" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '' })} />
+          <ToggleChoice label="ทุกปุ่ม" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '', modifiers: [] })} />
           <ToggleChoice label="ปุ่มที่เลือก" active={filter.kind === 'button'} onClick={() => updateFilter({ kind: 'button', value: filter.value || 'var_replay' })} />
           {filter.kind === 'button' && (
             <select style={fieldStyle()} value={filter.value || ''} onChange={(e) => updateFilter({ value: e.target.value })}>
@@ -227,17 +258,28 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     if (eventOption.filterKind === 'key') {
       return (
         <>
+          <ToggleChoice label="ทุกคีย์" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '', modifiers: [], keyField: 'code' })} />
+          <ToggleChoice label="คีย์ที่เลือก" active={filter.kind === 'key'} onClick={() => updateFilter({ kind: 'key', value: filter.value || '', keyField: 'code' })} />
+          {filter.kind !== 'key' ? null : (
+            <>
           <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.82rem', marginBottom: 6 }}>คีย์ที่ต้องการ</label>
           <input
             style={fieldStyle()}
             value={filter.value || ''}
             placeholder="เช่น F5, KeyA, Space"
-            onChange={(e) => updateFilter({ kind: 'key', value: e.target.value })}
             onKeyDown={(e) => {
+              if (['Tab'].includes(e.key)) return;
               e.preventDefault();
-              updateFilter({ kind: 'key', value: e.code });
+              if (['Backspace', 'Delete', 'Escape'].includes(e.key)) {
+                updateFilter({ kind: 'key', value: '', keyField: 'code' });
+                return;
+              }
+              if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+              updateFilter({ kind: 'key', value: e.code, keyField: 'code' });
             }}
+            readOnly
           />
+          <button type="button" style={{ ...buttonStyle(), marginTop: 8 }} onClick={() => updateFilter({ kind: 'key', value: '', keyField: 'code' })}>ล้างคีย์</button>
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             {['ctrl', 'shift', 'alt', 'meta'].map((modifier) => {
               const active = (filter.modifiers || []).includes(modifier);
@@ -245,6 +287,8 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
             })}
           </div>
           <small style={{ display: 'block', color: '#64748b', marginTop: 8 }}>คลิกช่องแล้วกดคีย์ที่ต้องการจับค่าอัตโนมัติ</small>
+            </>
+          )}
         </>
       );
     }
@@ -252,7 +296,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     if (eventOption.filterKind === 'hotkey') {
       return (
         <>
-          <ToggleChoice label="ทุก Hotkey" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '' })} />
+          <ToggleChoice label="ทุก Hotkey" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '', modifiers: [] })} />
           <ToggleChoice label="Hotkey ที่เลือก" active={filter.kind === 'hotkey'} onClick={() => updateFilter({ kind: 'hotkey', value: filter.value || OBS_HOTKEY_OPTIONS[0].value })} />
           {filter.kind === 'hotkey' && <select style={fieldStyle()} value={filter.value || ''} onChange={(e) => updateFilter({ value: e.target.value })}>{OBS_HOTKEY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>}
         </>
@@ -260,14 +304,16 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     }
 
     const isScene = eventOption.filterKind === 'scene';
+    const isMediaInputEvent = event === 'MediaInputPlaybackStarted' || event === 'MediaInputPlaybackEnded';
+    const filterOptions = isScene ? scenes : (isMediaInputEvent ? mediaInputs : sourceOptions);
     return (
       <>
-        <ToggleChoice label="ทุกครั้ง" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '' })} />
-        <ToggleChoice label={isScene ? 'Scene ที่เลือก' : 'Source ที่เลือก'} active={filter.kind === eventOption.filterKind} onClick={() => updateFilter({ kind: eventOption.filterKind, value: filter.value || '' })} />
-        {filter.kind !== 'any' && ((isScene ? scenes : sourceOptions).length > 0 ? <select style={fieldStyle()} value={filter.value || ''} onChange={(e) => updateFilter({ value: e.target.value })}>
+        <ToggleChoice label="ทุกครั้ง" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '', modifiers: [] })} />
+        <ToggleChoice label={isScene ? 'Scene ที่เลือก' : (isMediaInputEvent ? 'Media Input ที่เลือก' : 'Source ที่เลือก')} active={filter.kind === eventOption.filterKind} onClick={() => updateFilter({ kind: eventOption.filterKind, value: filter.value || '', modifiers: [] })} />
+        {filter.kind !== 'any' && (filterOptions.length > 0 ? <select style={fieldStyle()} value={filter.value || ''} onChange={(e) => updateFilter({ value: e.target.value })}>
             <option value="">เลือก...</option>
-            {(isScene ? scenes : sourceOptions).map((item) => <option key={item} value={item}>{item}</option>)}
-          </select> : <input style={fieldStyle()} value={filter.value || ''} placeholder={isScene ? 'พิมพ์ชื่อ Scene' : 'พิมพ์ชื่อ Source'} onChange={(e) => updateFilter({ value: e.target.value })} />)}
+            {filterOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select> : <input style={fieldStyle()} value={filter.value || ''} placeholder={isScene ? 'พิมพ์ชื่อ Scene' : (isMediaInputEvent ? 'พิมพ์ชื่อ Media Input' : 'พิมพ์ชื่อ Source')} onChange={(e) => updateFilter({ value: e.target.value })} />)}
       </>
     );
   };
@@ -294,12 +340,12 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
           <button type="button" style={{ ...buttonStyle(), fontSize: '1.2rem', padding: '2px 9px' }} onClick={onClose}>×</button>
         </div>
         <div style={{ display: 'flex', padding: '14px 24px', gap: 8, borderBottom: '1px solid #1e293b' }}>
-          {['ตั้งชื่อ', 'เลือกเหตุการณ์', 'กำหนดขั้นตอน'].map((label, index) => <button key={label} type="button" onClick={() => index <= step && goTo(index)} style={{ ...buttonStyle(index === step), flex: 1, opacity: index <= step ? 1 : 0.55 }}>{index + 1}. {label}</button>)}
+          {['ตั้งชื่อ', 'เลือกเหตุการณ์', 'กำหนดขั้นตอน'].map((label, index) => <button key={label} type="button" disabled={index > step} onClick={() => goTo(index)} style={{ ...buttonStyle(index === step), flex: 1, opacity: index <= step ? 1 : 0.55 }}>{index + 1}. {label}</button>)}
         </div>
         <div style={{ padding: 24 }}>
           {step === 0 && <div style={{ display: 'grid', gap: 18 }}><label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>ชื่อ Automation<input autoFocus style={{ ...fieldStyle(), marginTop: 7 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น VAR Replay อัตโนมัติ" /></label><div><div style={{ color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 8 }}>สีประจำรายการ</div><div style={{ display: 'flex', gap: 9 }}>{PRESET_COLORS.map((item) => <button key={item} type="button" aria-label={item} onClick={() => setColor(item)} style={{ width: 28, height: 28, borderRadius: '50%', border: color === item ? '3px solid #fff' : '2px solid transparent', background: item, cursor: 'pointer' }} />)}</div></div></div>}
           {step === 1 && <div style={{ display: 'grid', gap: 16 }}><div><label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 7 }}>ทำงานเมื่อเกิดเหตุการณ์นี้</label><select style={fieldStyle()} value={event} onChange={(e) => selectEvent(e.target.value as MacroEvent)}>{(['scoreboard', 'obs', 'keyboard'] as const).map((category) => <optgroup key={category} label={CATEGORY_LABELS[category]}>{MACRO_EVENT_OPTIONS.filter((item) => item.category === category).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select><div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 7 }}>{eventOption.description}</div></div><div style={{ padding: 14, background: '#1e293b', borderRadius: 8, display: 'grid', gap: 10 }}><div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>เลือกเงื่อนไขเพิ่มเติม <span style={{ color: '#64748b' }}>(ถ้ามี)</span></div>{renderTriggerFilter()}</div></div>}
-          {step === 2 && <div style={{ display: 'grid', gap: 14 }}><div style={{ padding: 14, background: '#064e3b', borderRadius: 8, color: '#a7f3d0', fontSize: '0.85rem' }}><strong>{name || 'Automation ใหม่'}</strong><br />{eventOption.label}{filter.kind !== 'any' && filter.value ? `: ${filter.value}` : ''}</div>{actions.map((action, index) => <div key={action.id} style={{ padding: 14, border: '1px solid #334155', borderRadius: 8, background: '#1e293b' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ width: 25, height: 25, borderRadius: '50%', background: color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{index + 1}</span><select style={{ ...fieldStyle(), flex: 1 }} value={action.type} onChange={(e) => setActions((previous) => previous.map((item) => item.id === action.id ? makeStep(e.target.value as ActionType) : item))}>{ACTION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" title="เลื่อนขึ้น" style={buttonStyle()} onClick={() => moveAction(index, -1)} disabled={index === 0}>↑</button><button type="button" title="เลื่อนลง" style={buttonStyle()} onClick={() => moveAction(index, 1)} disabled={index === actions.length - 1}>↓</button><button type="button" title="ลบขั้นตอน" style={{ ...buttonStyle(), color: '#fca5a5' }} onClick={() => removeAction(action.id)}>×</button></div>{renderActionFields(action)}</div>)}<select style={fieldStyle()} value="" onChange={(e) => { if (e.target.value) { setActions((previous) => [...previous, makeStep(e.target.value as ActionType)]); e.target.value = ''; } }}><option value="">+ เพิ่มขั้นตอน</option>{ACTION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><div style={{ padding: 14, background: '#0f172a', borderRadius: 8, color: '#cbd5e1', fontSize: '0.82rem' }}><strong>ตัวอย่างการทำงาน</strong><div style={{ marginTop: 7 }}>เมื่อ {eventOption.label.toLowerCase()} ระบบจะ:</div>{actions.map((action, index) => <div key={action.id} style={{ marginTop: 4 }}>{index + 1}. {describeAction(action)}</div>)}</div></div>}
+          {step === 2 && <div style={{ display: 'grid', gap: 14 }}><div style={{ padding: 14, background: '#064e3b', borderRadius: 8, color: '#a7f3d0', fontSize: '0.85rem' }}><strong>{name || 'Automation ใหม่'}</strong><br />{eventOption.label}{filter.kind !== 'any' && filter.value ? `: ${filter.value}` : ''}</div>{actions.map((action, index) => <div key={action.id} style={{ padding: 14, border: '1px solid #334155', borderRadius: 8, background: '#1e293b' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ width: 25, height: 25, borderRadius: '50%', background: color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{index + 1}</span><select style={{ ...fieldStyle(), flex: 1 }} value={action.type} onChange={(e) => handleActionTypeChange(action.id, e)}>{ACTION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" title="เลื่อนขึ้น" style={buttonStyle()} onClick={() => moveAction(index, -1)} disabled={index === 0}>↑</button><button type="button" title="เลื่อนลง" style={buttonStyle()} onClick={() => moveAction(index, 1)} disabled={index === actions.length - 1}>↓</button><button type="button" title="ลบขั้นตอน" style={{ ...buttonStyle(), color: '#fca5a5' }} onClick={() => removeAction(action.id)}>×</button></div>{renderActionFields(action)}</div>)}<select style={fieldStyle()} value="" onChange={handleAddAction}><option value="">+ เพิ่มขั้นตอน</option>{ACTION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><div style={{ padding: 14, background: '#0f172a', borderRadius: 8, color: '#cbd5e1', fontSize: '0.82rem' }}><strong>ตัวอย่างการทำงาน</strong><div style={{ marginTop: 7 }}>เมื่อ {eventOption.label.toLowerCase()} ระบบจะ:</div>{actions.map((action, index) => <div key={action.id} style={{ marginTop: 4 }}>{index + 1}. {describeAction(action)}</div>)}</div></div>}
           {isLoadingObs && <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 12 }}>กำลังโหลดรายการจาก OBS...</div>}
           {error && <div style={{ color: '#fca5a5', background: '#450a0a', padding: 10, borderRadius: 7, marginTop: 14, fontSize: '0.82rem' }}>{error}</div>}
         </div>

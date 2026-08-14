@@ -4,6 +4,9 @@ export type MacroEvent =
   | 'ButtonClicked'
   | 'KeyPressed'
   | 'CustomEvent'
+  | 'StreamStateChanged'
+  | 'RecordStateChanged'
+  | 'ReplayBufferStateChanged'
   | 'MediaInputPlaybackStarted'
   | 'MediaInputPlaybackEnded'
   | 'CurrentProgramSceneChanged';

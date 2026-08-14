@@ -38,6 +38,27 @@ export const MACRO_EVENT_OPTIONS: MacroEventOption[] = [
     filterKind: 'any',
   },
   {
+    value: 'ReplayBufferStateChanged',
+    label: 'เมื่อสถานะ Replay Buffer เปลี่ยน',
+    description: 'ทำงานเมื่อ Replay Buffer ของ OBS เริ่มหรือหยุดทำงาน',
+    category: 'obs',
+    filterKind: 'any',
+  },
+  {
+    value: 'StreamStateChanged',
+    label: 'เมื่อสถานะ Stream เปลี่ยน',
+    description: 'ทำงานเมื่อเริ่มหรือหยุดการถ่ายทอดสดใน OBS',
+    category: 'obs',
+    filterKind: 'any',
+  },
+  {
+    value: 'RecordStateChanged',
+    label: 'เมื่อสถานะการบันทึกเปลี่ยน',
+    description: 'ทำงานเมื่อเริ่มหรือหยุดการบันทึกใน OBS',
+    category: 'obs',
+    filterKind: 'any',
+  },
+  {
     value: 'CustomEvent',
     label: 'เมื่อได้รับ Hotkey จาก OBS Script',
     description: 'ใช้เมื่อ OBS Script ส่ง CustomEvent เข้ามา',
@@ -86,7 +107,9 @@ export const OBS_HOTKEY_OPTIONS = [
   { value: 'fullend', label: 'จบเกม' },
   { value: 'hidetimer', label: 'ซ่อน/แสดงเวลา' },
   { value: 'scoreAplus', label: 'เพิ่มคะแนนทีม A' },
+  { value: 'scoreAminus', label: 'ลดคะแนนทีม A' },
   { value: 'scoreBplus', label: 'เพิ่มคะแนนทีม B' },
+  { value: 'scoreBminus', label: 'ลดคะแนนทีม B' },
   { value: 'swap', label: 'สลับทีม' },
 ];
 
