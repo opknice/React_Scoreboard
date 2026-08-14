@@ -451,6 +451,12 @@ button:disabled {
   overflow: hidden;
 }
 
+.modal-content.replay-control-modal.var-v2-replay-control-modal {
+  width: 96vw;
+  max-width: 1180px;
+  max-height: 94vh;
+}
+
 .modal-content.replay-control-modal .var-control,
 .modal-content.replay-control-modal .instant-replay-control {
   min-height: auto;

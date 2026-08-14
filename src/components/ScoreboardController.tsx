@@ -180,6 +180,7 @@ export default function ScoreboardController() {
     showHelpModal, setShowHelpModal,
     showPenaltyModal, setShowPenaltyModal,
     showVarReplayModal, setShowVarReplayModal,
+    showVarReplayV2Modal, setShowVarReplayV2Modal,
     showInstantReplayModal, setShowInstantReplayModal,
     showDonateModal, setShowDonateModal,
     showLogoPathModal, setShowLogoPathModal,
@@ -1363,7 +1364,7 @@ export default function ScoreboardController() {
           setShowVarReplayModal(true);
         }}
         onOpenVarReplayV2={() => {
-          navigate('/var-replay-v2');
+          setShowVarReplayV2Modal(true);
         }}
         onOpenInstantReplay={() => {
           broadcastScoreboardButton('instant_replay');
@@ -1734,8 +1735,10 @@ export default function ScoreboardController() {
 
       <ReplayControlModals
         showVarReplay={showVarReplayModal}
+        showVarReplayV2={showVarReplayV2Modal}
         showInstantReplay={showInstantReplayModal}
         onCloseVarReplay={() => setShowVarReplayModal(false)}
+        onCloseVarReplayV2={() => setShowVarReplayV2Modal(false)}
         onCloseInstantReplay={() => setShowInstantReplayModal(false)}
       />
 

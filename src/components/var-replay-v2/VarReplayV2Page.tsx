@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useObsVideoFolderContext } from '../../context/useObsVideoFolderContext';
 import { getVideoMimeType, isVideoFile } from '../../utils/replayFormatters';
 import { useVarReplayV2Channel } from './useVarReplayV2Channel';
@@ -112,12 +113,14 @@ function Header({
   screenReady,
   folderName,
   copied,
+  onBack,
   onCopy,
 }: {
   screenUrl: string;
   screenReady: boolean;
   folderName: string;
   copied: boolean;
+  onBack: () => void;
   onCopy: () => void;
 }) {
   const openScreen = () => window.open(screenUrl, '_blank', 'noopener,noreferrer');
@@ -134,6 +137,9 @@ function Header({
         </div>
       </div>
       <div className={styles.headerActions}>
+        <button className={styles.secondaryButton} type="button" onClick={onBack}>
+          กลับ Scoreboard Control
+        </button>
         <button className={styles.secondaryButton} type="button" onClick={openScreen}>
           เปิด Screen
         </button>
@@ -468,7 +474,8 @@ function SpeedControl({
   );
 }
 
-function VarReplayV2Control() {
+function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
+  const navigate = useNavigate();
   const videoFolder = useObsVideoFolderContext();
   const { channelRef, send } = useVarReplayV2Channel();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -580,6 +587,19 @@ function VarReplayV2Control() {
     setMarkerA(next.markerA);
     setMarkerB(next.markerB);
     sendCommand({ type: 'command', action: 'set-marker', marker, value: currentTime });
+
+    // เมื่อกำหนดจุด A และ B ครบ ให้เริ่มเล่นช่วง loop อัตโนมัติทันที
+    if (next.markerA !== null && next.markerB !== null) {
+      setCurrentTime(next.markerA);
+      if (videoRef.current) videoRef.current.currentTime = next.markerA;
+      sendCommand({ type: 'command', action: 'seek', value: next.markerA });
+      setLoopEnabled(true);
+      sendCommand({ type: 'command', action: 'set-loop', enabled: true });
+      void videoRef.current?.play().catch(() => undefined);
+      sendCommand({ type: 'command', action: 'play' });
+      setIsPlaying(true);
+      setError('');
+    }
   }, [currentTime, markerA, markerB, sendCommand]);
 
   const clearMarkers = useCallback(() => {
@@ -721,15 +741,26 @@ function VarReplayV2Control() {
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   };
+  const backToScoreboard = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+    navigate('/');
+  };
 
   return (
-    <main className={styles.control}>
-      <Header screenUrl={screenUrl} screenReady={screenReady} folderName={videoFolder.folderName} copied={copied} onCopy={copyUrl} />
+    <main className={`${styles.control} ${onBack ? styles.modalControl : ''}`}>
+      <Header screenUrl={screenUrl} screenReady={screenReady} folderName={videoFolder.folderName} copied={copied} onBack={backToScoreboard} onCopy={copyUrl} />
       <div className={styles.body}>
         {!videoFolder.isConnected && (
           <div className={styles.infoBanner}>
             <span>ยังไม่ได้เชื่อมต่อโฟลเดอร์วิดีโอ</span>
-            <a href={`${import.meta.env.BASE_URL}`}>กลับหน้าหลักเพื่อเลือกโฟลเดอร์</a>
+            {onBack ? (
+              <button className={styles.inlineLinkButton} type="button" onClick={onBack}>กลับหน้าหลักเพื่อเลือกโฟลเดอร์</button>
+            ) : (
+              <a href={`${import.meta.env.BASE_URL}`}>กลับหน้าหลักเพื่อเลือกโฟลเดอร์</a>
+            )}
           </div>
         )}
         {error && <div className={styles.errorBanner} role="alert">{error}</div>}
@@ -960,6 +991,6 @@ function VarReplayV2Screen() {
   );
 }
 
-export default function VarReplayV2Page({ mode }: { mode: VarReplayV2Mode }) {
-  return mode === 'screen' ? <VarReplayV2Screen /> : <VarReplayV2Control />;
+export default function VarReplayV2Page({ mode, onBack }: { mode: VarReplayV2Mode; onBack?: () => void }) {
+  return mode === 'screen' ? <VarReplayV2Screen /> : <VarReplayV2Control onBack={onBack} />;
 }
