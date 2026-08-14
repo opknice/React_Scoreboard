@@ -96,7 +96,7 @@ export const SCOREBOARD_BUTTON_OPTIONS = [
   { value: 'half_time', label: 'พักครึ่ง' },
   { value: 'full_time', label: 'จบเกม' },
   { value: 'penalty_shootout', label: 'ยิงจุดโทษ' },
-  { value: 'var_replay', label: 'เปิด VAR Replay' },
+  { value: 'var_replay', label: 'เปิด VAR Controller' },
   { value: 'instant_replay', label: 'เปิด Instant Replay' },
 ];
 

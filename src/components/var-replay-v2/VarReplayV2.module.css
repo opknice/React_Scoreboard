@@ -91,7 +91,7 @@
 .fileRow small { color: #8194a3; font-size: .62rem; flex-shrink: 0; }
 .emptySmall { padding: 24px 8px; color: #718797; text-align: center; font-size: .75rem; }
 
-.previewLayout { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: stretch; }
+.previewLayout { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; align-items: stretch; }
 .previewHeader { margin-bottom: 9px; }
 .playingLabel { color: #28c98b; }
 .pausedLabel { color: #8194a3; }
@@ -102,11 +102,11 @@
 .previewEmpty { color: #657b8b; font-size: .8rem; }
 .previewTime { position: absolute; right: 9px; bottom: 8px; padding: 4px 7px; border-radius: 4px; color: #d9e8ef; background: rgba(0, 0, 0, .65); font: .68rem monospace; }
 .panHint { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); padding: 4px 7px; border-radius: 4px; color: #d9e8ef; background: rgba(0, 0, 0, .65); font-size: .62rem; white-space: nowrap; pointer-events: none; }
-.zoomRail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-width: 0; padding: 14px 10px; background: #101b25; border: 1px solid #294051; border-radius: 10px; }
+.zoomRail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px; min-width: 0; padding: 10px 6px; background: #101b25; border: 1px solid #294051; border-radius: 10px; }
 .zoomRail .controlLabel { flex-direction: column; gap: 4px; text-align: center; }
 .zoomRail .controlLabel b { font-size: .9rem; }
 .zoomSlider { width: 12px; height: 155px; margin: 5px 0; accent-color: #39d5ff; writing-mode: vertical-lr; direction: rtl; cursor: pointer; }
-.zoomResetButton { width: 100%; padding: 8px 6px; line-height: 1.25; white-space: normal; }
+.zoomResetButton { width: 100%; padding: 7px 4px; font-size: .62rem; line-height: 1.25; white-space: normal; }
 
 .timeline { position: relative; height: 44px; border: 1px solid #233c4b; border-radius: 6px; background: #071016; cursor: pointer; touch-action: none; outline: none; }
 .timeline:focus { border-color: #39d5ff; box-shadow: 0 0 0 2px rgba(57, 213, 255, .18); }

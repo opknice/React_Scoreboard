@@ -11,11 +11,11 @@ export interface MacroPreset {
 export const MACRO_PRESETS: MacroPreset[] = [
   {
     id: 'var-replay-full',
-    name: 'VAR Replay แบบเต็ม',
-    description: 'เปิด VAR Replay แล้วโหลด Replay ล่าสุดอัตโนมัติ',
+    name: 'VAR Controller แบบเต็ม',
+    description: 'เปิด VAR Controller แล้วโหลด Replay ล่าสุดอัตโนมัติ',
     color: '#8b5cf6',
     macro: {
-      name: 'VAR Replay แบบเต็ม',
+      name: 'VAR Controller แบบเต็ม',
       color: '#8b5cf6',
       isEnabled: false,
       trigger: { event: 'ButtonClicked', filter: { kind: 'button', value: 'var_replay' } },

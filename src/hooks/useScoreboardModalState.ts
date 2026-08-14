@@ -5,7 +5,6 @@ export function useScoreboardModalState() {
   const [showDatabaseModal, setShowDatabaseModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showPenaltyModal, setShowPenaltyModal] = useState(false);
-  const [showVarReplayModal, setShowVarReplayModal] = useState(false);
   const [showVarReplayV2Modal, setShowVarReplayV2Modal] = useState(false);
   const [showInstantReplayModal, setShowInstantReplayModal] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
@@ -23,7 +22,6 @@ export function useScoreboardModalState() {
     showDatabaseModal, setShowDatabaseModal,
     showHelpModal, setShowHelpModal,
     showPenaltyModal, setShowPenaltyModal,
-    showVarReplayModal, setShowVarReplayModal,
     showVarReplayV2Modal, setShowVarReplayV2Modal,
     showInstantReplayModal, setShowInstantReplayModal,
     showDonateModal, setShowDonateModal,

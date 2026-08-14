@@ -179,7 +179,6 @@ export default function ScoreboardController() {
     showDatabaseModal, setShowDatabaseModal,
     showHelpModal, setShowHelpModal,
     showPenaltyModal, setShowPenaltyModal,
-    showVarReplayModal, setShowVarReplayModal,
     showVarReplayV2Modal, setShowVarReplayV2Modal,
     showInstantReplayModal, setShowInstantReplayModal,
     showDonateModal, setShowDonateModal,
@@ -292,7 +291,9 @@ export default function ScoreboardController() {
 
   useScoreboardKeyboardBroadcast();
   useModalControlChannel({
-    onVarReplay: setShowVarReplayModal,
+    // Keep the existing modal-control protocol so saved Macros continue to work,
+    // while routing VAR commands to the V2 controller.
+    onVarReplay: setShowVarReplayV2Modal,
     onReplay: setShowInstantReplayModal,
   });
 
@@ -1361,9 +1362,6 @@ export default function ScoreboardController() {
         onPenaltyShootout={() => void handleOpenPenaltyShootout()}
         onOpenVarReplay={() => {
           broadcastScoreboardButton('var_replay');
-          setShowVarReplayModal(true);
-        }}
-        onOpenVarReplayV2={() => {
           setShowVarReplayV2Modal(true);
         }}
         onOpenInstantReplay={() => {
@@ -1734,10 +1732,8 @@ export default function ScoreboardController() {
       />
 
       <ReplayControlModals
-        showVarReplay={showVarReplayModal}
         showVarReplayV2={showVarReplayV2Modal}
         showInstantReplay={showInstantReplayModal}
-        onCloseVarReplay={() => setShowVarReplayModal(false)}
         onCloseVarReplayV2={() => setShowVarReplayV2Modal(false)}
         onCloseInstantReplay={() => setShowInstantReplayModal(false)}
       />

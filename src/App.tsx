@@ -12,7 +12,6 @@ const LeagueTableStandalone = lazy(() => import('./components/LeagueTableStandal
 const AllScoreCombinedStandalone = lazy(() => import('./components/AllScoreCombinedStandalone'));
 const PenaltyShootoutController = lazy(() => import('./components/PenaltyShootoutController'));
 const PenaltyDotsOverlay = lazy(() => import('./components/PenaltyDotsOverlay'));
-const VarReplayPage = lazy(() => import('./components/VarReplayPage'));
 const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV2Page'));
 const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
 
@@ -58,18 +57,18 @@ function App() {
           />
           <Route path="/dots" element={<PenaltyDotsOverlay />} />
 
-          {/* VAR Replay: control page and OBS Browser Source screen */}
+          {/* Legacy VAR URLs are kept as compatibility aliases for VAR Controller V2. */}
           <Route
             path="/var-replay"
             element={
               <AuthGuard>
-                <VarReplayPage mode="control" />
+                <VarReplayV2Page mode="control" />
               </AuthGuard>
             }
           />
-          <Route path="/var-replay/screen" element={<VarReplayPage mode="screen" />} />
+          <Route path="/var-replay/screen" element={<VarReplayV2Page mode="screen" />} />
 
-          {/* VAR Replay V2: isolated preview for testing before replacing the legacy UI */}
+          {/* VAR Controller V2: control panel and OBS Browser Source screen */}
           <Route
             path="/var-replay-v2"
             element={
