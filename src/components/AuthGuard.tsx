@@ -6,8 +6,11 @@ import {
   logoutUser,
   verifyUserWhitelist,
   getEnvFirebaseConfig,
-  recordUserLoginAttempt
+  recordUserLoginAttempt,
+  FREE_TRIAL_DAYS,
+  type AccessDecision,
 } from '../config/firebaseAuth';
+import { AuthAccessProvider } from '../context/AuthAccessProvider';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -19,6 +22,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [isAllowed, setIsAllowed] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [whitelistReason, setWhitelistReason] = useState<string | null>(null);
+  const [accessDecision, setAccessDecision] = useState<AccessDecision | null>(null);
   const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
 
   // Settings inputs for fallback configuration
@@ -33,6 +37,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     if (!currentUser) {
       setUser(null);
       setIsAllowed(false);
+      setAccessDecision(null);
       setLoading(false);
       return;
     }
@@ -50,6 +55,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     const result = await verifyUserWhitelist(currentUser.email);
     setIsAllowed(result.isAllowed);
     setWhitelistReason(result.reason || null);
+    setAccessDecision(result);
     setLoading(false);
   }, []);
 
@@ -70,6 +76,19 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       setLoading(false);
     }
   }, [checkUserAccess]);
+
+  // Re-check exactly when the trial expires so the protected page is closed
+  // without requiring a refresh or another login.
+  useEffect(() => {
+    if (!user || accessDecision?.accessType !== 'trial' || !accessDecision.trialExpiresAt) return undefined;
+
+    const delay = Math.max(1000, accessDecision.trialExpiresAt - Date.now() + 100);
+    const timeoutId = window.setTimeout(() => {
+      void checkUserAccess(user);
+    }, delay);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [accessDecision, checkUserAccess, user]);
 
   const handleLogin = async () => {
     setAuthError(null);
@@ -92,6 +111,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       await logoutUser();
       setUser(null);
       setIsAllowed(false);
+      setAccessDecision(null);
     } catch (err) {
       console.error('Logout Failed:', err);
     } finally {
@@ -224,6 +244,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
   // Access Denied Screen (Logged in but not whitelisted)
   if (!isAllowed) {
+    const trialExpired = accessDecision?.accessType === 'trial-expired';
     return (
       <div style={styles.container}>
         <div style={{ ...styles.card, borderColor: 'rgba(239, 68, 68, 0.4)' }}>
@@ -231,10 +252,12 @@ export default function AuthGuard({ children }: AuthGuardProps) {
             🚫
           </div>
           <h2 style={{ ...styles.title, fontSize: '22px', color: '#f8fafc' }}>
-            ไม่มีสิทธิ์เข้าใช้งานระบบ
+            {trialExpired ? `หมดช่วงทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วัน` : 'ไม่มีสิทธิ์เข้าใช้งานระบบ'}
           </h2>
           <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px' }}>
-            บัญชีของคุณยังไม่ได้อยู่ในรายชื่อผู้ได้รับอนุญาต (Whitelist)
+            {trialExpired
+              ? 'กรุณาติดต่อ Super Admin เพื่อขออนุมัติสิทธิ์ใช้งานต่อ'
+              : 'บัญชีของคุณยังไม่ได้อยู่ในรายชื่อผู้ได้รับอนุญาต (Whitelist)'}
           </p>
 
           <div style={styles.userInfoBox}>
@@ -268,8 +291,32 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Logged In & Whitelisted: Render Protected Content
-  return <>{children}</>;
+  // Logged in & allowed: Render protected content and show trial status.
+  return (
+    <AuthAccessProvider value={accessDecision}>
+      {accessDecision?.accessType === 'trial' && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '12px',
+            right: '12px',
+            zIndex: 9000,
+            maxWidth: 'min(360px, calc(100vw - 24px))',
+            padding: '9px 13px',
+            border: '1px solid rgba(56, 189, 248, 0.45)',
+            borderRadius: '10px',
+            color: '#bae6fd',
+            background: 'rgba(8, 47, 73, 0.94)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
+            fontSize: '12px',
+          }}
+        >
+          🎁 ทดลองใช้งานฟรี เหลือประมาณ {accessDecision.trialDaysRemaining || 1} วัน
+        </div>
+      )}
+      {children}
+    </AuthAccessProvider>
+  );
 }
 
 // Inline Styles for Modern Glassmorphic Dark UI

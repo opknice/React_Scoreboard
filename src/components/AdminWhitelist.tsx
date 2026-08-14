@@ -11,6 +11,7 @@ import {
   setUserAccessStatus,
   type UserAccessRecord
 } from '../config/firebaseAuth';
+import { evaluateTrialAccess } from '../utils/trialAccess';
 
 export default function AdminWhitelist() {
   const navigate = useNavigate();
@@ -234,16 +235,13 @@ export default function AdminWhitelist() {
 
             {message.type === 'error' && (
               <div style={{ marginTop: '12px', fontSize: '13px', color: '#fca5a5', borderTop: '1px solid rgba(239,68,68,0.2)', paddingTop: '10px' }}>
-                💡 <strong>วิธีแก้ไขสิทธิ์ Realtime Database:</strong>
+                💡 <strong>วิธีตั้งค่า Realtime Database อย่างปลอดภัย:</strong>
                 <ol style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: '1.6' }}>
                   <li>เข้าสู่ <strong>Firebase Console</strong> ➔ โปรเจกต์ <strong>authen-obs-scoreboard</strong></li>
                   <li>ไปที่เมนู <strong>Build</strong> ➔ <strong>Realtime Database</strong> (กด <em>Create Database</em> หากยังไม่ได้สร้าง)</li>
-                  <li>เลือกแท็บ <strong>Rules</strong> แล้วแก้ไขโค้ดเป็น:
-                    <pre style={{ background: '#0f172a', padding: '8px 12px', borderRadius: '6px', margin: '6px 0', fontSize: '12px', color: '#38bdf8' }}>
-                      {`{\n  "rules": {\n    ".read": true,\n    ".write": true\n  }\n}`}
-                    </pre>
-                  </li>
-                  <li>กดปุ่ม <strong>Publish</strong> แล้วกลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Firebase"</strong></li>
+                  <li>เลือกแท็บ <strong>Rules</strong> แล้วนำเนื้อหาจากไฟล์ <strong>database.rules.json</strong> ในโปรเจกต์ไปใช้ จากนั้นกด <strong>Publish</strong></li>
+                  <li>ห้ามตั้งค่า <code>.read: true</code> หรือ <code>.write: true</code> ในระบบจริง เพราะจะทำให้ผู้ใช้แก้สิทธิ์และวันทดลองเองได้</li>
+                  <li>กลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Firebase"</strong></li>
                 </ol>
               </div>
             )}
@@ -329,6 +327,7 @@ export default function AdminWhitelist() {
           ) : (
             filteredRecords.map((rec) => {
               const isSuper = SUPER_ADMIN_EMAILS.includes(rec.email.toLowerCase());
+              const trial = rec.status === 'pending' ? evaluateTrialAccess(rec.trialStartedAt) : null;
               return (
                 <div key={rec.email} style={styles.tableRow}>
                   {/* User Profile Info */}
@@ -369,6 +368,14 @@ export default function AdminWhitelist() {
                     ) : rec.status === 'denied' ? (
                       <span style={{ fontSize: '12px', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
                         🚫 Denied
+                      </span>
+                    ) : trial?.isActive ? (
+                      <span style={{ fontSize: '12px', backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#7dd3fc', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
+                        🎁 Trial เหลือ {trial.daysRemaining} วัน
+                      </span>
+                    ) : trial ? (
+                      <span style={{ fontSize: '12px', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
+                        ⌛ Trial หมดอายุ
                       </span>
                     ) : (
                       <span style={{ fontSize: '12px', backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#facc15', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>

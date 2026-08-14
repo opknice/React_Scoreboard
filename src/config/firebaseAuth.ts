@@ -1,6 +1,19 @@
 import { initializeApp, getApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type Auth, type User } from 'firebase/auth';
-import { getDatabase, ref, get, set, update } from 'firebase/database';
+import { getDatabase, ref, get, set, update, serverTimestamp } from 'firebase/database';
+import { FREE_TRIAL_DAYS, evaluateTrialAccess } from '../utils/trialAccess';
+export { FREE_TRIAL_DAYS, FREE_TRIAL_DURATION_MS } from '../utils/trialAccess';
+
+export type AccessType = 'super-admin' | 'whitelist' | 'trial' | 'trial-expired' | 'denied' | 'pending';
+
+export interface AccessDecision {
+  isAllowed: boolean;
+  accessType: AccessType;
+  reason?: string;
+  trialStartedAt?: number;
+  trialExpiresAt?: number;
+  trialDaysRemaining?: number;
+}
 
 export interface UserAccessRecord {
   email: string;
@@ -8,6 +21,8 @@ export interface UserAccessRecord {
   photoURL?: string;
   status: 'allowed' | 'denied' | 'pending';
   lastLogin: string;
+  /** Server timestamp; immutable after the first trial is created. */
+  trialStartedAt?: number | object;
 }
 
 // Default Firebase config reading from environment variables
@@ -107,7 +122,18 @@ export const recordUserLoginAttempt = async (
   const now = new Date().toISOString();
 
   if (snapshot.exists()) {
-    const existing = snapshot.val() as UserAccessRecord;
+    let existing = snapshot.val() as UserAccessRecord;
+
+    // Existing pending users receive one trial start timestamp. It is only
+    // created when absent and is never reset on subsequent logins.
+    if (existing.status === 'pending' && typeof existing.trialStartedAt !== 'number') {
+      await update(userRef, { trialStartedAt: serverTimestamp() });
+      const initializedSnapshot = await get(userRef);
+      if (initializedSnapshot.exists()) {
+        existing = initializedSnapshot.val() as UserAccessRecord;
+      }
+    }
+
     const updatedRecord: UserAccessRecord = {
       ...existing,
       displayName: user.displayName || existing.displayName || '',
@@ -121,10 +147,7 @@ export const recordUserLoginAttempt = async (
     });
     return updatedRecord;
   } else {
-    const initialStatus: 'allowed' | 'pending' =
-      SUPER_ADMIN_EMAILS.includes(cleanEmail) || getEnvAllowedEmails().includes(cleanEmail)
-        ? 'allowed'
-        : 'pending';
+    const initialStatus: 'allowed' | 'pending' = SUPER_ADMIN_EMAILS.includes(cleanEmail) ? 'allowed' : 'pending';
 
     const newRecord: UserAccessRecord = {
       email: cleanEmail,
@@ -133,7 +156,14 @@ export const recordUserLoginAttempt = async (
       status: initialStatus,
       lastLogin: now,
     };
+    if (initialStatus === 'pending') {
+      newRecord.trialStartedAt = serverTimestamp();
+    }
     await set(userRef, newRecord);
+
+    // Read back the server-resolved timestamp before returning the record.
+    const createdSnapshot = await get(userRef);
+    const createdRecord = createdSnapshot.exists() ? createdSnapshot.val() as UserAccessRecord : newRecord;
 
     if (initialStatus === 'allowed') {
       try {
@@ -142,7 +172,7 @@ export const recordUserLoginAttempt = async (
         // ignore sync error
       }
     }
-    return newRecord;
+    return createdRecord;
   }
 };
 
@@ -208,16 +238,19 @@ export const verifyUserWhitelist = async (
   email: string | null | undefined,
   customAllowedEmails?: string[],
   customConfig?: Record<string, string>
-): Promise<{ isAllowed: boolean; reason?: string }> => {
+): Promise<AccessDecision> => {
   if (!email) {
-    return { isAllowed: false, reason: 'No email address found for user.' };
+    return { isAllowed: false, accessType: 'denied', reason: 'No email address found for user.' };
   }
 
   const cleanEmail = email.trim().toLowerCase();
+  const allowedList = customAllowedEmails && customAllowedEmails.length > 0
+    ? customAllowedEmails.map((e) => e.trim().toLowerCase())
+    : getEnvAllowedEmails();
 
   // 0. Super Admin bypass: Always allowed
   if (SUPER_ADMIN_EMAILS.includes(cleanEmail)) {
-    return { isAllowed: true };
+    return { isAllowed: true, accessType: 'super-admin' };
   }
 
   // 1. Check user_permissions node in Firebase Realtime Database
@@ -231,13 +264,39 @@ export const verifyUserWhitelist = async (
     if (snapshot.exists()) {
       const record = snapshot.val() as UserAccessRecord;
       if (record.status === 'allowed') {
-        return { isAllowed: true };
+        return { isAllowed: true, accessType: 'whitelist' };
       }
       if (record.status === 'denied') {
-        return { isAllowed: false, reason: 'บัญชีนี้ถูกปฏิเสธ/ระงับการเข้าใช้งานโดย Super Admin' };
+        return { isAllowed: false, accessType: 'denied', reason: 'บัญชีนี้ถูกปฏิเสธ/ระงับการเข้าใช้งานโดย Super Admin' };
       }
       if (record.status === 'pending') {
-        return { isAllowed: false, reason: 'บัญชีของคุณกำลังรอการอนุมัติสิทธิ์จาก Super Admin (thanakrit_kas@hotmail.com)' };
+        // Environment whitelist remains a permanent access path even when a
+        // legacy pending record already exists for this email.
+        if (allowedList.includes(cleanEmail)) {
+          return { isAllowed: true, accessType: 'whitelist' };
+        }
+
+        const trialStartedAt = typeof record.trialStartedAt === 'number' ? record.trialStartedAt : undefined;
+        const trial = evaluateTrialAccess(trialStartedAt);
+        if (trial) {
+          if (trial.isActive) {
+            return {
+              isAllowed: true,
+              accessType: 'trial',
+              trialStartedAt,
+              trialExpiresAt: trial.expiresAt,
+              trialDaysRemaining: trial.daysRemaining,
+            };
+          }
+          return {
+            isAllowed: false,
+            accessType: 'trial-expired',
+            trialStartedAt,
+            trialExpiresAt: trial.expiresAt,
+            reason: `สิทธิ์ทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วันหมดอายุแล้ว กรุณาติดต่อ Super Admin เพื่อขออนุมัติสิทธิ์ใช้งาน`,
+          };
+        }
+        return { isAllowed: false, accessType: 'pending', reason: 'บัญชีของคุณกำลังรอการอนุมัติสิทธิ์จาก Super Admin (thanakrit_kas@hotmail.com)' };
       }
     }
   } catch (err) {
@@ -245,12 +304,8 @@ export const verifyUserWhitelist = async (
   }
 
   // 2. Check local / ENV whitelist fallback
-  const allowedList = customAllowedEmails && customAllowedEmails.length > 0
-    ? customAllowedEmails.map((e) => e.trim().toLowerCase())
-    : getEnvAllowedEmails();
-
   if (allowedList.length > 0 && allowedList.includes(cleanEmail)) {
-    return { isAllowed: true };
+    return { isAllowed: true, accessType: 'whitelist' };
   }
 
   // 3. Check legacy Firebase Realtime Database '/whitelist' path
@@ -269,7 +324,7 @@ export const verifyUserWhitelist = async (
       }
 
       if (dbEmails.includes(cleanEmail)) {
-        return { isAllowed: true };
+        return { isAllowed: true, accessType: 'whitelist' };
       }
     }
   } catch (err) {
@@ -279,6 +334,7 @@ export const verifyUserWhitelist = async (
   // Strict Whitelist Enforcement: Default to Pending status explanation
   return {
     isAllowed: false,
+    accessType: 'pending',
     reason: `บัญชี ${cleanEmail} กำลังรอ Super Admin (thanakrit_kas@hotmail.com) อนุมัติสิทธิ์การใช้งาน`,
   };
 };

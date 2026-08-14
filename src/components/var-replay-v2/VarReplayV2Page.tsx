@@ -128,7 +128,7 @@ function Header({
   return (
     <header className={styles.header}>
       <div className={styles.brandBlock}>
-        <div className={styles.brand}>VAR Controller <span>V2</span></div>
+        <div className={styles.brand}>VAR Controller</div>
         <div className={styles.headerMeta}>
           <span className={`${styles.statusDot} ${screenReady ? styles.statusReady : styles.statusWaiting}`} />
           {screenReady ? 'OBS Screen พร้อมใช้งาน' : 'รอ OBS Screen'}

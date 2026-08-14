@@ -1,10 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import AuthGuard from './components/AuthGuard';
-import AdminWhitelist from './components/AdminWhitelist';
 import { ObsVideoFolderProvider } from './context/ObsVideoFolderContext';
 import './App.css';
 
+const AuthGuard = lazy(() => import('./components/AuthGuard'));
+const AdminWhitelist = lazy(() => import('./components/AdminWhitelist'));
 const ScoreboardController = lazy(() => import('./components/ScoreboardController'));
 const OverlayContainer = lazy(() => import('./components/OverlayContainer'));
 const AllScoresStandalone = lazy(() => import('./components/AllScoresStandalone'));

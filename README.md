@@ -76,3 +76,11 @@ When deploying for multiple users:
 - No file paths exposed in network requests
 - Firebase Auth for user authentication
 - Admin whitelist for privileged operations
+
+## 🎁 7-Day Free Trial
+
+- Gmail users who are not in the whitelist receive one 7-day trial.
+- Trial start time is stored in Firebase Realtime Database and is not stored in `localStorage`.
+- Super Admin and whitelisted users keep permanent access.
+- After the trial expires, the user must be approved from the Admin Whitelist page.
+- Before production use, publish the rules from `database.rules.json` in the Firebase Realtime Database Rules tab. Do not use public `.read`/`.write` rules because users could reset their own trial.

@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import React, { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
@@ -18,33 +17,34 @@ import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
 import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
 import { translations } from '../constants/translations';
 import {
-  parseFirebaseSaveTargets,
   normalizeColumnName,
   isFirebaseConfigSheetName,
   inferExcelMapping,
-  loadTeamSheetWithColors
-} from '../utils/excelParser';
-import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParser';
+} from '../utils/excelParserCore';
+import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParserCore';
 import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
-import AutoMacrosPanel from './AutoMacrosPanel';
-import LogoUploader from './LogoUploader';
-import TeamLogosManagerModal from './TeamLogosManagerModal';
-import DatabaseMatchesModal from './DatabaseMatchesModal';
-import EditDatabaseMatchModal from './EditDatabaseMatchModal';
-import ScoreboardInfoModals from './ScoreboardInfoModals';
-import QuickSetupModal from './QuickSetupModal';
-import ObsSetupModal from './ObsSetupModal';
-import PresetTimeModal from './PresetTimeModal';
-import TeamSelectModal from './TeamSelectModal';
 import ReplayControlModals from './ReplayControlModals';
-import PenaltyShootoutModal from './PenaltyShootoutModal';
-import ScoreboardSettingsModal from './ScoreboardSettingsModal';
-import ExcelUrlModal from './ExcelUrlModal';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useObsReplayBufferFolderRescan } from '../hooks/useObsReplayBufferFolderRescan';
 import { useScoreboardModalState } from '../hooks/useScoreboardModalState';
 import { useScoreboardMatchState } from '../hooks/useScoreboardMatchState';
+import { useAuthAccess } from '../hooks/useAuthAccess';
+import { formatTrialRemaining } from '../utils/trialAccess';
+
+const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
+const LogoUploader = lazy(() => import('./LogoUploader'));
+const TeamLogosManagerModal = lazy(() => import('./TeamLogosManagerModal'));
+const DatabaseMatchesModal = lazy(() => import('./DatabaseMatchesModal'));
+const EditDatabaseMatchModal = lazy(() => import('./EditDatabaseMatchModal'));
+const ScoreboardInfoModals = lazy(() => import('./ScoreboardInfoModals'));
+const QuickSetupModal = lazy(() => import('./QuickSetupModal'));
+const ObsSetupModal = lazy(() => import('./ObsSetupModal'));
+const PresetTimeModal = lazy(() => import('./PresetTimeModal'));
+const TeamSelectModal = lazy(() => import('./TeamSelectModal'));
+const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
+const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
+const ExcelUrlModal = lazy(() => import('./ExcelUrlModal'));
 
 export interface SavedExcelUrl {
   id: string;
@@ -64,6 +64,8 @@ function renderTeamName(teamName: string) {
 
 export default function ScoreboardController() {
   const navigate = useNavigate();
+  const authAccess = useAuthAccess();
+  const [, setTrialClock] = useState(Date.now());
   const timerHook = useTimer();
   // Stable ref so the OBS WebSocket event listener always calls the latest handleHotkeyAction
   // without being re-registered every render (avoids stale closure on hotkeys)
@@ -119,6 +121,12 @@ export default function ScoreboardController() {
     return saved ? JSON.parse(saved) : {};
   });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    if (authAccess?.accessType !== 'trial') return undefined;
+    const intervalId = window.setInterval(() => setTrialClock(Date.now()), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [authAccess?.accessType]);
 
   useEffect(() => {
     try {
@@ -429,6 +437,11 @@ export default function ScoreboardController() {
     requestId = excelRequestRef.current,
   ) => {
     try {
+      const [xlsxModule, parser] = await Promise.all([
+        import('xlsx'),
+        import('../utils/excelParser'),
+      ]);
+      const XLSX = 'default' in xlsxModule ? xlsxModule.default : xlsxModule;
       const data = new Uint8Array(buffer);
       const workbook = XLSX.read(data, { type: 'array' });
 
@@ -442,9 +455,9 @@ export default function ScoreboardController() {
       const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
       const headers = rows[0] || [];
       const mapping = inferExcelMapping(headers);
-      const targets = parseFirebaseSaveTargets(workbook);
+      const targets = parser.parseFirebaseSaveTargets(workbook);
 
-      const colors = await loadTeamSheetWithColors(buffer);
+      const colors = await parser.loadTeamSheetWithColors(buffer);
       if (requestId !== excelRequestRef.current) return;
 
       // Commit all parsed data to state
@@ -971,7 +984,7 @@ export default function ScoreboardController() {
                   )}
                 </span>
               ) : (
-                <span>Video: คลิกเพื่อเลือกโฟลเดอร์</span>
+                <span>Video: Click to connect</span>
               )}
             </button>
             {videoFolder.isConnected && (
@@ -994,6 +1007,22 @@ export default function ScoreboardController() {
             <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
               {currentUser.email}
             </span>
+            {authAccess?.accessType === 'trial' && authAccess.trialExpiresAt && (
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  color: '#7dd3fc',
+                  background: 'rgba(14, 165, 233, 0.14)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  borderRadius: '6px',
+                  padding: '3px 6px',
+                  whiteSpace: 'nowrap',
+                }}
+                title="ระยะเวลาทดลองใช้งานฟรี 7 วัน"
+              >
+                🎁 {formatTrialRemaining(authAccess.trialExpiresAt)}
+              </span>
+            )}
             {isSuperAdmin(currentUser.email) && (
               <button
                 onClick={() => navigate('/admin/whitelist')}
@@ -1423,9 +1452,8 @@ export default function ScoreboardController() {
         </div>
       )}
 
-
-
-      <ScoreboardSettingsModal
+      <Suspense fallback={null}>
+      {showSettingsModal && <ScoreboardSettingsModal
         isOpen={showSettingsModal}
         trans={trans}
         detailsTemplate={detailsTemplate}
@@ -1445,7 +1473,7 @@ export default function ScoreboardController() {
           triggerToast(trans.toastSaved, 'success');
         }}
         onClose={() => setShowSettingsModal(false)}
-      />
+      />}
       {/* --- Logo Upload & Path Settings Modal --- */}
       {showLogoPathModal && (
         <div className="modal-overlay" onClick={() => setShowLogoPathModal(false)}>
@@ -1610,7 +1638,7 @@ export default function ScoreboardController() {
       )}
 
       {/* --- Batch Team Logos Manager Modal --- */}
-      <TeamLogosManagerModal
+      {showTeamLogosManagerModal && <TeamLogosManagerModal
         isOpen={showTeamLogosManagerModal}
         onClose={() => setShowTeamLogosManagerModal(false)}
         teamList={allUniqueTeams}
@@ -1619,9 +1647,9 @@ export default function ScoreboardController() {
         logoFolderPath={logoFolderPath}
         onLogoFolderPathChange={setLogoFolderPath}
         onToast={triggerToast}
-      />
+      />}
 
-      <PresetTimeModal
+      {showPresetTimeModal && <PresetTimeModal
         isOpen={showPresetTimeModal}
         minutes={customTimeMinutes}
         seconds={customTimeSeconds}
@@ -1646,9 +1674,9 @@ export default function ScoreboardController() {
           );
         }}
         onClose={() => setShowPresetTimeModal(false)}
-      />
+      />}
 
-      <QuickSetupModal
+      {showQuickSetupModal && <QuickSetupModal
         isOpen={showQuickSetupModal}
         targets={firebaseTargets}
         selectedTargetId={selectedQuickLeagueId}
@@ -1674,16 +1702,16 @@ export default function ScoreboardController() {
           database.loadMatches();
         }}
         onClose={() => setShowQuickSetupModal(false)}
-      />
+      />}
 
-      <ObsSetupModal
+      {showOBSSetupModal && <ObsSetupModal
         isOpen={showOBSSetupModal}
         closeLabel={trans.close}
         onDownload={handleDownloadTemplate}
         onClose={() => setShowOBSSetupModal(false)}
-      />
+      />}
 
-      <DatabaseMatchesModal
+      {showDatabaseModal && <DatabaseMatchesModal
         isOpen={showDatabaseModal}
         isLoading={database.isLoading}
         matches={database.matches}
@@ -1698,15 +1726,15 @@ export default function ScoreboardController() {
         onCopyResultsUrl={() => handleCopyOverlayUrl('results', 'all-scores')}
         onClose={() => setShowDatabaseModal(false)}
         closeLabel={trans.close}
-      />
-      <EditDatabaseMatchModal
+      />}
+      {database.editingMatch && <EditDatabaseMatchModal
         match={database.editingMatch}
         onSave={database.saveEditedMatch}
         onClose={database.closeEdit}
         saveLabel={trans.save}
-      />
+      />}
 
-      <ScoreboardInfoModals
+      {(showHelpModal || showDonateModal || showChangelogModal) && <ScoreboardInfoModals
         trans={trans}
         showHelp={showHelpModal}
         showDonate={showDonateModal}
@@ -1714,9 +1742,9 @@ export default function ScoreboardController() {
         onCloseHelp={() => setShowHelpModal(false)}
         onCloseDonate={() => setShowDonateModal(false)}
         onCloseChangelog={() => setShowChangelogModal(false)}
-      />
+      />}
 
-      <TeamSelectModal
+      {showTeamSelectModal && <TeamSelectModal
         isOpen={showTeamSelectModal}
         target={teamSelectTarget}
         search={teamSelectSearch}
@@ -1729,7 +1757,7 @@ export default function ScoreboardController() {
           setTeamSelectSearch('');
         }}
         onClose={() => setShowTeamSelectModal(false)}
-      />
+      />}
 
       <ReplayControlModals
         showVarReplayV2={showVarReplayV2Modal}
@@ -1738,13 +1766,13 @@ export default function ScoreboardController() {
         onCloseInstantReplay={() => setShowInstantReplayModal(false)}
       />
 
-      <PenaltyShootoutModal
+      {showPenaltyModal && <PenaltyShootoutModal
         isOpen={showPenaltyModal}
         obs={obs}
         teamNameA={nameA}
         teamNameB={nameB}
         onClose={closePenaltyModal}
-      />
+      />}
 
       {/* Auto Macros Panel */}
       {showAutoMacrosModal && (
@@ -1755,7 +1783,7 @@ export default function ScoreboardController() {
         />
       )}
 
-      <ExcelUrlModal
+      {showUrlModal && <ExcelUrlModal
         isOpen={showUrlModal}
         url={excelUrlInput}
         name={excelUrlNameInput}
@@ -1768,7 +1796,8 @@ export default function ScoreboardController() {
         onSelectPreset={(preset) => handleSelectUrlPreset(preset as SavedExcelUrl)}
         onDeletePreset={handleDeleteUrlPreset}
         onClose={() => setShowUrlModal(false)}
-      />
+      />}
+      </Suspense>
     </div>
   );
 }

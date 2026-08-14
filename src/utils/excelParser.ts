@@ -1,6 +1,6 @@
 // src/utils/excelParser.ts
 import * as XLSX from 'xlsx';
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 
 export interface ExcelField {
   key: string;
@@ -609,8 +609,10 @@ const extractCellColor = (cell: ExcelJS.Cell, themeColors: string[]): string => 
 
 export const loadTeamSheetWithColors = async (file: File | ArrayBuffer): Promise<TeamColorRow[]> => {
   try {
+    const excelJsModule = await import('exceljs');
+    const ExcelJSRuntime = 'default' in excelJsModule ? excelJsModule.default : excelJsModule;
     const arrayBuffer = file instanceof ArrayBuffer ? file : await file.arrayBuffer();
-    const workbook = new ExcelJS.Workbook();
+    const workbook = new ExcelJSRuntime.Workbook();
     await workbook.xlsx.load(arrayBuffer);
 
     const teamSheet = workbook.worksheets.find(sheet =>
