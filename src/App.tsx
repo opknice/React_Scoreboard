@@ -13,6 +13,7 @@ const AllScoreCombinedStandalone = lazy(() => import('./components/AllScoreCombi
 const PenaltyShootoutController = lazy(() => import('./components/PenaltyShootoutController'));
 const PenaltyDotsOverlay = lazy(() => import('./components/PenaltyDotsOverlay'));
 const VarReplayPage = lazy(() => import('./components/VarReplayPage'));
+const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV2Page'));
 const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
 
 function App() {
@@ -67,6 +68,17 @@ function App() {
             }
           />
           <Route path="/var-replay/screen" element={<VarReplayPage mode="screen" />} />
+
+          {/* VAR Replay V2: isolated preview for testing before replacing the legacy UI */}
+          <Route
+            path="/var-replay-v2"
+            element={
+              <AuthGuard>
+                <VarReplayV2Page mode="control" />
+              </AuthGuard>
+            }
+          />
+          <Route path="/var-replay-v2/screen" element={<VarReplayV2Page mode="screen" />} />
 
           {/* Instant Replay: control panel and OBS Browser Source screen */}
           <Route

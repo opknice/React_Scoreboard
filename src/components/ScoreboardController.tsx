@@ -1362,6 +1362,9 @@ export default function ScoreboardController() {
           broadcastScoreboardButton('var_replay');
           setShowVarReplayModal(true);
         }}
+        onOpenVarReplayV2={() => {
+          navigate('/var-replay-v2');
+        }}
         onOpenInstantReplay={() => {
           broadcastScoreboardButton('instant_replay');
           setShowInstantReplayModal(true);

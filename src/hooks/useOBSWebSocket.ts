@@ -7,6 +7,13 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
   // Track whether we are in the middle of a connect attempt (suppress false ConnectionClosed events)
   const isConnectingRef = useRef(false);
   const reconnectTimerRef = useRef<number | null>(null);
+  const isShuttingDownRef = useRef(false);
+  const pendingObsRef = useRef<OBSWebSocket | null>(null);
+  const connectionOptionsRef = useRef({
+    url: 'ws://localhost:4455',
+    password: '',
+    maxRetries: 3,
+  });
   // Always hold the latest callback — avoids stale closure when state changes
   const onHotkeyActionRef = useRef(onHotkeyAction);
   const onEventRef = useRef(onEvent);
@@ -24,7 +31,20 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
   // active OBS instances that both fire CustomEvent (causing score +=2).
   const connectGenRef = useRef(0);
 
-  const connect = async (url = 'ws://localhost:4455', password = '', maxRetries = 3) => {
+  const connect = async (
+    url = 'ws://localhost:4455',
+    password = '',
+    maxRetries = 3,
+    isAutomaticReconnect = false,
+  ) => {
+    if (!isAutomaticReconnect) {
+      isShuttingDownRef.current = false;
+      connectionOptionsRef.current = { url, password, maxRetries };
+    }
+
+    // Do not start a new socket while OBS is intentionally shutting down.
+    if (isShuttingDownRef.current) return false;
+
     // Claim a new generation for this connect call
     const myGen = ++connectGenRef.current;
 
@@ -47,10 +67,13 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     let lastErr: unknown;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (isShuttingDownRef.current || myGen !== connectGenRef.current) return false;
+
       // Create a FRESH instance for each attempt.
       // Reusing the same instance and calling obs.connect() again accumulates
       // internal WebSocket handlers, causing CustomEvent to fire twice.
       const obs = new OBSWebSocket();
+      pendingObsRef.current = obs;
 
       obs.on('CustomEvent', (eventData: any) => {
         const data = eventData.eventData || eventData;
@@ -153,20 +176,34 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
 
       obs.on('ConnectionClosed', () => {
         // Ignore spurious close events during connection setup/retry
-        if (!isConnectingRef.current) {
+        if (!isConnectingRef.current && !isShuttingDownRef.current) {
           setIsConnected(false);
           console.log('[OBS Connection] Connection closed');
           if (reconnectTimerRef.current === null) {
             reconnectTimerRef.current = window.setTimeout(() => {
               reconnectTimerRef.current = null;
-              void connect().catch(() => undefined);
+              const options = connectionOptionsRef.current;
+              void connect(options.url, options.password, options.maxRetries, true).catch(() => undefined);
             }, 1500);
           }
         }
       });
 
+      // OBS emits ExitStarted before unloading its WebSocket server. Closing
+      // our client here prevents reconnect attempts from racing OBS shutdown.
+      obs.on('ExitStarted', () => {
+        isShuttingDownRef.current = true;
+        connectGenRef.current++;
+        if (reconnectTimerRef.current !== null) {
+          window.clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        void disconnect();
+      });
+
       try {
         await obs.connect(url, password || undefined);
+        if (pendingObsRef.current === obs) pendingObsRef.current = null;
 
         // After awaiting, check if we were superseded (StrictMode cleanup or re-connect)
         if (myGen !== connectGenRef.current) {
@@ -183,6 +220,7 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
         console.log(`[OBS Connection] Connected successfully (attempt ${attempt})`);
         return true;
       } catch (err) {
+        if (pendingObsRef.current === obs) pendingObsRef.current = null;
         lastErr = err;
         // Clean up failed instance before creating a new one
         try { obs.removeAllListeners(); } catch {}
@@ -208,12 +246,20 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
 
   const disconnect = async () => {
     // Invalidate any in-progress connect() calls
+    isShuttingDownRef.current = true;
     connectGenRef.current++;
     if (reconnectTimerRef.current !== null) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
     isConnectingRef.current = false;
+
+    const pendingObs = pendingObsRef.current;
+    pendingObsRef.current = null;
+    if (pendingObs) {
+      try { pendingObs.removeAllListeners(); } catch {}
+      try { await pendingObs.disconnect(); } catch {}
+    }
 
     if (obsRef.current) {
       try {

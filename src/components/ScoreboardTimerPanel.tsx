@@ -17,6 +17,7 @@ interface ScoreboardTimerPanelProps {
   onHideTime: () => void;
   onPenaltyShootout: () => void;
   onOpenVarReplay: () => void;
+  onOpenVarReplayV2: () => void;
   onOpenInstantReplay: () => void;
 }
 
@@ -26,6 +27,7 @@ export default function ScoreboardTimerPanel({
   onHideTime,
   onPenaltyShootout,
   onOpenVarReplay,
+  onOpenVarReplayV2,
   onOpenInstantReplay,
 }: ScoreboardTimerPanelProps) {
   return (
@@ -87,6 +89,15 @@ export default function ScoreboardTimerPanel({
           >
             <i className="fas fa-video" style={{ fontSize: '0.9rem' }}></i>
             <span>VAR Replay</span>
+          </button>
+          <button
+            className="btn-primary btn-sm"
+            onClick={onOpenVarReplayV2}
+            title="เปิด VAR Controller V2 รุ่นทดลอง"
+            style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+          >
+            <i className="fas fa-expand-arrows-alt" style={{ fontSize: '0.9rem' }}></i>
+            <span>VAR Controller V2</span>
           </button>
           <button
             className="btn-warning btn-sm"

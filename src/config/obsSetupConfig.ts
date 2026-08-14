@@ -21,12 +21,14 @@ export interface SceneConfig {
   sources: SourceConfig[];
 }
 
-// Get the current origin for browser sources
+// Get the application origin including the Vite base path. This keeps
+// generated OBS URLs valid on both GitHub Pages and Vercel.
 const getOrigin = () => {
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
   if (typeof window !== 'undefined') {
-    return window.location.origin;
+    return `${window.location.origin}${basePath}`;
   }
-  return 'http://localhost:5173';
+  return `http://localhost:5173${basePath}`;
 };
 
 // Browser Sources Configuration
