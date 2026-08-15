@@ -1,10 +1,27 @@
 import { useEffect } from 'react';
 import { MACRO_CHANNELS, postMacroChannelMessage } from '../macros/macroChannels';
+import {
+  SCOREBOARD_EVENT_CHANNEL,
+  type GoalScoredPayload,
+} from '../types/scoreboardEvent';
 
 export function broadcastScoreboardButton(buttonId: string): void {
   postMacroChannelMessage(MACRO_CHANNELS.buttonEvents, {
     type: 'ButtonClicked',
     buttonId,
+    timestamp: Date.now(),
+  });
+}
+
+export function broadcastGoalScored(payload: GoalScoredPayload): void {
+  const eventId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `goal_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
+    type: 'GoalScored',
+    eventId,
+    ...payload,
     timestamp: Date.now(),
   });
 }

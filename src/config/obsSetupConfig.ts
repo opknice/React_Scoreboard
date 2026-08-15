@@ -88,14 +88,16 @@ export const BROWSER_SOURCES: SourceConfig[] = [
     }
   },
   {
-    name: 'Goal_Alert',
-    type: 'browser_source',
-    settings: {
-      url: `${getOrigin()}/overlay?view=stadium`,
+      name: 'Goal_Alert',
+      type: 'browser_source',
+      settings: {
+      url: `${getOrigin()}/goal-animation`,
       width: 1920,
       height: 1080,
       fps: 30,
-      shutdown: true,
+      // Keep the transparent listener alive so it can receive GoalScored
+      // BroadcastChannel messages while no animation is visible.
+      shutdown: false,
       restart_when_active: false,
       css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
     },
@@ -433,7 +435,7 @@ export const DEFAULT_VISIBILITY: Record<string, boolean> = {
   'Penalty': false,
   'Main_events': true,
   'Standings': false,
-  'Goal_Alert': false,
+  'Goal_Alert': true,
   'score_team_a': true,
   'score_team_b': true,
   'name_team_a': true,

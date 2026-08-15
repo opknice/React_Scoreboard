@@ -11,6 +11,23 @@
 - Firebase database sync
 - Excel data import
 - Multi-user support
+- Goal animation overlay for OBS
+
+## 🎯 Goal Animation Overlay
+
+The controller broadcasts a `GoalScored` event whenever the score is increased
+from the manual score buttons or the OBS score hotkeys. OBS receives the event
+through the transparent `Goal_Alert` Browser Source.
+
+For a manual OBS setup, add a Browser Source with this URL:
+
+```text
+http://localhost:5173/React_Scoreboard/goal-animation
+```
+
+Use a 1920x1080 transparent source and keep it loaded while the broadcast is
+running. The Quick Setup configuration creates this source automatically with
+the correct URL and visibility settings.
 
 ## 📁 Video Folder Setup
 

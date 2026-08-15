@@ -12,6 +12,7 @@ import {
   broadcastScoreboardButton,
   useModalControlChannel,
   useScoreboardKeyboardBroadcast,
+  broadcastGoalScored,
 } from '../hooks/useScoreboardChannels';
 import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
 import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
@@ -319,6 +320,33 @@ export default function ScoreboardController() {
     half: timerHook.half,
   });
 
+  const addGoal = (team: 'A' | 'B', source: 'manual' | 'hotkey' | 'macro') => {
+    const nextScoreA = team === 'A' ? scoreA + 1 : scoreA;
+    const nextScoreB = team === 'B' ? scoreB + 1 : scoreB;
+    const teamName = team === 'A' ? nameA : nameB;
+    const logo = team === 'A' ? logoA : logoB;
+    const color1 = team === 'A' ? colorA1 : colorB1;
+    const color2 = team === 'A' ? colorA2 : colorB2;
+
+    if (team === 'A') {
+      setScoreA(nextScoreA);
+    } else {
+      setScoreB(nextScoreB);
+    }
+
+    broadcastScoreboardButton(`goal_${team}`);
+    broadcastGoalScored({
+      team,
+      teamName,
+      scoreA: nextScoreA,
+      scoreB: nextScoreB,
+      logo: getLogoSrc(logo, teamName),
+      color1,
+      color2,
+      source,
+    });
+  };
+
   // --- Hotkey Callback Handler ---
   const handleHotkeyAction = (action: string) => {
     switch (action) {
@@ -338,13 +366,13 @@ export default function ScoreboardController() {
         swapTeams();
         break;
       case 'scoreAplus':
-        setScoreA((prev) => prev + 1);
+        addGoal('A', 'hotkey');
         break;
       case 'scoreAminus':
         setScoreA((prev) => Math.max(0, prev - 1));
         break;
       case 'scoreBplus':
-        setScoreB((prev) => prev + 1);
+        addGoal('B', 'hotkey');
         break;
       case 'scoreBminus':
         setScoreB((prev) => Math.max(0, prev - 1));
@@ -1136,7 +1164,7 @@ export default function ScoreboardController() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap', minWidth: '540px' }}>
           {/* Score Team A */}
           <div className="score-buttons" style={{ flexShrink: 0 }}>
-            <button className="plus" onClick={() => { setScoreA((prev) => prev + 1); broadcastScoreboardButton('goal_A'); }}>+</button>
+            <button className="plus" onClick={() => addGoal('A', 'manual')}>+</button>
             <button className="minus" onClick={() => setScoreA((prev) => Math.max(0, prev - 1))}>-</button>
           </div>
 
@@ -1379,7 +1407,7 @@ export default function ScoreboardController() {
           <div className="score-display" style={{ flexShrink: 0 }}>{scoreB}</div>
 
           <div className="score-buttons" style={{ flexShrink: 0 }}>
-            <button className="plus" onClick={() => { setScoreB((prev) => prev + 1); broadcastScoreboardButton('goal_B'); }}>+</button>
+            <button className="plus" onClick={() => addGoal('B', 'manual')}>+</button>
             <button className="minus" onClick={() => setScoreB((prev) => Math.max(0, prev - 1))}>-</button>
           </div>
         </div>
