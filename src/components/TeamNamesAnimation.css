@@ -1,0 +1,130 @@
+@import '../styles/localFonts.css';
+
+.team-names-animation-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  font-family: var(--team-name-font-family, 'Inter'), 'Kanit', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.team-name-instance {
+  position: absolute;
+  top: 3.7%;
+  left: var(--team-name-x);
+  width: 23vw;
+  min-width: 200px;
+  max-width: 440px;
+  font-family: var(--team-name-font-family, 'Inter'), 'Kanit', 'Helvetica Neue', Arial, sans-serif;
+  /* translateX centres horizontally; translateY(-50%) makes the vertical anchor
+     the midpoint of the element — not the top edge — so the text position stays
+     fixed even when slot height changes with dynamic font-size or window resize. */
+  transform: translateX(-50%) translateY(-50%);
+  text-align: center;
+}
+
+/* Wrapper ให้ GOAL!!! และชื่อทีม stack อยู่บน slot เดียวกัน */
+.team-name-slot {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr;
+  /* Fixed px height — large enough for the biggest font (short team name, large viewport)
+     and the GOAL!!! label at its max size × 1.2 line-height with headroom for the
+     scale(1.22) zoom-in keyframe. px is intentional: rem/vw still shift with root font
+     size or viewport width and would re-introduce the floating bug. */
+  height: 56px;
+}
+
+.team-name-slot > * {
+  grid-area: 1 / 1;
+}
+
+.team-name-value {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: var(--team-name-font-size, clamp(1.5rem, 2.5vw, 3rem));
+  font-weight: var(--team-name-font-weight, 700);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.team-name-instance--goal .team-name-value {
+  animation: team-name-fade-out 4000ms ease-in-out both;
+}
+
+
+/* GOAL!!! อยู่บน grid-area เดียวกับชื่อทีม → แสดงแทนที่ตรงๆ */
+.team-name-goal-label {
+  color: #ffffff;
+  /* Fixed size on purpose — GOAL!!! should stay big and punchy regardless of how
+     long the team name is / how small --team-name-font-size shrank for it. */
+  font-size: clamp(1.75rem, 2.8vw, 3.25rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  animation: team-name-goal-label 4000ms ease-in-out both;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  /* Glow layers: inner white core + outer gold halo */
+  text-shadow:
+    0 0 6px rgba(255, 255, 255, 1),
+    0 0 18px rgba(255, 220, 60, 0.95),
+    0 0 40px rgba(255, 160, 0, 0.75),
+    0 3px 12px rgba(0, 0, 0, 0.65);
+}
+
+/* ชื่อทีม fade ออก */
+@keyframes team-name-fade-out {
+  0%   { opacity: 1; transform: scale(1); }
+  18%  { opacity: 0; transform: scale(0.94); }
+  82%  { opacity: 0; transform: scale(0.94); }
+  100% { opacity: 0; transform: scale(0.94); }
+}
+
+/* GOAL!!!: zoom-in กระแทก → hold → pulse สองรอบ → fade ออก */
+@keyframes team-name-goal-label {
+  /* ซ่อนอยู่ */
+  0%   { opacity: 0;   transform: scale(0.5)  translateY(8px);  filter: blur(6px); }
+  /* กระแทก zoom-in */
+  18%  { opacity: 1;   transform: scale(1.22) translateY(-4px); filter: blur(0); }
+  24%  { opacity: 1;   transform: scale(0.95) translateY(0);    filter: blur(0); }
+  30%  { opacity: 1;   transform: scale(1.05) translateY(0);    filter: blur(0); }
+  /* Pulse ครั้งที่ 1 */
+  40%  { opacity: 1;   transform: scale(1.12) translateY(-2px); filter: blur(0); }
+  46%  { opacity: 1;   transform: scale(1.0)  translateY(0);    filter: blur(0); }
+  /* Pulse ครั้งที่ 2 */
+  56%  { opacity: 1;   transform: scale(1.08) translateY(-2px); filter: blur(0); }
+  62%  { opacity: 1;   transform: scale(1.0)  translateY(0);    filter: blur(0); }
+  /* Hold */
+  76%  { opacity: 1;   transform: scale(1.0)  translateY(0);    filter: blur(0); }
+  /* Fade ออก */
+  100% { opacity: 0;   transform: scale(1.1)  translateY(-6px); filter: blur(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-name-instance--goal .team-name-value {
+    animation: none;
+    opacity: 0;
+  }
+
+
+  .team-name-instance--goal .team-name-goal-label {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}

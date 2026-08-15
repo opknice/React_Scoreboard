@@ -1,7 +1,11 @@
 // OBS Setup Service
 // Handles automatic creation of OBS scenes and sources via WebSocket
 
-import { MAIN_SCENE_CONFIG, DEFAULT_VISIBILITY, type SourceConfig } from '../config/obsSetupConfig';
+import { BROWSER_SOURCES, getOrigin, MAIN_SCENE_CONFIG, DEFAULT_VISIBILITY, type SourceConfig } from '../config/obsSetupConfig';
+import type { TeamNameBrowserSettings } from '../types/teamNameBrowserSettings';
+import { buildTeamNameBrowserUrl } from '../utils/teamNameBrowserUrl';
+import type { ScoreBrowserSettings } from '../types/scoreBrowserSettings';
+import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
 
 export interface SetupProgress {
   step: string;
@@ -12,6 +16,12 @@ export interface SetupProgress {
 }
 
 export type ProgressCallback = (progress: SetupProgress) => void;
+
+export interface TeamNameBrowserSetupResult {
+  success: boolean;
+  message: string;
+  updatedSources: string[];
+}
 
 export class OBSSetupService {
   private obsRef: any;
@@ -196,6 +206,204 @@ export class OBSSetupService {
     } catch (err) {
       console.error(`[OBS Setup] Error updating source ${sourceName}:`, err);
     }
+  }
+
+  /**
+   * Ensure a source has a scene item in the target scene. Inputs can exist in
+   * OBS without being present in the scene, especially after a partial setup.
+   */
+  private async ensureSceneItem(sceneName: string, sourceName: string, enabled: boolean): Promise<number> {
+    try {
+      const response = await this.obsRef.call('GetSceneItemId', { sceneName, sourceName });
+      await this.setSourceVisibility(sceneName, sourceName, enabled);
+      return response.sceneItemId;
+    } catch {
+      const response = await this.obsRef.call('CreateSceneItem', {
+        sceneName,
+        sourceName,
+        sceneItemEnabled: enabled,
+      });
+      return response.sceneItemId;
+    }
+  }
+
+  private async setSourceVisibility(sceneName: string, sourceName: string, enabled: boolean): Promise<void> {
+    const response = await this.obsRef.call('GetSceneItemId', { sceneName, sourceName });
+    await this.obsRef.call('SetSceneItemEnabled', {
+      sceneName,
+      sceneItemId: response.sceneItemId,
+      sceneItemEnabled: enabled,
+    });
+  }
+
+  private getTeamNameBrowserConfig(sourceName: 'Team_Name_A' | 'Team_Name_B', settings: TeamNameBrowserSettings): SourceConfig {
+    const baseConfig = BROWSER_SOURCES.find((source) => source.name === sourceName);
+    if (!baseConfig) throw new Error(`Missing OBS configuration for ${sourceName}`);
+    const side = sourceName.endsWith('_A') ? 'A' : 'B';
+    return {
+      ...baseConfig,
+      settings: {
+        ...baseConfig.settings,
+        url: buildTeamNameBrowserUrl(getOrigin(), side, settings),
+      },
+    };
+  }
+
+  private getScoreBrowserConfig(
+    sourceName: 'Score_Display_A' | 'Score_Display_B',
+    side: 'A' | 'B',
+    settings: ScoreBrowserSettings,
+  ): SourceConfig {
+    const baseConfig = BROWSER_SOURCES.find((source) => source.name === 'Score_Display');
+    if (!baseConfig) throw new Error('Missing OBS configuration for Score_Display');
+    return {
+      ...baseConfig,
+      name: sourceName,
+      settings: {
+        ...baseConfig.settings,
+        url: buildScoreBrowserUrl(getOrigin(), side, settings),
+      },
+    };
+  }
+
+  /**
+   * Add or update the two persistent Team Name Browser Sources. Existing GDI
+   * sources are kept intact and simply hidden so the migration is reversible.
+   */
+  async addOrUpdateTeamNameBrowserSources(
+    settings: TeamNameBrowserSettings,
+    sceneName = MAIN_SCENE_CONFIG.name,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
+
+    const updatedSources: string[] = [];
+    for (const sourceName of ['Team_Name_A', 'Team_Name_B'] as const) {
+      const config = this.getTeamNameBrowserConfig(sourceName, settings);
+      const exists = await this.sourceExists(sourceName);
+      if (!exists) {
+        await this.obsRef.call('CreateInput', {
+          sceneName,
+          inputName: config.name,
+          inputKind: 'browser_source',
+          inputSettings: config.settings,
+          sceneItemEnabled: true,
+        });
+      } else {
+        await this.updateSourceSettings(config.name, config.settings);
+      }
+      await this.ensureSceneItem(sceneName, config.name, true);
+      if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
+      updatedSources.push(sourceName);
+    }
+
+    for (const sourceName of ['name_team_a', 'name_team_b']) {
+      await this.setSourceVisibility(sceneName, sourceName, false).catch(() => undefined);
+    }
+
+    return {
+      success: true,
+      message: 'เพิ่ม/อัปเดต Team Name Browser Sources และซ่อน Text GDI เดิมแล้ว',
+      updatedSources,
+    };
+  }
+
+  /** Update only existing Team Name inputs. Never creates inputs or scene items. */
+  async updateTeamNameBrowserSources(
+    settings: TeamNameBrowserSettings,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+
+    const updatedSources: string[] = [];
+    const missingSources: string[] = [];
+    for (const sourceName of ['Team_Name_A', 'Team_Name_B'] as const) {
+      if (!(await this.sourceExists(sourceName))) {
+        missingSources.push(sourceName);
+        continue;
+      }
+      const side = sourceName.endsWith('_A') ? 'A' : 'B';
+      const config = this.getTeamNameBrowserConfig(sourceName, settings);
+      await this.updateSourceSettings(config.name, config.settings);
+      updatedSources.push(`${sourceName} (${side})`);
+    }
+
+    return {
+      success: true,
+      message: updatedSources.length > 0
+        ? `อัปเดต Team Name Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
+        : 'ไม่พบ Team Name Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
+      updatedSources,
+    };
+  }
+
+  /** Add or update separate Score A/B Browser Sources while preserving Both. */
+  async addOrUpdateScoreBrowserSources(
+    settings: ScoreBrowserSettings,
+    sceneName = MAIN_SCENE_CONFIG.name,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
+
+    const updatedSources: string[] = [];
+    for (const definition of [
+      { name: 'Score_Display_A', side: 'A' },
+      { name: 'Score_Display_B', side: 'B' },
+    ] as const) {
+      const config = this.getScoreBrowserConfig(definition.name, definition.side, settings);
+      if (!(await this.sourceExists(config.name))) {
+        await this.obsRef.call('CreateInput', {
+          sceneName,
+          inputName: config.name,
+          inputKind: 'browser_source',
+          inputSettings: config.settings,
+          sceneItemEnabled: true,
+        });
+      } else {
+        await this.updateSourceSettings(config.name, config.settings);
+      }
+      await this.ensureSceneItem(sceneName, config.name, true);
+      if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
+      updatedSources.push(config.name);
+    }
+
+    // Keep the legacy Both source available, but hide it while A/B are active
+    // to prevent duplicate score numbers in OBS.
+    await this.setSourceVisibility(sceneName, 'Score_Display', false).catch(() => undefined);
+    return {
+      success: true,
+      message: 'เพิ่ม/อัปเดต Score A/B Browser Sources และซ่อน Score แบบ Both เดิมแล้ว',
+      updatedSources,
+    };
+  }
+
+  /** Update only existing Score A/B inputs. Never creates inputs or scene items. */
+  async updateScoreBrowserSources(
+    settings: ScoreBrowserSettings,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+
+    const updatedSources: string[] = [];
+    const missingSources: string[] = [];
+    for (const definition of [
+      { name: 'Score_Display_A', side: 'A' },
+      { name: 'Score_Display_B', side: 'B' },
+    ] as const) {
+      if (!(await this.sourceExists(definition.name))) {
+        missingSources.push(definition.name);
+        continue;
+      }
+      const config = this.getScoreBrowserConfig(definition.name, definition.side, settings);
+      await this.updateSourceSettings(config.name, config.settings);
+      updatedSources.push(config.name);
+    }
+
+    return {
+      success: true,
+      message: updatedSources.length > 0
+        ? `อัปเดต Score Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
+        : 'ไม่พบ Score A/B Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
+      updatedSources,
+    };
   }
 
   /**
