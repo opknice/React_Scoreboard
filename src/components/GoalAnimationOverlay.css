@@ -1,0 +1,118 @@
+.goal-animation-overlay {
+  --goal-color-1: #facc15;
+  --goal-color-2: #ffffff;
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  font-family: 'Kanit', 'Inter', sans-serif;
+}
+
+.goal-animation-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--goal-color-1) 45%, transparent), transparent 62%);
+  opacity: 0;
+  animation: goal-flash 900ms ease-out both;
+}
+
+.goal-animation-card {
+  position: relative;
+  min-width: min(70vw, 760px);
+  padding: 34px 72px 42px;
+  border: 3px solid color-mix(in srgb, var(--goal-color-1) 85%, white);
+  border-radius: 28px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--goal-color-1) 80%, #111827), rgba(15, 23, 42, 0.94));
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--goal-color-1) 18%, transparent), 0 24px 80px rgba(0, 0, 0, 0.55);
+  color: var(--goal-color-2);
+  text-align: center;
+  transform-origin: center;
+  animation: goal-card-in 650ms cubic-bezier(0.16, 1, 0.3, 1) both, goal-card-out 550ms ease-in 4.25s both;
+}
+
+.goal-animation-label {
+  color: var(--goal-color-1);
+  font-size: clamp(4rem, 11vw, 9rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 18px color-mix(in srgb, var(--goal-color-1) 80%, transparent), 0 5px 0 rgba(0, 0, 0, 0.28);
+  animation: goal-label-pulse 850ms ease-in-out 120ms both;
+}
+
+.goal-animation-team-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  margin-top: 24px;
+}
+
+.goal-animation-logo {
+  width: clamp(64px, 9vw, 120px);
+  height: clamp(64px, 9vw, 120px);
+  object-fit: contain;
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.45));
+  animation: goal-logo-in 700ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+}
+
+.goal-animation-team-name {
+  max-width: 65vw;
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.goal-animation-score {
+  margin-top: 20px;
+  font-size: clamp(2rem, 5vw, 4rem);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.goal-animation-score span {
+  padding: 0 0.25em;
+  color: var(--goal-color-1);
+}
+
+@keyframes goal-flash {
+  0% { opacity: 0; transform: scale(0.75); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+
+@keyframes goal-card-in {
+  0% { opacity: 0; transform: scale(0.55) rotate(-3deg); }
+  70% { opacity: 1; transform: scale(1.04) rotate(0.5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes goal-card-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.08) translateY(-24px); }
+}
+
+@keyframes goal-label-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes goal-logo-in {
+  from { opacity: 0; transform: translateX(-36px) rotate(-10deg); }
+  to { opacity: 1; transform: translateX(0) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goal-animation-flash,
+  .goal-animation-card,
+  .goal-animation-label,
+  .goal-animation-logo {
+    animation: none;
+  }
+}

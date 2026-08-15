@@ -12,6 +12,7 @@ const LeagueTableStandalone = lazy(() => import('./components/LeagueTableStandal
 const AllScoreCombinedStandalone = lazy(() => import('./components/AllScoreCombinedStandalone'));
 const PenaltyShootoutController = lazy(() => import('./components/PenaltyShootoutController'));
 const PenaltyDotsOverlay = lazy(() => import('./components/PenaltyDotsOverlay'));
+const GoalAnimationOverlay = lazy(() => import('./components/GoalAnimationOverlay'));
 const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV2Page'));
 const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
 
@@ -56,6 +57,7 @@ function App() {
             }
           />
           <Route path="/dots" element={<PenaltyDotsOverlay />} />
+          <Route path="/goal-animation" element={<GoalAnimationOverlay />} />
 
           {/* Legacy VAR URLs are kept as compatibility aliases for VAR Controller V2. */}
           <Route

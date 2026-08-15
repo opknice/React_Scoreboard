@@ -1,5 +1,11 @@
 import { useEffect } from 'react';
 import { MACRO_CHANNELS, postMacroChannelMessage } from '../macros/macroChannels';
+import {
+  SCOREBOARD_EVENT_CHANNEL,
+  SCOREBOARD_STATE_STORAGE_KEY,
+  type GoalScoredPayload,
+  type ScoreboardStatePayload,
+} from '../types/scoreboardEvent';
 
 export function broadcastScoreboardButton(buttonId: string): void {
   postMacroChannelMessage(MACRO_CHANNELS.buttonEvents, {
@@ -7,6 +13,114 @@ export function broadcastScoreboardButton(buttonId: string): void {
     buttonId,
     timestamp: Date.now(),
   });
+}
+
+export function broadcastGoalScored(payload: GoalScoredPayload): void {
+  const eventId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `goal_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
+    type: 'GoalScored',
+    eventId,
+    ...payload,
+    timestamp: Date.now(),
+  });
+}
+
+export function broadcastScoreboardState(payload: ScoreboardStatePayload): void {
+  const eventId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `state_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const event = {
+    type: 'ScoreboardState' as const,
+    eventId,
+    ...payload,
+    timestamp: Date.now(),
+  };
+
+  try {
+    localStorage.setItem(SCOREBOARD_STATE_STORAGE_KEY, JSON.stringify(event));
+  } catch {
+    // localStorage may be unavailable in an embedded or restricted browser.
+  }
+
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, event);
+}
+
+export function requestScoreboardState(): void {
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
+    type: 'ScoreboardStateRequest',
+    timestamp: Date.now(),
+  });
+}
+
+export function broadcastTeamNameAnimationCompleted(eventId: string, team: 'A' | 'B'): void {
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
+    type: 'TeamNameAnimationCompleted',
+    eventId,
+    team,
+    timestamp: Date.now(),
+  });
+}
+
+export function useScoreboardStateResponder(payload: ScoreboardStatePayload): void {
+  const {
+    scoreA,
+    scoreB,
+    nameA,
+    nameB,
+    logoA,
+    logoB,
+    colorA1,
+    colorA2,
+    colorB1,
+    colorB2,
+  } = payload;
+
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+
+    const handleMessage = (event: MessageEvent<unknown>) => {
+      if (!event.data || typeof event.data !== 'object') return;
+      if ((event.data as { type?: unknown }).type !== 'ScoreboardStateRequest') return;
+      broadcastScoreboardState({
+        scoreA,
+        scoreB,
+        nameA,
+        nameB,
+        logoA,
+        logoB,
+        colorA1,
+        colorA2,
+        colorB1,
+        colorB2,
+      });
+    };
+
+    try {
+      channel = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
+      channel.addEventListener('message', handleMessage);
+    } catch (error) {
+      console.error('[ScoreboardState] Failed to create response channel:', error);
+    }
+
+    return () => {
+      channel?.removeEventListener('message', handleMessage);
+      channel?.close();
+    };
+  }, [
+    colorA1,
+    colorA2,
+    colorB1,
+    colorB2,
+    logoA,
+    logoB,
+    nameA,
+    nameB,
+    scoreA,
+    scoreB,
+  ]);
 }
 
 export function useScoreboardKeyboardBroadcast(): void {

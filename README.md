@@ -11,6 +11,53 @@
 - Firebase database sync
 - Excel data import
 - Multi-user support
+- Goal animation overlay for OBS
+
+## 🎯 Goal Animation Overlay
+
+The controller broadcasts a `GoalScored` event whenever the score is increased
+from the manual score buttons or the OBS score hotkeys. OBS receives the event
+through the transparent `Goal_Alert` Browser Source.
+
+For a manual OBS setup, add a Browser Source with this URL:
+
+```text
+http://localhost:5173/React_Scoreboard/goal-animation
+```
+
+Use a 1920x1080 transparent source and keep it loaded while the broadcast is
+running. The Quick Setup configuration creates this source automatically with
+the correct URL and visibility settings.
+
+For a score-only animation, use the same route with `template=score-only`.
+The default `mode=number` renders the real score value with a Scale + 3D
+Rotate/Flip animation:
+
+```text
+# Animate the real score of whichever team scored
+http://localhost:5173/React_Scoreboard/goal-animation?template=score-only&mode=number
+
+# Animate only the real score of Team A
+http://localhost:5173/React_Scoreboard/goal-animation?template=score-only&side=A&mode=number
+
+# Animate only the real score of Team B
+http://localhost:5173/React_Scoreboard/goal-animation?template=score-only&side=B&mode=number
+
+# Keep Native OBS score visible and animate only its surrounding effects
+http://localhost:5173/React_Scoreboard/goal-animation?template=score-only&mode=effect
+```
+
+For `mode=number`, hide the matching Native OBS Text Source to avoid drawing
+two score numbers at once: hide `score_team_a` for `side=A`, or
+`score_team_b` for `side=B`. For `side=both`, hide both native score sources.
+The Browser Source is then the visual owner of the real score and keeps it
+visible between goals. Use `mode=effect` if the Native OBS score source must
+remain visible and you only want the temporary animation effects.
+
+The Quick Setup configuration creates a persistent `Score_Display` Browser
+Source using `side=both&mode=number` and disables `score_team_a` and
+`score_team_b` by default. If the scene was created before this change, rerun
+Quick Setup or add the `Score_Display` source manually with the URL above.
 
 ## 📁 Video Folder Setup
 

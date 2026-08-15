@@ -1,0 +1,229 @@
+@import '../styles/localFonts.css';
+
+.score-only-animation-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Hide/reveal only the score that belongs to the scoring team. */
+.score-only-score-wrap--preparing {
+  animation: score-only-score-hide 350ms ease-in both;
+}
+
+.score-only-score-wrap--revealing {
+  animation: score-only-fade-in 350ms ease-out both;
+}
+
+/* เปิด Score อีกฝั่งหลัง animation ของฝั่งผู้ทำประตูจบประมาณ 2 วินาที */
+.score-only-score-wrap--revealing-delayed {
+  animation: score-only-fade-in 350ms ease-out 2000ms both;
+}
+
+@keyframes score-only-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes score-only-score-hide {
+  0% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) scale(0.96); }
+}
+
+.score-only-instance {
+  --score-only-x: 50%;
+  position: absolute;
+  inset: 0;
+  font-family: var(--score-only-font-family, 'Inter'), 'Helvetica Neue', Arial, sans-serif;
+  font-weight: var(--score-only-font-weight, 700);
+}
+
+/* Goal announcement appears first; the new score starts after this phase. */
+.score-only-goal-announcement {
+  position: absolute;
+  top: 0.35%;
+  left: var(--score-only-x);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transform-origin: center;
+  animation: score-goal-announcement 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.score-only-goal-team {
+  max-width: 18vw;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: clamp(1rem, 1.45vw, 1.55rem);
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.score-only-goal-label {
+  color: #ffffff;
+  font-size: clamp(1.9rem, 3.15vw, 3.2rem);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.9), 0 3px 12px rgba(0, 0, 0, 0.65);
+}
+
+/* ============================================================
+   Score wrap
+   - position: absolute วางตำแหน่งบนหน้าจอ
+   - overflow: hidden ซ่อนเลขที่อยู่นอกกรอบ (slot machine effect)
+   - font-size กำหนดที่นี่ เพื่อให้ height: 1.15em คำนวณถูก
+   - width: max-content ป้องกัน wrap collapse
+   ============================================================ */
+.score-only-score-wrap {
+  position: absolute;
+  top: 4.63%;
+  left: var(--score-only-x);
+  transform: translateX(-50%);
+  overflow: hidden;
+  font-size: var(--score-only-font-size, clamp(3rem, 3.75vw, 4.5rem)); /* กำหนดที่ wrap → em ใน height ถูกต้อง */
+  height: 1.2em;                           /* สูงพอดีหนึ่งบรรทัด */
+  width: max-content;                      /* ไม่ให้ wrap collapse */
+  min-width: 2ch;                          /* กว้างอย่างน้อย 2 ตัวอักษร */
+}
+
+/* ============================================================
+   Base style ของตัวเลข
+   (font-size ถูก inherit จาก .score-only-score-wrap แล้ว)
+   ============================================================ */
+.score-only-score {
+  color: #ffffff;
+  font-size: 1em;           /* inherit จาก wrap — ไม่ต้องกำหนดซ้ำ */
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+/* เลขใหม่ — รอให้ Score Browser Source fade-in แล้วตกลงมากระเด้ง 2 ครั้ง */
+.score-only-score--in {
+  animation: score-drop-in 1550ms cubic-bezier(0.22, 1, 0.36, 1) 450ms both;
+}
+
+/* เลขเก่า — bounce 2 ครั้ง แล้วเลื่อนลงหาย (2 animation ต่อกัน) */
+.score-only-score--out {
+  position: absolute;
+  inset: 0;
+  animation:
+    score-bounce-out 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both,
+    score-drop-out   450ms cubic-bezier(0.55, 0, 1, 0.45) 450ms both;
+}
+
+/* เลขนิ่ง ไม่มี animation */
+.score-only-score--static {
+  opacity: 1;
+}
+
+/* ============================================================
+   +1 delta
+   ============================================================ */
+.score-only-delta {
+  position: absolute;
+  top: 1.5%;
+  left: calc(var(--score-only-x) + 4.5%);
+  color: #ffffff;
+  font-size: clamp(1.4rem, 2.5vw, 2.5rem);
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  animation: score-delta-float 900ms ease-out 100ms both;
+}
+
+/* ============================================================
+   Keyframes
+   ============================================================ */
+
+/* Phase 1 — เลขเก่าเด้ง 2 ครั้ง (scale ขึ้น-ลง) */
+@keyframes score-bounce-out {
+  0%   { transform: translateY(0)    scale(1); }
+  20%  { transform: translateY(-12%) scale(1.08); }   /* เด้งขึ้น ครั้งที่ 1 */
+  40%  { transform: translateY(0)    scale(1); }       /* กลับ */
+  60%  { transform: translateY(-8%)  scale(1.05); }   /* เด้งขึ้น ครั้งที่ 2 */
+  80%  { transform: translateY(0)    scale(1); }       /* กลับ */
+  100% { transform: translateY(0)    scale(1); }       /* พร้อมส่งต่อ drop-out */
+}
+
+/* Phase 2 — เลขเก่าเลื่อนลงหาย */
+@keyframes score-drop-out {
+  0%   { opacity: 1; transform: translateY(0); }
+  50%  { opacity: 0.3; }
+  100% { opacity: 0;   transform: translateY(105%); }
+}
+
+/* เลขใหม่: ตกลงมาจากบน */
+@keyframes score-drop-in {
+  0%   { opacity: 0; transform: translateY(-105%) scale(0.86); }
+  24%  { opacity: 1; transform: translateY(-8%) scale(1.1); }
+  42%  { opacity: 1; transform: translateY(0) scale(0.96); }
+  58%  { opacity: 1; transform: translateY(-5%) scale(1.05); }
+  74%  { opacity: 1; transform: translateY(0) scale(0.98); }
+  88%  { opacity: 1; transform: translateY(-2%) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes score-goal-announcement {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(12px) scale(0.7); }
+  28%  { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.08); }
+  65%  { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(1.02); }
+}
+
+/* +1 ลอยขึ้น */
+@keyframes score-delta-float {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.85); }
+  25%  { opacity: 1; transform: translateY(0) scale(1); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-20px) scale(0.95); }
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .score-only-score-wrap--preparing {
+    animation: none;
+    opacity: 0;
+  }
+
+  .score-only-score-wrap--revealing {
+    animation: none;
+    opacity: 1;
+  }
+
+  .score-only-score-wrap--revealing-delayed {
+    animation: none;
+    opacity: 1;
+  }
+
+  .score-only-score--in,
+  .score-only-score--out,
+  .score-only-delta,
+  .score-only-goal-announcement {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .score-only-score--out {
+    display: none;
+  }
+}

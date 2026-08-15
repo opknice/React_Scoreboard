@@ -23,7 +23,7 @@ export interface SceneConfig {
 
 // Get the application origin including the Vite base path. This keeps
 // generated OBS URLs valid on both GitHub Pages and Vercel.
-const getOrigin = () => {
+export const getOrigin = () => {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
   if (typeof window !== 'undefined') {
     return `${window.location.origin}${basePath}`;
@@ -88,14 +88,109 @@ export const BROWSER_SOURCES: SourceConfig[] = [
     }
   },
   {
-    name: 'Goal_Alert',
-    type: 'browser_source',
-    settings: {
-      url: `${getOrigin()}/overlay?view=stadium`,
+      name: 'Goal_Alert',
+      type: 'browser_source',
+      settings: {
+      url: `${getOrigin()}/goal-animation`,
       width: 1920,
       height: 1080,
       fps: 30,
-      shutdown: true,
+      // Keep the transparent listener alive so it can receive GoalScored
+      // BroadcastChannel messages while no animation is visible.
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
+    name: 'Score_Display',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/goal-animation?template=score-only&mode=number&side=both`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      // Keep the persistent score source loaded so it can receive live state.
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
+    name: 'Score_Display_A',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/goal-animation?template=score-only&mode=number&side=A`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
+    name: 'Score_Display_B',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/goal-animation?template=score-only&mode=number&side=B`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
+    name: 'Team_Name_A',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/goal-animation?template=team-names&side=A`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      // Keep the persistent team name source loaded for live updates.
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
+    name: 'Team_Name_B',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/goal-animation?template=team-names&side=B`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      // Keep the persistent team name source loaded for live updates.
+      shutdown: false,
       restart_when_active: false,
       css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
     },
@@ -433,11 +528,16 @@ export const DEFAULT_VISIBILITY: Record<string, boolean> = {
   'Penalty': false,
   'Main_events': true,
   'Standings': false,
-  'Goal_Alert': false,
-  'score_team_a': true,
-  'score_team_b': true,
-  'name_team_a': true,
-  'name_team_b': true,
+  'Goal_Alert': true,
+  'Score_Display': true,
+  'Score_Display_A': false,
+  'Score_Display_B': false,
+  'Team_Name_A': true,
+  'Team_Name_B': true,
+  'score_team_a': false,
+  'score_team_b': false,
+  'name_team_a': false,
+  'name_team_b': false,
   'time_counter': true,
   'half_text': true,
   'label_1': true,

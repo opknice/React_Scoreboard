@@ -12,6 +12,9 @@ import {
   broadcastScoreboardButton,
   useModalControlChannel,
   useScoreboardKeyboardBroadcast,
+  broadcastGoalScored,
+  broadcastScoreboardState,
+  useScoreboardStateResponder,
 } from '../hooks/useScoreboardChannels';
 import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
 import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
@@ -31,6 +34,22 @@ import { useScoreboardModalState } from '../hooks/useScoreboardModalState';
 import { useScoreboardMatchState } from '../hooks/useScoreboardMatchState';
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { formatTrialRemaining } from '../utils/trialAccess';
+import { getOrigin } from '../config/obsSetupConfig';
+import {
+  DEFAULT_TEAM_NAME_BROWSER_SETTINGS,
+  TEAM_NAME_SETTINGS_STORAGE_KEY,
+  normalizeTeamNameBrowserSettings,
+  type TeamNameBrowserSettings,
+} from '../types/teamNameBrowserSettings';
+import { buildTeamNameBrowserUrl } from '../utils/teamNameBrowserUrl';
+import { OBSSetupService } from '../services/obsSetupService';
+import {
+  DEFAULT_SCORE_BROWSER_SETTINGS,
+  SCORE_SETTINGS_STORAGE_KEY,
+  normalizeScoreBrowserSettings,
+  type ScoreBrowserSettings,
+} from '../types/scoreBrowserSettings';
+import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
 
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
@@ -201,6 +220,26 @@ export default function ScoreboardController() {
   } = useScoreboardModalState();
   const [teamsCacheVersion, setTeamsCacheVersion] = useState<number>(0);
   const [tickerSpeed, setTickerSpeed] = useState<number>(() => parseInt(localStorage.getItem('tickerSpeed') || '75', 10));
+  const [teamNameSettings, setTeamNameSettings] = useState<TeamNameBrowserSettings>(() => {
+    try {
+      const saved = localStorage.getItem(TEAM_NAME_SETTINGS_STORAGE_KEY);
+      return saved ? normalizeTeamNameBrowserSettings(JSON.parse(saved)) : DEFAULT_TEAM_NAME_BROWSER_SETTINGS;
+    } catch {
+      return DEFAULT_TEAM_NAME_BROWSER_SETTINGS;
+    }
+  });
+  const [teamNameObsBusy, setTeamNameObsBusy] = useState(false);
+  const [teamNameObsMessage, setTeamNameObsMessage] = useState('');
+  const [scoreSettings, setScoreSettings] = useState<ScoreBrowserSettings>(() => {
+    try {
+      const saved = localStorage.getItem(SCORE_SETTINGS_STORAGE_KEY);
+      return saved ? normalizeScoreBrowserSettings(JSON.parse(saved)) : DEFAULT_SCORE_BROWSER_SETTINGS;
+    } catch {
+      return DEFAULT_SCORE_BROWSER_SETTINGS;
+    }
+  });
+  const [scoreObsBusy, setScoreObsBusy] = useState(false);
+  const [scoreObsMessage, setScoreObsMessage] = useState('');
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
 
@@ -216,6 +255,22 @@ export default function ScoreboardController() {
 
   // Toast States
   const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TEAM_NAME_SETTINGS_STORAGE_KEY, JSON.stringify(teamNameSettings));
+    } catch {
+      console.warn('[Scoreboard] Unable to persist Team Name settings (storage may be full)');
+    }
+  }, [teamNameSettings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCORE_SETTINGS_STORAGE_KEY, JSON.stringify(scoreSettings));
+    } catch {
+      console.warn('[Scoreboard] Unable to persist Score settings (storage may be full)');
+    }
+  }, [scoreSettings]);
 
   // --- Refs ---
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -260,13 +315,100 @@ export default function ScoreboardController() {
   }, [excelData, excelMapping, teamSheetData, getMappedValue]);
 
   // --- Toast Function ---
-  const triggerToast = (message: string, type = 'info') => {
+  const triggerToast = useCallback((message: string, type = 'info') => {
     const id = Date.now().toString() + Math.random().toString();
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
-  };
+  }, []);
+
+  const teamNameUrls = useMemo(() => ({
+    A: buildTeamNameBrowserUrl(getOrigin(), 'A', teamNameSettings),
+    B: buildTeamNameBrowserUrl(getOrigin(), 'B', teamNameSettings),
+  }), [teamNameSettings]);
+
+  const copyTeamNameUrl = useCallback(async (side: 'A' | 'B') => {
+    try {
+      await navigator.clipboard.writeText(teamNameUrls[side]);
+      triggerToast(`คัดลอก URL Team ${side} แล้ว`, 'success');
+    } catch {
+      triggerToast('ไม่สามารถคัดลอก URL ได้', 'error');
+    }
+  }, [teamNameUrls, triggerToast]);
+
+  const scoreUrls = useMemo(() => ({
+    A: buildScoreBrowserUrl(getOrigin(), 'A', scoreSettings),
+    B: buildScoreBrowserUrl(getOrigin(), 'B', scoreSettings),
+    both: buildScoreBrowserUrl(getOrigin(), 'both', scoreSettings),
+  }), [scoreSettings]);
+
+  const updateScoreSettings = useCallback((patch: Partial<ScoreBrowserSettings>) => {
+    setScoreSettings((current) => normalizeScoreBrowserSettings({ ...current, ...patch }));
+  }, []);
+
+  const copyScoreUrl = useCallback(async (side: 'A' | 'B' | 'both') => {
+    try {
+      await navigator.clipboard.writeText(scoreUrls[side]);
+      triggerToast(`คัดลอก URL Score ${side} แล้ว`, 'success');
+    } catch {
+      triggerToast('ไม่สามารถคัดลอก URL Score ได้', 'error');
+    }
+  }, [scoreUrls, triggerToast]);
+
+  const updateTeamNameSettings = useCallback((patch: Partial<TeamNameBrowserSettings>) => {
+    setTeamNameSettings((current) => normalizeTeamNameBrowserSettings({ ...current, ...patch }));
+  }, []);
+
+  const runTeamNameObsAction = useCallback(async (action: 'add' | 'update') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    setTeamNameObsBusy(true);
+    setTeamNameObsMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const result = action === 'add'
+        ? await service.addOrUpdateTeamNameBrowserSources(teamNameSettings)
+        : await service.updateTeamNameBrowserSources(teamNameSettings);
+      setTeamNameObsMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า OBS ได้';
+      setTeamNameObsMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setTeamNameObsBusy(false);
+    }
+  }, [obs, teamNameSettings, triggerToast]);
+
+  const runScoreObsAction = useCallback(async (action: 'add' | 'update') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    setScoreObsBusy(true);
+    setScoreObsMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const result = action === 'add'
+        ? await service.addOrUpdateScoreBrowserSources(scoreSettings)
+        : await service.updateScoreBrowserSources(scoreSettings);
+      setScoreObsMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า Score ใน OBS ได้';
+      setScoreObsMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setScoreObsBusy(false);
+    }
+  }, [obs, scoreSettings, triggerToast]);
 
   const database = useScoreboardDatabase({
     activeDb,
@@ -319,6 +461,63 @@ export default function ScoreboardController() {
     half: timerHook.half,
   });
 
+  // Keep the persistent score Browser Source synchronized, including after
+  // it is opened or refreshed after the last goal event was sent.
+  useEffect(() => {
+    broadcastScoreboardState({
+      scoreA,
+      scoreB,
+      nameA,
+      nameB,
+      logoA: resolveLogoSrc(logoA, nameA, logoFolderPath),
+      logoB: resolveLogoSrc(logoB, nameB, logoFolderPath),
+      colorA1,
+      colorA2,
+      colorB1,
+      colorB2,
+    });
+  }, [colorA1, colorA2, colorB1, colorB2, logoA, logoB, logoFolderPath, nameA, nameB, scoreA, scoreB]);
+
+  useScoreboardStateResponder({
+    scoreA,
+    scoreB,
+    nameA,
+    nameB,
+    logoA: resolveLogoSrc(logoA, nameA, logoFolderPath),
+    logoB: resolveLogoSrc(logoB, nameB, logoFolderPath),
+    colorA1,
+    colorA2,
+    colorB1,
+    colorB2,
+  });
+
+  const addGoal = (team: 'A' | 'B', source: 'manual' | 'hotkey' | 'macro') => {
+    const nextScoreA = team === 'A' ? scoreA + 1 : scoreA;
+    const nextScoreB = team === 'B' ? scoreB + 1 : scoreB;
+    const teamName = team === 'A' ? nameA : nameB;
+    const logo = team === 'A' ? logoA : logoB;
+    const color1 = team === 'A' ? colorA1 : colorB1;
+    const color2 = team === 'A' ? colorA2 : colorB2;
+
+    if (team === 'A') {
+      setScoreA(nextScoreA);
+    } else {
+      setScoreB(nextScoreB);
+    }
+
+    broadcastScoreboardButton(`goal_${team}`);
+    broadcastGoalScored({
+      team,
+      teamName,
+      scoreA: nextScoreA,
+      scoreB: nextScoreB,
+      logo: getLogoSrc(logo, teamName),
+      color1,
+      color2,
+      source,
+    });
+  };
+
   // --- Hotkey Callback Handler ---
   const handleHotkeyAction = (action: string) => {
     switch (action) {
@@ -338,13 +537,13 @@ export default function ScoreboardController() {
         swapTeams();
         break;
       case 'scoreAplus':
-        setScoreA((prev) => prev + 1);
+        addGoal('A', 'hotkey');
         break;
       case 'scoreAminus':
         setScoreA((prev) => Math.max(0, prev - 1));
         break;
       case 'scoreBplus':
-        setScoreB((prev) => prev + 1);
+        addGoal('B', 'hotkey');
         break;
       case 'scoreBminus':
         setScoreB((prev) => Math.max(0, prev - 1));
@@ -1136,7 +1335,7 @@ export default function ScoreboardController() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap', minWidth: '540px' }}>
           {/* Score Team A */}
           <div className="score-buttons" style={{ flexShrink: 0 }}>
-            <button className="plus" onClick={() => { setScoreA((prev) => prev + 1); broadcastScoreboardButton('goal_A'); }}>+</button>
+            <button className="plus" onClick={() => addGoal('A', 'manual')}>+</button>
             <button className="minus" onClick={() => setScoreA((prev) => Math.max(0, prev - 1))}>-</button>
           </div>
 
@@ -1379,7 +1578,7 @@ export default function ScoreboardController() {
           <div className="score-display" style={{ flexShrink: 0 }}>{scoreB}</div>
 
           <div className="score-buttons" style={{ flexShrink: 0 }}>
-            <button className="plus" onClick={() => { setScoreB((prev) => prev + 1); broadcastScoreboardButton('goal_B'); }}>+</button>
+            <button className="plus" onClick={() => addGoal('B', 'manual')}>+</button>
             <button className="minus" onClick={() => setScoreB((prev) => Math.max(0, prev - 1))}>-</button>
           </div>
         </div>
@@ -1687,6 +1886,23 @@ export default function ScoreboardController() {
           setTickerSpeed(speed);
           localStorage.setItem('tickerSpeed', String(speed));
         }}
+        teamNameSettings={teamNameSettings}
+        teamNameUrls={teamNameUrls}
+        teamNameObsBusy={teamNameObsBusy}
+        teamNameObsConnected={obs.isConnected}
+        teamNameObsMessage={teamNameObsMessage}
+        onTeamNameSettingsChange={updateTeamNameSettings}
+        onCopyTeamNameUrl={copyTeamNameUrl}
+        scoreSettings={scoreSettings}
+        scoreUrls={scoreUrls}
+        onScoreSettingsChange={updateScoreSettings}
+        onCopyScoreUrl={copyScoreUrl}
+        scoreObsBusy={scoreObsBusy}
+        scoreObsMessage={scoreObsMessage}
+        onQuickAddScore={() => void runScoreObsAction('add')}
+        onUpdateScore={() => void runScoreObsAction('update')}
+        onQuickAddTeamNames={() => void runTeamNameObsAction('add')}
+        onUpdateTeamNames={() => void runTeamNameObsAction('update')}
         onOpenObsSetup={() => {
           setShowQuickSetupModal(false);
           setShowOBSSetupModal(true);
