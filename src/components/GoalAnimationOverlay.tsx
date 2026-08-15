@@ -23,8 +23,6 @@ const DISPLAY_DURATION_MS = 5000;
 const TEAM_NAME_GOAL_DURATION_MS = 4000;
 const SCORE_ANIMATION_FALLBACK_DELAY_MS = TEAM_NAME_GOAL_DURATION_MS + 500;
 const SCORE_NUMBER_ANIMATION_DURATION_MS = 2000;
-const SCORE_HANDOFF_FADE_DURATION_MS = 350;
-const SCORE_REVEAL_PHASE_DURATION_MS = SCORE_NUMBER_ANIMATION_DURATION_MS + SCORE_HANDOFF_FADE_DURATION_MS;
 
 function displayFromGoalEvent(event: GoalScoredEvent): ScoreOnlyDisplay {
   return {
@@ -108,7 +106,7 @@ export default function GoalAnimationOverlay() {
       scoreRevealTimerRef.current = window.setTimeout(() => {
         setIsScoreRevealing(false);
         scoreRevealTimerRef.current = null;
-      }, SCORE_REVEAL_PHASE_DURATION_MS);
+      }, SCORE_NUMBER_ANIMATION_DURATION_MS);
 
       setScoreDisplays(
         pendingState
@@ -245,10 +243,7 @@ export default function GoalAnimationOverlay() {
           preparing={isScorePreparing}
           revealing={isScoreRevealing}
           preparingTeams={isScorePreparing ? teamsForScoreSide(scoreSide) : []}
-          revealingTeams={isScoreRevealing ? animatedScoreTeams : []}
-          revealingDelayTeams={isScoreRevealing
-            ? teamsForScoreSide(scoreSide).filter((team) => !animatedScoreTeams.includes(team))
-            : []}
+          revealingTeams={isScoreRevealing ? teamsForScoreSide(scoreSide) : []}
         />
       );
     }
