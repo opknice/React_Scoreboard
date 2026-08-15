@@ -18,7 +18,6 @@ interface ScoreOnlyAnimationProps {
   revealing?: boolean;
   preparingTeams?: Array<'A' | 'B'>;
   revealingTeams?: Array<'A' | 'B'>;
-  revealingDelayTeams?: Array<'A' | 'B'>;
 }
 
 function getScoreFontSize(score: number): string {
@@ -46,7 +45,6 @@ export default function ScoreOnlyAnimation({
   revealing = false,
   preparingTeams,
   revealingTeams,
-  revealingDelayTeams,
 }: ScoreOnlyAnimationProps) {
   return (
     <div
@@ -72,7 +70,6 @@ export default function ScoreOnlyAnimation({
         const isRevealing = revealingTeams
           ? revealingTeams.includes(display.team)
           : revealing;
-        const isRevealingDelayed = revealingDelayTeams?.includes(display.team) ?? false;
         const isAnimating = !isPreparing && (mode === 'effect' || animatedTeams.includes(display.team));
         const oldScore = display.score - 1;
 
@@ -85,7 +82,7 @@ export default function ScoreOnlyAnimation({
 
             {mode === 'number' ? (
               <div
-                className={`score-only-score-wrap ${isPreparing ? 'score-only-score-wrap--preparing' : ''} ${isRevealing ? 'score-only-score-wrap--revealing' : ''} ${isRevealingDelayed ? 'score-only-score-wrap--revealing-delayed' : ''}`}
+                className={`score-only-score-wrap ${isPreparing ? 'score-only-score-wrap--preparing' : ''} ${isRevealing ? 'score-only-score-wrap--revealing' : ''}`}
                 aria-label={`Score ${display.team} ${display.score}`}
               >
                 {/* เลขเก่า — เลื่อนลงหาย (เฉพาะตอน animate) */}

@@ -20,11 +20,6 @@
   animation: score-only-fade-in 350ms ease-out both;
 }
 
-/* เปิด Score อีกฝั่งหลัง animation ของฝั่งผู้ทำประตูจบประมาณ 2 วินาที */
-.score-only-score-wrap--revealing-delayed {
-  animation: score-only-fade-in 350ms ease-out 2000ms both;
-}
-
 @keyframes score-only-fade-in {
   0% { opacity: 0; }
   100% { opacity: 1; }
@@ -206,11 +201,6 @@
   }
 
   .score-only-score-wrap--revealing {
-    animation: none;
-    opacity: 1;
-  }
-
-  .score-only-score-wrap--revealing-delayed {
     animation: none;
     opacity: 1;
   }
