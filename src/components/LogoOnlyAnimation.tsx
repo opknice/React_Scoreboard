@@ -223,29 +223,34 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
 
         return (
           <div
-            key={`${display.team}-${display.name}-${display.logo}-${goalTeam ? animationKey : 'idle'}`}
-            className={`logo-only-instance logo-only-instance--${display.team.toLowerCase()}${animationClass}`}
+            key={`${display.team}-${display.name}-${display.logo}`}
+            className={`logo-only-instance logo-only-instance--${display.team.toLowerCase()}`}
             style={containerStyle}
           >
-            {cropData ? (
-              <LogoWithCrop
-                url={logoSrc}
-                crop={cropData}
-                alt={`${display.name} logo`}
-                onError={() => {
-                  console.error(`[LogoOnlyAnimation] Failed to render cropped logo for ${display.name}`);
-                }}
-              />
-            ) : (
-              <img
-                src={logoSrc}
-                alt=""
-                decoding="async"
-                onError={(event) => {
-                  event.currentTarget.style.display = 'none';
-                }}
-              />
-            )}
+            <div
+              key={`anim-${goalTeam ? animationKey : 'idle'}`}
+              className={`logo-only-inner-anim${animationClass}`}
+            >
+              {cropData ? (
+                <LogoWithCrop
+                  url={logoSrc}
+                  crop={cropData}
+                  alt={`${display.name} logo`}
+                  onError={() => {
+                    console.error(`[LogoOnlyAnimation] Failed to render cropped logo for ${display.name}`);
+                  }}
+                />
+              ) : (
+                <img
+                  src={logoSrc}
+                  alt=""
+                  decoding="async"
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none';
+                  }}
+                />
+              )}
+            </div>
           </div>
         );
       })}
