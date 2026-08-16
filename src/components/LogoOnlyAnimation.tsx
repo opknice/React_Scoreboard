@@ -190,9 +190,13 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
         const cropData = display.team === 'A' ? cropMetadata.A : cropMetadata.B;
         const presentation = getLogoPresentation(searchParams, display.team);
 
-        // Priority: override prop -> URL param (if present) -> liveSettings -> presentation fallback
+        // Priority: override prop -> URL param (if present) -> team customSize -> liveSettings -> presentation fallback
+        const teamCustomSize = cropData?.customSize;
         const fallbackSize = liveSettings ? (display.team === 'A' ? liveSettings.sizeA : liveSettings.sizeB) : presentation.size;
-        const sizePx = overrideSize ?? (searchParams.has('size') || searchParams.has('sizeA') || searchParams.has('sizeB') ? presentation.size : fallbackSize);
+        const sizePx = overrideSize
+          ?? (searchParams.has('size') || searchParams.has('sizeA') || searchParams.has('sizeB') ? presentation.size : null)
+          ?? (teamCustomSize && teamCustomSize > 0 ? teamCustomSize : null)
+          ?? fallbackSize;
         const bgMode = overrideBackgroundMode ?? (searchParams.has('background') ? presentation.backgroundMode : (liveSettings?.backgroundMode || presentation.backgroundMode));
 
         const containerStyle: React.CSSProperties = {

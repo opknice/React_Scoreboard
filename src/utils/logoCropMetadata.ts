@@ -15,6 +15,7 @@ export interface CropMetadata {
   rotation: number;
   aspectRatio: number;
   createdAt: string;
+  customSize?: number;
 }
 
 export interface LogoWithCrop {

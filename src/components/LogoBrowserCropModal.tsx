@@ -38,6 +38,7 @@ export default function LogoBrowserCropModal({
   const [offsetY, setOffsetY] = useState<number>(0);
   const [baseWidth, setBaseWidth] = useState<number>(200);
   const [baseHeight, setBaseHeight] = useState<number>(200);
+  const [customSize, setCustomSize] = useState<number>(0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Load existing crop metadata & URL on modal open
@@ -55,6 +56,7 @@ export default function LogoBrowserCropModal({
       setOffsetY(c.y || 0);
       setBaseWidth(c.width || 200);
       setBaseHeight(c.height || 200);
+      setCustomSize(c.customSize || 0);
       if (existingData.originalUrl) {
         setActiveUrl(existingData.originalUrl);
       }
@@ -65,6 +67,7 @@ export default function LogoBrowserCropModal({
       setOffsetY(0);
       setBaseWidth(200);
       setBaseHeight(200);
+      setCustomSize(0);
     }
   }, [isOpen, teamKey, logoUrl, teamName]);
 
@@ -79,6 +82,7 @@ export default function LogoBrowserCropModal({
     rotation,
     aspectRatio: baseWidth > 0 && baseHeight > 0 ? baseWidth / baseHeight : 1,
     createdAt: new Date().toISOString(),
+    ...(customSize > 0 ? { customSize } : {}),
   };
 
   const handleSave = async () => {
@@ -158,6 +162,7 @@ export default function LogoBrowserCropModal({
       setRotation(0);
       setOffsetX(0);
       setOffsetY(0);
+      setCustomSize(0);
 
       window.dispatchEvent(new Event('logoCropUpdated'));
       try {
@@ -339,6 +344,42 @@ export default function LogoBrowserCropModal({
                 onChange={(e) => setOffsetY(parseInt(e.target.value, 10))}
                 style={{ width: '100%', accentColor: '#38bdf8' }}
               />
+            </div>
+          </div>
+
+          {/* Custom Logo Size for this team */}
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: '12px', marginTop: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+              <span>📐 ขนาดเฉพาะของทีมนี้ (px):</span>
+              <strong style={{ color: customSize > 0 ? '#38bdf8' : '#94a3b8' }}>
+                {customSize > 0 ? `${customSize}px` : 'ใช้ขนาดส่วนกลาง (Default)'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="range"
+                min="0"
+                max="300"
+                step="5"
+                value={customSize}
+                onChange={(e) => setCustomSize(parseInt(e.target.value, 10))}
+                style={{ flex: 1, accentColor: '#38bdf8' }}
+              />
+              <input
+                type="number"
+                min="0"
+                max="300"
+                value={customSize || ''}
+                placeholder="Default"
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setCustomSize(isNaN(val) ? 0 : Math.max(0, Math.min(300, val)));
+                }}
+                style={{ width: '80px', padding: '4px 6px', borderRadius: '4px', background: '#1e293b', border: '1px solid #334155', color: '#fff', fontSize: '12px', textAlign: 'center' }}
+              />
+            </div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+              * ปล่อยเป็น 0 หรือว่างไว้ เพื่อใช้ขนาดส่วนกลางจาก Quick Setup Modal
             </div>
           </div>
         </div>
