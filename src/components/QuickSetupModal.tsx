@@ -17,7 +17,7 @@ import {
   LOGO_MIN_SIZE,
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
-import { SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
+import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
 import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
 import { getCropMetadataFromLocalStorage } from '../utils/logoCropMetadata';
 import LogoWithCrop from './LogoWithCrop';
