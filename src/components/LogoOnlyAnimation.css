@@ -10,7 +10,7 @@
 
 .logo-only-instance {
   position: absolute;
-  top: 2.5%;
+  top: 50%;
   display: grid;
   place-items: center;
   transition: width 0.2s ease, height 0.2s ease, background-color 0.2s ease;
@@ -34,7 +34,7 @@
 /* Goal animation — scoring team logo */
 .logo-only-instance--goal {
   animation: logo-goal-bounce 4000ms ease-in-out both;
-  transform-origin: top center;
+  transform-origin: center;
   will-change: transform, opacity;
 }
 
@@ -71,56 +71,56 @@
 
 @keyframes logo-goal-bounce {
   0% {
-    transform: translateY(0) scale(1);
+    transform: scale(1);
   }
 
-  /* เริ่มขยาย smooth — ป้องกันขอบบนขาดด้วย translateY */
+  /* เริ่มขยาย smooth — ขยายเข้าออก ณ ตำแหน่งเดิม */
   10% {
-    transform: translateY(8px) scale(3);
+    transform: scale(3);
   }
 
   /* zoom-in กระแทก — ตรงกับ GOAL!!! 18% */
   18% {
-    transform: translateY(6px) scale(2);
+    transform: scale(2);
   }
 
   /* กลับ soft — ตรงกับ GOAL!!! 24% */
   24% {
-    transform: translateY(4px) scale(1.8);
+    transform: scale(1.8);
   }
 
   /* settle — ตรงกับ GOAL!!! 30% */
   30% {
-    transform: translateY(4px) scale(1.85);
+    transform: scale(1.85);
   }
 
   /* Pulse ครั้งที่ 1 — ตรงกับ GOAL!!! 40% */
   40% {
-    transform: translateY(5px) scale(1.95);
+    transform: scale(1.95);
   }
 
   /* กลับ — ตรงกับ GOAL!!! 46% */
   46% {
-    transform: translateY(4px) scale(1.8);
+    transform: scale(1.8);
   }
 
   /* Pulse ครั้งที่ 2 — ตรงกับ GOAL!!! 56% */
   56% {
-    transform: translateY(5px) scale(1.9);
+    transform: scale(1.9);
   }
 
   /* กลับ — ตรงกับ GOAL!!! 62% */
   62% {
-    transform: translateY(4px) scale(1.8);
+    transform: scale(1.8);
   }
 
   /* Hold นิ่ง — ตรงกับ GOAL!!! 76% */
   76% {
-    transform: translateY(4px) scale(1.8);
+    transform: scale(1.8);
   }
 
   100% {
-    transform: translateY(0) scale(1);
+    transform: scale(1);
   }
 }
 
