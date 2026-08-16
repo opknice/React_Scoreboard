@@ -1,19 +1,30 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
+  isLogoCropUpdatedEvent,
+  isLogoSettingsUpdatedEvent,
   isScoreboardStateEvent,
   SCOREBOARD_EVENT_CHANNEL,
   SCOREBOARD_STATE_STORAGE_KEY,
   type ScoreboardStateEvent,
 } from '../types/scoreboardEvent';
+import {
+  LOGO_SETTINGS_STORAGE_KEY,
+  normalizeLogoBrowserSettings,
+  type LogoBrowserSettings,
+} from '../types/logoBrowserSettings';
 import { requestScoreboardState } from '../hooks/useScoreboardChannels';
-import { getLogoSrc } from '../utils/logoResolver';
+import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
 import { getCropMetadataFromLocalStorage, type CropMetadata } from '../utils/logoCropMetadata';
+import { getLogoPresentation } from '../utils/logoBrowserUrl';
 import LogoWithCrop from './LogoWithCrop';
 import type { GoalAnimationSide } from './goalAnimationTemplates';
 import './LogoOnlyAnimation.css';
 
 interface LogoOnlyAnimationProps {
   side: GoalAnimationSide;
+  overrideSize?: number;
+  overrideBackgroundMode?: 'transparent' | 'normal';
 }
 
 type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB'>;
@@ -45,25 +56,61 @@ function readInitialLogoState(): LogoState {
   }
 }
 
-export default function LogoOnlyAnimation({ side }: LogoOnlyAnimationProps) {
+export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgroundMode }: LogoOnlyAnimationProps) {
+  const [searchParams] = useSearchParams();
   const [logoState, setLogoState] = useState<LogoState>(readInitialLogoState);
   const [cropMetadata, setCropMetadata] = useState<{ A: CropMetadata | null; B: CropMetadata | null }>({
     A: null,
     B: null,
   });
+  const [liveSettings, setLiveSettings] = useState<LogoBrowserSettings | null>(() => {
+    try {
+      const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
+      return saved ? normalizeLogoBrowserSettings(JSON.parse(saved)) : null;
+    } catch {
+      return null;
+    }
+  });
 
-  // Load crop metadata from localStorage on mount
+  // Listen to live settings updates
   useEffect(() => {
-    const teamAKey = logoState.nameA.trim().toLowerCase();
-    const teamBKey = logoState.nameB.trim().toLowerCase();
-    
-    const cropA = getCropMetadataFromLocalStorage(teamAKey);
-    const cropB = getCropMetadataFromLocalStorage(teamBKey);
+    const updateSettings = () => {
+      try {
+        const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
+        if (saved) {
+          setLiveSettings(normalizeLogoBrowserSettings(JSON.parse(saved)));
+        }
+      } catch {}
+    };
 
-    setCropMetadata({
-      A: cropA?.crop || null,
-      B: cropB?.crop || null,
-    });
+    window.addEventListener('storage', updateSettings);
+    window.addEventListener('logoSettingsUpdated', updateSettings);
+    return () => {
+      window.removeEventListener('storage', updateSettings);
+      window.removeEventListener('logoSettingsUpdated', updateSettings);
+    };
+  }, []);
+
+  // Load crop metadata from localStorage on mount & listen to live crop updates
+  useEffect(() => {
+    const loadCrops = () => {
+      const teamAKey = normalizeTeamKey(logoState.nameA);
+      const teamBKey = normalizeTeamKey(logoState.nameB);
+      
+      const cropA = getCropMetadataFromLocalStorage(teamAKey);
+      const cropB = getCropMetadataFromLocalStorage(teamBKey);
+
+      setCropMetadata({
+        A: cropA?.crop || null,
+        B: cropB?.crop || null,
+      });
+    };
+
+    loadCrops();
+    window.addEventListener('logoCropUpdated', loadCrops);
+    return () => {
+      window.removeEventListener('logoCropUpdated', loadCrops);
+    };
   }, [logoState.nameA, logoState.nameB]);
 
   useEffect(() => {
@@ -72,6 +119,15 @@ export default function LogoOnlyAnimation({ side }: LogoOnlyAnimationProps) {
     const handleMessage = (event: MessageEvent<unknown>) => {
       if (isScoreboardStateEvent(event.data)) {
         setLogoState(logoStateFromEvent(event.data));
+      } else if (isLogoSettingsUpdatedEvent(event.data)) {
+        try {
+          const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
+          if (saved) {
+            setLiveSettings(normalizeLogoBrowserSettings(JSON.parse(saved)));
+          }
+        } catch {}
+      } else if (isLogoCropUpdatedEvent(event.data)) {
+        window.dispatchEvent(new Event('logoCropUpdated'));
       }
     };
 
@@ -105,13 +161,37 @@ export default function LogoOnlyAnimation({ side }: LogoOnlyAnimationProps) {
   return (
     <div className="logo-only-animation-overlay" aria-label="Team logos display">
       {displays.map((display) => {
-        const logoSrc = getLogoSrc(display.logo, display.name);
+        const teamKey = normalizeTeamKey(display.name);
+        const storedCropRecord = getCropMetadataFromLocalStorage(teamKey);
+        const effectiveLogoUrl = storedCropRecord?.originalUrl || display.logo;
+        const logoSrc = getLogoSrc(effectiveLogoUrl, display.name);
         if (!logoSrc) return null;
 
         const cropData = display.team === 'A' ? cropMetadata.A : cropMetadata.B;
+        const presentation = getLogoPresentation(searchParams, display.team);
+        
+        // Priority: override prop -> URL param (if present) -> liveSettings -> presentation fallback
+        const fallbackSize = liveSettings ? (display.team === 'A' ? liveSettings.sizeA : liveSettings.sizeB) : presentation.size;
+        const sizePx = overrideSize ?? (searchParams.has('size') || searchParams.has('sizeA') || searchParams.has('sizeB') ? presentation.size : fallbackSize);
+        const bgMode = overrideBackgroundMode ?? (searchParams.has('background') ? presentation.backgroundMode : (liveSettings?.backgroundMode || presentation.backgroundMode));
+
+        const containerStyle: React.CSSProperties = {
+          width: `${sizePx}px`,
+          height: `${sizePx}px`,
+          maxWidth: 'none',
+          maxHeight: 'none',
+          backgroundColor: bgMode === 'normal' ? 'rgba(0, 0, 0, 0.75)' : 'transparent',
+          borderRadius: bgMode === 'normal' ? '12px' : '0',
+          padding: bgMode === 'normal' ? '8px' : '0',
+          boxSizing: 'border-box',
+        };
 
         return (
-          <div key={`${display.team}-${display.name}-${display.logo}`} className={`logo-only-instance logo-only-instance--${display.team.toLowerCase()}`}>
+          <div
+            key={`${display.team}-${display.name}-${display.logo}`}
+            className={`logo-only-instance logo-only-instance--${display.team.toLowerCase()}`}
+            style={containerStyle}
+          >
             {cropData ? (
               <LogoWithCrop 
                 url={logoSrc}
@@ -137,3 +217,5 @@ export default function LogoOnlyAnimation({ side }: LogoOnlyAnimationProps) {
     </div>
   );
 }
+
+

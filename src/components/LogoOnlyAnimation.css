@@ -11,14 +11,9 @@
 .logo-only-instance {
   position: absolute;
   top: 2.5%;
-  width: 10vw;
-  height: 10vw;
-  max-width: 190px;
-  max-height: 190px;
-  min-width: 48px;
-  min-height: 48px;
   display: grid;
   place-items: center;
+  transition: width 0.2s ease, height 0.2s ease, background-color 0.2s ease;
 }
 
 .logo-only-instance--a { left: 10.4%; }
@@ -30,3 +25,4 @@
   height: 100%;
   object-fit: contain;
 }
+

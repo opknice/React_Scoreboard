@@ -19,10 +19,12 @@ function getParamValue(search: string | URLSearchParams, key: string): string | 
 
 export function getLogoPresentation(
   search: string | URLSearchParams,
-  _side: 'A' | 'B',
+  side: 'A' | 'B',
 ): LogoPresentation {
+  const specificSize = getParamValue(search, side === 'A' ? 'sizeA' : 'sizeB');
+  const fallbackSize = getParamValue(search, 'size');
   return {
-    size: normalizeLogoSize(getParamValue(search, 'size')),
+    size: normalizeLogoSize(specificSize || fallbackSize),
     backgroundMode: normalizeLogoBackgroundMode(getParamValue(search, 'background')),
   };
 }
@@ -44,13 +46,18 @@ export function buildLogoBrowserUrl(
       : side === 'B'
         ? settings.sizeB
         : Math.max(settings.sizeA, settings.sizeB);
+    params.sizeA = String(normalizeLogoSize(settings.sizeA));
+    params.sizeB = String(normalizeLogoSize(settings.sizeB));
     params.size = String(normalizeLogoSize(size));
     params.background = normalizeLogoBackgroundMode(settings.backgroundMode);
   } else {
     // Keep manually-created legacy URLs compatible with the default presentation.
+    params.sizeA = String(DEFAULT_LOGO_BROWSER_SETTINGS.sizeA);
+    params.sizeB = String(DEFAULT_LOGO_BROWSER_SETTINGS.sizeB);
     params.size = String(DEFAULT_LOGO_BROWSER_SETTINGS.sizeA);
     params.background = DEFAULT_LOGO_BROWSER_SETTINGS.backgroundMode;
   }
 
   return `${appBaseUrl.replace(/\/$/, '')}/goal-animation?${new URLSearchParams(params).toString()}`;
 }
+

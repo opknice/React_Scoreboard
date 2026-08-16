@@ -41,6 +41,20 @@ export interface TeamNameAnimationCompletedEvent {
   timestamp: number;
 }
 
+export interface LogoSettingsUpdatedEvent {
+  type: 'LogoSettingsUpdated';
+  sizeA?: number;
+  sizeB?: number;
+  backgroundMode?: 'transparent' | 'normal';
+  timestamp: number;
+}
+
+export interface LogoCropUpdatedEvent {
+  type: 'LogoCropUpdated';
+  teamKey?: string;
+  timestamp: number;
+}
+
 export type ScoreboardStatePayload = Omit<ScoreboardStateEvent, 'type' | 'eventId' | 'timestamp'>;
 
 export type GoalScoredPayload = Omit<GoalScoredEvent, 'type' | 'eventId' | 'timestamp'>;
@@ -89,3 +103,16 @@ export function isTeamNameAnimationCompletedEvent(
     && (event.team === 'A' || event.team === 'B')
     && typeof event.timestamp === 'number';
 }
+
+export function isLogoSettingsUpdatedEvent(value: unknown): value is LogoSettingsUpdatedEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<LogoSettingsUpdatedEvent>;
+  return event.type === 'LogoSettingsUpdated' && typeof event.timestamp === 'number';
+}
+
+export function isLogoCropUpdatedEvent(value: unknown): value is LogoCropUpdatedEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<LogoCropUpdatedEvent>;
+  return event.type === 'LogoCropUpdated' && typeof event.timestamp === 'number';
+}
+

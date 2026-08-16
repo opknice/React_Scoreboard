@@ -34,45 +34,35 @@ export default function LogoWithCrop({
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
+      const targetWidth = crop?.width && crop.width > 0 ? crop.width : img.naturalWidth || 300;
+      const targetHeight = crop?.height && crop.height > 0 ? crop.height : img.naturalHeight || 300;
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      ctx.clearRect(0, 0, targetWidth, targetHeight);
+
       if (!crop) {
-        // No crop metadata - render original image
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
         return;
       }
 
-      // Set canvas size to crop dimensions
-      canvas.width = crop.width;
-      canvas.height = crop.height;
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Save context state
       ctx.save();
+      // Translate to canvas center + pan offset X, Y
+      ctx.translate(targetWidth / 2 + (crop.x || 0), targetHeight / 2 + (crop.y || 0));
 
-      // Apply transformations
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate((crop.rotation * Math.PI) / 180);
-      ctx.scale(crop.zoom, crop.zoom);
-      ctx.translate(-canvas.width / 2, -canvas.height / 2);
+      if (crop.rotation) {
+        ctx.rotate((crop.rotation * Math.PI) / 180);
+      }
 
-      // Draw cropped portion of image
-      ctx.drawImage(
-        img,
-        crop.x,
-        crop.y,
-        crop.width,
-        crop.height,
-        0,
-        0,
-        crop.width,
-        crop.height
-      );
+      const zoomScale = crop.zoom !== undefined && crop.zoom !== 0 ? crop.zoom : 0.001;
+      ctx.scale(zoomScale, zoomScale);
 
-      // Restore context state
+      // Draw image centered at origin
+      const drawW = img.naturalWidth || targetWidth;
+      const drawH = img.naturalHeight || targetHeight;
+      ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+
       ctx.restore();
     };
 
@@ -97,3 +87,4 @@ export default function LogoWithCrop({
     />
   );
 }
+

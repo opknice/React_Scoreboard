@@ -17,6 +17,11 @@ import {
   LOGO_MIN_SIZE,
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
+import { SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
+import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
+import { getCropMetadataFromLocalStorage } from '../utils/logoCropMetadata';
+import LogoWithCrop from './LogoWithCrop';
+import LogoBrowserCropModal from './LogoBrowserCropModal';
 import './QuickSetupModal.css';
 
 interface LocalFontData {
@@ -116,6 +121,47 @@ export default function QuickSetupModal({
   const [openPanel, setOpenPanel] = useState<'team-name' | 'score' | 'logo' | null>(null);
   const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
   const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
+  const [logoPreviewSide, setLogoPreviewSide] = useState<'A' | 'B' | 'both'>('both');
+  const [cropModalTarget, setCropModalTarget] = useState<{ teamSide: 'A' | 'B'; teamName: string; logoUrl: string } | null>(null);
+  const [matchState, setMatchState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SCOREBOARD_STATE_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          nameA: parsed.nameA || 'Team A',
+          nameB: parsed.nameB || 'Team B',
+          logoA: parsed.logoA || '',
+          logoB: parsed.logoB || '',
+        };
+      }
+    } catch {}
+    return { nameA: 'Team A', nameB: 'Team B', logoA: '', logoB: '' };
+  });
+
+  const handleLogoSettingsUpdate = (patch: Partial<LogoBrowserSettings>) => {
+    onLogoSettingsChange(patch);
+    window.dispatchEvent(new Event('logoSettingsUpdated'));
+    try {
+      const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
+      bc.postMessage({
+        type: 'LogoSettingsUpdated',
+        sizeA: patch.sizeA,
+        sizeB: patch.sizeB,
+        backgroundMode: patch.backgroundMode,
+        timestamp: Date.now(),
+      });
+      bc.close();
+    } catch {}
+  };
+
+  useEffect(() => {
+    const handleCropUpdate = () => {
+      setMatchState((current) => ({ ...current }));
+    };
+    window.addEventListener('logoCropUpdated', handleCropUpdate);
+    return () => window.removeEventListener('logoCropUpdated', handleCropUpdate);
+  }, []);
 
   const loadLocalFonts = useCallback(async () => {
     const queryLocalFonts = typeof window === 'undefined'
@@ -288,37 +334,229 @@ export default function QuickSetupModal({
           </button>
           {openPanel === 'logo' ? <div className="quick-setup-panel-content">
             <p style={{ margin: '0 0 8px', color: '#cbd5e1', fontSize: '12px' }}>
-              ใช้โลโก้จาก Batch Team Logos Manager และอัปเดตแบบ Live ผ่าน Scoreboard State
+              พรีวิวและปรับขนาด/ตัดขอบ (Crop/Resize) โลโก้สำหรับ Logo Browser Source แบบ Realtime
             </p>
-            <div style={{ display: 'grid', gap: '8px' }}>
+
+            {/* Live Preview Box */}
+            <div style={{
+              backgroundColor: '#090d16',
+              border: '1px solid #1e293b',
+              borderRadius: '10px',
+              padding: '12px',
+              marginBottom: '12px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <i className="fas fa-eye"></i> Live Preview Canvas (Logo Browser Source)
+                </span>
+                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#1e293b', padding: '2px', borderRadius: '6px' }}>
+                  {(['both', 'A', 'B'] as const).map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: '10px',
+                        fontWeight: 'bold',
+                        borderRadius: '4px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        backgroundColor: logoPreviewSide === side ? '#0284c7' : 'transparent',
+                        color: logoPreviewSide === side ? '#ffffff' : '#94a3b8',
+                      }}
+                      onClick={() => setLogoPreviewSide(side)}
+                    >
+                      {side === 'both' ? 'Both Sides' : `Side ${side}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Simulated OBS Canvas Frame */}
+              <div
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '150px',
+                  borderRadius: '8px',
+                  backgroundColor: '#040711',
+                  backgroundImage: logoSettings.backgroundMode === 'normal'
+                    ? 'none'
+                    : 'linear-gradient(45deg, #0f172a 25%, transparent 25%), linear-gradient(-45deg, #0f172a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #0f172a 75%), linear-gradient(-45deg, transparent 75%, #0f172a 75%)',
+                  backgroundSize: '16px 16px',
+                  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+                  border: '1px solid #334155',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <div style={{ position: 'relative', width: '100%', height: '100%', pointerEvents: 'none' }}>
+                  {(logoPreviewSide === 'both' || logoPreviewSide === 'A') && (() => {
+                    const teamName = matchState.nameA;
+                    const logoSrc = getLogoSrc(matchState.logoA, teamName);
+                    const cropData = getCropMetadataFromLocalStorage(normalizeTeamKey(teamName))?.crop || null;
+                    const basePreviewSize = 55;
+                    const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeA / 190))));
+
+                    return (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: '10%',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: `${previewDisplaySize}px`,
+                          height: `${previewDisplaySize}px`,
+                          backgroundColor: logoSettings.backgroundMode === 'normal' ? 'rgba(0,0,0,0.8)' : 'transparent',
+                          borderRadius: logoSettings.backgroundMode === 'normal' ? '8px' : '0',
+                          padding: logoSettings.backgroundMode === 'normal' ? '6px' : '0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxSizing: 'border-box',
+                          border: '1px dashed #0284c7',
+                        }}
+                      >
+                        {cropData ? (
+                          <LogoWithCrop url={logoSrc} crop={cropData} alt={teamName} />
+                        ) : (
+                          <img src={logoSrc} alt={teamName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        )}
+                        <span style={{ position: 'absolute', bottom: '-16px', fontSize: '9px', color: '#38bdf8', whiteSpace: 'nowrap' }}>
+                          A: {teamName} ({logoSettings.sizeA}px)
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {(logoPreviewSide === 'both' || logoPreviewSide === 'B') && (() => {
+                    const teamName = matchState.nameB;
+                    const logoSrc = getLogoSrc(matchState.logoB, teamName);
+                    const cropData = getCropMetadataFromLocalStorage(normalizeTeamKey(teamName))?.crop || null;
+                    const basePreviewSize = 55;
+                    const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeB / 190))));
+
+                    return (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          right: '10%',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: `${previewDisplaySize}px`,
+                          height: `${previewDisplaySize}px`,
+                          backgroundColor: logoSettings.backgroundMode === 'normal' ? 'rgba(0,0,0,0.8)' : 'transparent',
+                          borderRadius: logoSettings.backgroundMode === 'normal' ? '8px' : '0',
+                          padding: logoSettings.backgroundMode === 'normal' ? '6px' : '0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxSizing: 'border-box',
+                          border: '1px dashed #f43f5e',
+                        }}
+                      >
+                        {cropData ? (
+                          <LogoWithCrop url={logoSrc} crop={cropData} alt={teamName} />
+                        ) : (
+                          <img src={logoSrc} alt={teamName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        )}
+                        <span style={{ position: 'absolute', bottom: '-16px', fontSize: '9px', color: '#fb7185', whiteSpace: 'nowrap' }}>
+                          B: {teamName} ({logoSettings.sizeB}px)
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Size Sliders, Presets & Crop Buttons */}
+            <div style={{ display: 'grid', gap: '10px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 {(['A', 'B'] as const).map((side) => {
                   const sizeKey = side === 'A' ? 'sizeA' : 'sizeB';
+                  const teamName = side === 'A' ? matchState.nameA : matchState.nameB;
+                  const logoUrl = getLogoSrc(side === 'A' ? matchState.logoA : matchState.logoB, teamName);
+
                   return (
-                    <label key={side} style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                      Logo {side} ขนาด px ({LOGO_MIN_SIZE} - {LOGO_MAX_SIZE})
+                    <div key={side} style={{ backgroundColor: '#0f172a', padding: '8px 10px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 'bold', color: side === 'A' ? '#38bdf8' : '#fb7185' }}>
+                          Logo {side} Size
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            min={LOGO_MIN_SIZE}
+                            max={LOGO_MAX_SIZE}
+                            value={logoSettings[sizeKey]}
+                            onChange={(event) => handleLogoSettingsUpdate({ [sizeKey]: Number(event.target.value) } as Partial<LogoBrowserSettings>)}
+                            style={{
+                              width: '56px',
+                              padding: '2px 4px',
+                              borderRadius: '4px',
+                              backgroundColor: '#1e293b',
+                              border: '1px solid #334155',
+                              color: '#fff',
+                              fontSize: '11px',
+                              textAlign: 'center',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '2px 6px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                            onClick={() => setCropModalTarget({ teamSide: side, teamName, logoUrl })}
+                          >
+                            ✂️ Crop
+                          </button>
+                        </div>
+                      </div>
                       <input
-                        type="number"
+                        type="range"
                         min={LOGO_MIN_SIZE}
                         max={LOGO_MAX_SIZE}
-                        style={{ width: '100%', marginTop: '4px' }}
                         value={logoSettings[sizeKey]}
-                        onChange={(event) => onLogoSettingsChange({ [sizeKey]: Number(event.target.value) } as Partial<LogoBrowserSettings>)}
+                        onChange={(event) => handleLogoSettingsUpdate({ [sizeKey]: Number(event.target.value) } as Partial<LogoBrowserSettings>)}
+                        style={{ width: '100%', accentColor: side === 'A' ? '#0284c7' : '#e11d48' }}
                       />
-                    </label>
+                      <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
+                        {[120, 190, 250, 320].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            style={{
+                              flex: 1,
+                              padding: '2px 0',
+                              fontSize: '9px',
+                              backgroundColor: logoSettings[sizeKey] === preset ? (side === 'A' ? '#0284c7' : '#e11d48') : '#1e293b',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: '3px',
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => handleLogoSettingsUpdate({ [sizeKey]: preset } as Partial<LogoBrowserSettings>)}
+                          >
+                            {preset}px
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
 
               <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                โหมดพื้นหลัง (Background)
+                โหมดพื้นหลัง (Background Mode)
                 <select
                   style={{ width: '100%', marginTop: '4px' }}
                   value={logoSettings.backgroundMode}
-                  onChange={(event) => onLogoSettingsChange({ backgroundMode: event.target.value as LogoBrowserSettings['backgroundMode'] })}
+                  onChange={(event) => handleLogoSettingsUpdate({ backgroundMode: event.target.value as LogoBrowserSettings['backgroundMode'] })}
                 >
                   <option value="transparent">โปร่งใส (Transparent)</option>
-                  <option value="normal">ปกติ (Normal)</option>
+                  <option value="normal">ปกติ / กล่องดำ (Normal)</option>
                 </select>
               </label>
 
@@ -344,6 +582,17 @@ export default function QuickSetupModal({
                 {logoObsMessage ? ` — ${logoObsMessage}` : ''}
               </div>
             </div>
+
+            {/* Logo Browser Crop Modal */}
+            {cropModalTarget && (
+              <LogoBrowserCropModal
+                isOpen={!!cropModalTarget}
+                onClose={() => setCropModalTarget(null)}
+                teamSide={cropModalTarget.teamSide}
+                teamName={cropModalTarget.teamName}
+                logoUrl={cropModalTarget.logoUrl}
+              />
+            )}
           </div> : null}
         </div>
 

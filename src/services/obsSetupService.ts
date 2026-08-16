@@ -269,14 +269,25 @@ export class OBSSetupService {
   }
 
   private getLogoBrowserConfig(
-    sourceName: 'Logo_Display_A' | 'Logo_Display_B',
+    sourceName: string,
     settings?: LogoBrowserSettings,
   ): SourceConfig {
-    const baseConfig = BROWSER_SOURCES.find((source) => source.name === sourceName);
-    if (!baseConfig) throw new Error(`Missing OBS configuration for ${sourceName}`);
-    const side = sourceName.endsWith('_A') ? 'A' : 'B';
+    const baseConfig = BROWSER_SOURCES.find((source) => source.name === sourceName) || {
+      name: sourceName,
+      type: 'browser_source' as const,
+      settings: {
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        shutdown: false,
+        restart_when_active: false,
+        css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+      }
+    };
+    const side = sourceName.endsWith('_A') ? 'A' : sourceName.endsWith('_B') ? 'B' : 'both';
     return {
       ...baseConfig,
+      name: sourceName,
       settings: {
         ...baseConfig.settings,
         url: buildLogoBrowserUrl(getOrigin(), side, settings),
@@ -424,6 +435,18 @@ export class OBSSetupService {
     };
   }
 
+  /** Refresh a browser source in OBS Studio to force page reload immediately. */
+  async refreshBrowserSource(sourceName: string): Promise<void> {
+    try {
+      await this.obsRef.call('PressInputPropertiesButton', {
+        inputName: sourceName,
+        propertyName: 'refresh',
+      });
+    } catch (err) {
+      console.warn(`[OBS Setup] Could not refresh browser source ${sourceName}:`, err);
+    }
+  }
+
   /** Add or update persistent Logo Browser Sources and hide legacy image sources. */
   async addOrUpdateLogoBrowserSources(
     settings?: LogoBrowserSettings,
@@ -446,6 +469,7 @@ export class OBSSetupService {
       } else {
         await this.updateSourceSettings(config.name, config.settings);
       }
+      await this.refreshBrowserSource(config.name);
       await this.ensureSceneItem(sceneName, config.name, true);
       if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
       updatedSources.push(sourceName);
@@ -457,7 +481,7 @@ export class OBSSetupService {
 
     return {
       success: true,
-      message: 'เพิ่ม/อัปเดต Logo Browser Sources และซ่อน Image Source เดิมแล้ว',
+      message: 'เพิ่ม/อัปเดต Logo Browser Sources และสั่งรีเฟรช OBS เรียบร้อยแล้ว',
       updatedSources,
     };
   }
@@ -470,21 +494,24 @@ export class OBSSetupService {
 
     const updatedSources: string[] = [];
     const missingSources: string[] = [];
-    for (const sourceName of ['Logo_Display_A', 'Logo_Display_B'] as const) {
+    const targetSources = ['Logo_Display_A', 'Logo_Display_B', 'Logo_Display', 'Logo_Display_Both', 'Goal_Alert'];
+
+    for (const sourceName of targetSources) {
       if (!(await this.sourceExists(sourceName))) {
         missingSources.push(sourceName);
         continue;
       }
       const config = this.getLogoBrowserConfig(sourceName, settings);
       await this.updateSourceSettings(config.name, config.settings);
+      await this.refreshBrowserSource(config.name);
       updatedSources.push(sourceName);
     }
 
     return {
       success: true,
       message: updatedSources.length > 0
-        ? `อัปเดต Logo Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
-        : 'ไม่พบ Logo Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
+        ? `อัปเดตและสั่งรีเฟรช Logo Sources ใน OBS เรียบร้อยแล้ว: ${updatedSources.join(', ')}`
+        : 'ไม่พบ Logo Browser Source ที่มีอยู่ใน OBS (กรุณากด Quick Add Logo A/B to OBS ก่อน)',
       updatedSources,
     };
   }
