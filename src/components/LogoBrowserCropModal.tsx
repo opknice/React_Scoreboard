@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Database } from 'firebase/database';
 import {
   getCropMetadataFromLocalStorage,
@@ -41,13 +41,21 @@ export default function LogoBrowserCropModal({
   const [customSize, setCustomSize] = useState<number>(0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // Load existing crop metadata & URL on modal open
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [initialOffset, setInitialOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const initialCropRef = useRef<{ originalUrl: string; crop: CropMetadata | null } | null>(null);
+
+  // Load existing crop metadata & URL on modal open + backup initial crop state
   useEffect(() => {
     if (!isOpen) return;
 
     setActiveUrl(logoUrl || getLogoSrc('', teamName));
 
     const existingData = getCropMetadataFromLocalStorage(teamKey);
+    initialCropRef.current = existingData;
+
     if (existingData?.crop) {
       const c = existingData.crop;
       setZoom(c.zoom || 1);
@@ -61,7 +69,7 @@ export default function LogoBrowserCropModal({
         setActiveUrl(existingData.originalUrl);
       }
     } else {
-      setZoom(0.2);
+      setZoom(1);
       setRotation(0);
       setOffsetX(0);
       setOffsetY(0);
@@ -70,8 +78,6 @@ export default function LogoBrowserCropModal({
       setCustomSize(0);
     }
   }, [isOpen, teamKey, logoUrl, teamName]);
-
-  if (!isOpen) return null;
 
   const currentCrop: CropMetadata = {
     x: offsetX,
@@ -85,6 +91,55 @@ export default function LogoBrowserCropModal({
     ...(customSize > 0 ? { customSize } : {}),
   };
 
+  // Real-time Live Sync: Broadcast crop changes instantly to OBS Browser Source overlay as sliders move
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const targetUrl = activeUrl || logoUrl || getLogoSrc('', teamName);
+    if (!targetUrl) return;
+
+    saveCropMetadataToLocalStorage(teamKey, targetUrl, currentCrop);
+    window.dispatchEvent(new Event('logoCropUpdated'));
+    try {
+      const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
+      bc.postMessage({
+        type: 'LogoCropUpdated',
+        teamKey,
+        timestamp: Date.now(),
+      });
+      bc.close();
+    } catch {}
+  }, [isOpen, teamKey, activeUrl, logoUrl, teamName, offsetX, offsetY, baseWidth, baseHeight, zoom, rotation, customSize]);
+
+  // Mouse Dragging on Preview Canvas
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setInitialOffset({ x: offsetX, y: offsetY });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    const deltaX = e.clientX - dragStart.x;
+    const deltaY = e.clientY - dragStart.y;
+    setOffsetX(Math.max(-1000, Math.min(1000, Math.round(initialOffset.x + deltaX))));
+    setOffsetY(Math.max(-1000, Math.min(1000, Math.round(initialOffset.y + deltaY))));
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setIsDragging(false);
+  };
+
+  // Mouse Scroll Wheel Zooming on Preview Canvas
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const step = e.deltaY < 0 ? 0.05 : -0.05;
+    setZoom((prev) => Math.max(0.05, Math.min(10, Number((prev + step).toFixed(2)))));
+  };
+
+  if (!isOpen) return null;
+
   const handleSave = async () => {
     const targetUrl = activeUrl || logoUrl || getLogoSrc('', teamName);
     if (!targetUrl) {
@@ -94,17 +149,14 @@ export default function LogoBrowserCropModal({
 
     setIsSaving(true);
     try {
-      // 1. Save to LocalStorage
       saveCropMetadataToLocalStorage(teamKey, targetUrl, currentCrop);
 
-      // 2. Save team logo mapping in teamLogos localStorage
       try {
         const existingLogos = JSON.parse(localStorage.getItem('teamLogos') || '{}');
         existingLogos[teamKey] = targetUrl;
         localStorage.setItem('teamLogos', JSON.stringify(existingLogos));
-      } catch { }
+      } catch {}
 
-      // 3. Update active ScoreboardState in localStorage & broadcast to overlays
       try {
         const currentStateRaw = localStorage.getItem(SCOREBOARD_STATE_STORAGE_KEY);
         if (currentStateRaw) {
@@ -122,9 +174,8 @@ export default function LogoBrowserCropModal({
           });
           bcState.close();
         }
-      } catch { }
+      } catch {}
 
-      // 4. Save to Firebase if database is connected
       if (db) {
         try {
           await saveCropMetadataToFirebase(db, teamKey, targetUrl, currentCrop);
@@ -133,7 +184,6 @@ export default function LogoBrowserCropModal({
         }
       }
 
-      // 5. Dispatch global event to update previews in real-time
       window.dispatchEvent(new Event('logoCropUpdated'));
       try {
         const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
@@ -143,7 +193,7 @@ export default function LogoBrowserCropModal({
           timestamp: Date.now(),
         });
         bc.close();
-      } catch { }
+      } catch {}
 
       onToast?.(`✅ บันทึก Crop โลโก้ ${teamName} เรียบร้อยแล้ว`, 'success');
       onClose();
@@ -153,6 +203,32 @@ export default function LogoBrowserCropModal({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleCancel = () => {
+    if (initialCropRef.current) {
+      const backup = initialCropRef.current;
+      if (backup.crop) {
+        saveCropMetadataToLocalStorage(teamKey, backup.originalUrl, backup.crop);
+      } else {
+        removeCropMetadata(db || null, teamKey);
+      }
+    } else {
+      removeCropMetadata(db || null, teamKey);
+    }
+
+    window.dispatchEvent(new Event('logoCropUpdated'));
+    try {
+      const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
+      bc.postMessage({
+        type: 'LogoCropUpdated',
+        teamKey,
+        timestamp: Date.now(),
+      });
+      bc.close();
+    } catch {}
+
+    onClose();
   };
 
   const handleReset = async () => {
@@ -175,7 +251,7 @@ export default function LogoBrowserCropModal({
           timestamp: Date.now(),
         });
         bc.close();
-      } catch { }
+      } catch {}
       onToast?.(`🔄 รีเซ็ต Crop โลโก้ ${teamName} เป็นค่าเริ่มต้นแล้ว`, 'info');
       onClose();
     } catch (err: any) {
@@ -184,42 +260,52 @@ export default function LogoBrowserCropModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
+    <div className="modal-overlay" onClick={handleCancel} style={{ zIndex: 9999 }}>
       <div
         className="modal-content"
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxWidth: '560px',
-          width: '90vw',
-          backgroundColor: '#161922',
-          borderRadius: '12px',
+          maxWidth: '720px',
+          width: '92vw',
+          maxHeight: '94vh',
+          overflowY: 'auto',
+          backgroundColor: '#0f172a',
+          borderRadius: '16px',
           border: '1px solid #334155',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)',
           padding: '20px',
+          color: '#f8fafc',
         }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
-          <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: teamSide === 'A' ? '#38bdf8' : '#f43f5e' }}>✂️</span>
-            ปรับแต่ง Crop โลโก้ Team {teamSide}: {teamName}
-          </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.3rem' }}>✂️</span>
+            <div>
+              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.1rem', fontWeight: 600 }}>
+                ครอบตัดโลโก้: Team {teamSide} ({teamName})
+              </h3>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                ปรับตำแหน่ง ซูม และขนาดแสดงผลใน OBS Browser Source
+              </span>
+            </div>
+          </div>
           <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}
+            onClick={handleCancel}
+            style={{ background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             ✕
           </button>
         </div>
 
-        {/* Image Source Input / File Picker */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', alignItems: 'center' }}>
+        {/* Top Controls Bar: URL Input & File Picker */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
           <input
             type="text"
             placeholder="วาง URL โลโก้ (https://...)"
             value={activeUrl}
             onChange={(e) => setActiveUrl(e.target.value)}
-            style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#fff', fontSize: '12px' }}
+            style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', fontSize: '12px' }}
           />
           <input
             type="file"
@@ -242,68 +328,128 @@ export default function LogoBrowserCropModal({
           <label
             htmlFor="modal-logo-file-input"
             className="btn-secondary"
-            style={{ padding: '6px 10px', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            style={{ padding: '8px 14px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            📁 เลือกรูปจากเครื่อง
+            📁 เลือกไฟล์
           </label>
         </div>
 
-        {/* Live Crop Canvas Preview */}
+        {/* Centerpiece: Interactive Canvas Preview */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '16px' }}>
           <div
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUpOrLeave}
+            onMouseLeave={handleMouseUpOrLeave}
+            onWheel={handleWheel}
             style={{
-              width: '230px',
-              height: '230px',
-              backgroundColor: '#0f172a',
-              backgroundImage: 'linear-gradient(45deg, #1e293b 25%, transparent 25%), linear-gradient(-45deg, #1e293b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1e293b 75%), linear-gradient(-45deg, transparent 75%, #1e293b 75%)',
-              backgroundSize: '16px 16px',
-              backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-              borderRadius: '10px',
-              border: '2px solid #38bdf8',
+              width: '280px',
+              height: '280px',
+              backgroundColor: '#020617',
+              backgroundImage: 'linear-gradient(45deg, #0f172a 25%, transparent 25%), linear-gradient(-45deg, #0f172a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #0f172a 75%), linear-gradient(-45deg, transparent 75%, #0f172a 75%)',
+              backgroundSize: '20px 20px',
+              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+              borderRadius: '12px',
+              border: `2px solid ${isDragging ? '#f59e0b' : '#38bdf8'}`,
+              boxShadow: isDragging ? '0 0 20px rgba(245, 158, 11, 0.4)' : '0 4px 20px rgba(0, 0, 0, 0.6)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
               position: 'relative',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              cursor: isDragging ? 'grabbing' : 'grab',
+              userSelect: 'none',
+              touchAction: 'none',
+              transition: 'border-color 0.2s, box-shadow 0.2s',
             }}
           >
             {activeUrl ? (
               <LogoWithCrop url={activeUrl} crop={currentCrop} alt={teamName} />
             ) : (
-              <span style={{ color: '#64748b', fontSize: '13px' }}>ไม่พบโลโก้</span>
+              <span style={{ color: '#64748b', fontSize: '13px' }}>ไม่พบรูปภาพโลโก้</span>
             )}
+
+            {/* Interaction Overlay Hint */}
+            <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: '20px', fontSize: '10px', color: '#cbd5e1', whiteSpace: 'nowrap', border: '1px solid rgba(255, 255, 255, 0.1)', pointerEvents: 'none' }}>
+              {isDragging ? '✊ กำลังขยับตำแหน่ง...' : '🖱️ คลิกลากบนรูปเพื่อขยับ | 📜 หมุนลูกกลิ้งเพื่อซูม'}
+            </div>
           </div>
-          <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
-            พรีวิวผลลัพธ์ที่จะแสดงใน Logo Browser Source
-          </span>
+
+          {/* Canvas Quick Actions */}
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <button
+              type="button"
+              onClick={() => { setOffsetX(0); setOffsetY(0); }}
+              style={{ fontSize: '11px', padding: '4px 10px', background: '#1e293b', border: '1px solid #334155', color: '#38bdf8', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              🎯 จัดกลาง (X:0, Y:0)
+            </button>
+            <button
+              type="button"
+              onClick={() => { setZoom(1); setRotation(0); }}
+              style={{ fontSize: '11px', padding: '4px 10px', background: '#1e293b', border: '1px solid #334155', color: '#cbd5e1', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              🔄 รีเซ็ตซูม (1x, 0°)
+            </button>
+          </div>
         </div>
 
-        {/* Sliders & Controls */}
-        <div style={{ display: 'grid', gap: '14px', backgroundColor: '#0f172a', padding: '14px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-          {/* Zoom Slider */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '4px' }}>
-              <span>🔍 ซูม (Scale / Zoom):</span>
-              <strong style={{ color: '#38bdf8' }}>{zoom.toFixed(2)}x</strong>
-            </div>
+        {/* Compact Controls Toolbar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
+          {/* Zoom Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: '#cbd5e1', width: '130px', flexShrink: 0 }}>
+              🔍 ซูม (<strong style={{ color: '#38bdf8' }}>{zoom.toFixed(2)}x</strong>):
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom((prev) => Math.max(0.05, Number((prev - 0.05).toFixed(2))))}
+              style={{ padding: '2px 8px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              -
+            </button>
             <input
               type="range"
               min="0.05"
-              max="3"
+              max="10"
               step="0.01"
               value={zoom}
               onChange={(e) => setZoom(parseFloat(e.target.value))}
-              style={{ width: '100%', accentColor: '#38bdf8' }}
+              style={{ flex: 1, accentColor: '#38bdf8' }}
+            />
+            <button
+              type="button"
+              onClick={() => setZoom((prev) => Math.min(10, Number((prev + 0.05).toFixed(2))))}
+              style={{ padding: '2px 8px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              +
+            </button>
+            <input
+              type="number"
+              min="0.05"
+              max="10"
+              step="0.1"
+              value={zoom}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val)) setZoom(Math.max(0.01, Math.min(10, val)));
+              }}
+              style={{ width: '60px', padding: '3px', borderRadius: '4px', background: '#0f172a', border: '1px solid #334155', color: '#fff', fontSize: '11px', textAlign: 'center' }}
             />
           </div>
 
-          {/* Rotation Slider */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '4px' }}>
-              <span>🔄 หมุนภาพ (Rotation):</span>
-              <strong style={{ color: '#38bdf8' }}>{rotation}°</strong>
-            </div>
+          {/* Rotation Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: '#cbd5e1', width: '130px', flexShrink: 0 }}>
+              🔄 หมุนภาพ (<strong style={{ color: '#38bdf8' }}>{rotation}°</strong>):
+            </span>
+            <button
+              type="button"
+              onClick={() => setRotation((prev) => Math.max(-180, prev - 5))}
+              style={{ padding: '2px 8px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              -
+            </button>
             <input
               type="range"
               min="-180"
@@ -311,57 +457,62 @@ export default function LogoBrowserCropModal({
               step="5"
               value={rotation}
               onChange={(e) => setRotation(parseInt(e.target.value, 10))}
-              style={{ width: '100%', accentColor: '#38bdf8' }}
+              style={{ flex: 1, accentColor: '#38bdf8' }}
+            />
+            <button
+              type="button"
+              onClick={() => setRotation((prev) => Math.min(180, prev + 5))}
+              style={{ padding: '2px 8px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              +
+            </button>
+            <input
+              type="number"
+              min="-180"
+              max="180"
+              step="5"
+              value={rotation}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val)) setRotation(Math.max(-180, Math.min(180, val)));
+              }}
+              style={{ width: '60px', padding: '3px', borderRadius: '4px', background: '#0f172a', border: '1px solid #334155', color: '#fff', fontSize: '11px', textAlign: 'center' }}
             />
           </div>
 
-          {/* Offset X & Y */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '4px' }}>
-                <span>↔️ ขยับแกน X:</span>
-                <strong style={{ color: '#38bdf8' }}>{offsetX}px</strong>
+          {/* Custom Size Control & Quick Presets */}
+          <div style={{ borderTop: '1px solid #334155', paddingTop: '10px', marginTop: '2px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <span style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                📐 ขนาดเฉพาะทีมนี้: <strong style={{ color: customSize > 0 ? '#38bdf8' : '#94a3b8' }}>{customSize > 0 ? `${customSize}px` : 'ใช้ขนาดส่วนกลาง (Default)'}</strong>
+              </span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {[0, 80, 100, 120, 150, 200].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => setCustomSize(size)}
+                    style={{
+                      fontSize: '10px',
+                      padding: '2px 6px',
+                      borderRadius: '3px',
+                      border: '1px solid #334155',
+                      backgroundColor: customSize === size ? '#38bdf8' : '#0f172a',
+                      color: customSize === size ? '#0f172a' : '#cbd5e1',
+                      fontWeight: customSize === size ? 'bold' : 'normal',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {size === 0 ? 'Default' : `${size}px`}
+                  </button>
+                ))}
               </div>
-              <input
-                type="range"
-                min="-150"
-                max="150"
-                step="2"
-                value={offsetX}
-                onChange={(e) => setOffsetX(parseInt(e.target.value, 10))}
-                style={{ width: '100%', accentColor: '#38bdf8' }}
-              />
-            </div>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#cbd5e1', marginBottom: '4px' }}>
-                <span>↕️ ขยับแกน Y:</span>
-                <strong style={{ color: '#38bdf8' }}>{offsetY}px</strong>
-              </div>
-              <input
-                type="range"
-                min="-150"
-                max="150"
-                step="2"
-                value={offsetY}
-                onChange={(e) => setOffsetY(parseInt(e.target.value, 10))}
-                style={{ width: '100%', accentColor: '#38bdf8' }}
-              />
-            </div>
-          </div>
-
-          {/* Custom Logo Size for this team */}
-          <div style={{ borderTop: '1px solid #1e293b', paddingTop: '12px', marginTop: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
-              <span>📐 ขนาดเฉพาะของทีมนี้ (px):</span>
-              <strong style={{ color: customSize > 0 ? '#38bdf8' : '#94a3b8' }}>
-                {customSize > 0 ? `${customSize}px` : 'ใช้ขนาดส่วนกลาง (Default)'}
-              </strong>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
                 type="range"
                 min="0"
-                max="300"
+                max="1000"
                 step="5"
                 value={customSize}
                 onChange={(e) => setCustomSize(parseInt(e.target.value, 10))}
@@ -370,100 +521,35 @@ export default function LogoBrowserCropModal({
               <input
                 type="number"
                 min="0"
-                max="300"
+                max="1000"
                 value={customSize || ''}
                 placeholder="Default"
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
-                  setCustomSize(isNaN(val) ? 0 : Math.max(0, Math.min(300, val)));
+                  setCustomSize(isNaN(val) ? 0 : Math.max(0, Math.min(1000, val)));
                 }}
-                style={{ width: '80px', padding: '4px 6px', borderRadius: '4px', background: '#1e293b', border: '1px solid #334155', color: '#fff', fontSize: '12px', textAlign: 'center' }}
+                style={{ width: '75px', padding: '3px', borderRadius: '4px', background: '#0f172a', border: '1px solid #334155', color: '#fff', fontSize: '11px', textAlign: 'center' }}
               />
-            </div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-              * ปล่อยเป็น 0 หรือว่างไว้ เพื่อใช้ขนาดส่วนกลางจาก Quick Setup Modal
-            </div>
-          </div>
-
-          {/* Base Canvas Resolution (Width x Height) */}
-          <div style={{ borderTop: '1px solid #1e293b', paddingTop: '12px', marginTop: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
-              <span>🖼️ ความละเอียดกรอบ Canvas (px):</span>
-              <strong style={{ color: '#38bdf8' }}>{baseWidth} × {baseHeight} px</strong>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-              <input
-                type="range"
-                min="200"
-                max="1000"
-                step="25"
-                value={baseWidth}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setBaseWidth(val);
-                  setBaseHeight(val);
-                }}
-                style={{ flex: 1, accentColor: '#38bdf8' }}
-              />
-              <input
-                type="number"
-                min="200"
-                max="1000"
-                value={baseWidth}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (!isNaN(val) && val > 0) {
-                    const clamped = Math.max(100, Math.min(1200, val));
-                    setBaseWidth(clamped);
-                    setBaseHeight(clamped);
-                  }
-                }}
-                style={{ width: '80px', padding: '4px 6px', borderRadius: '4px', background: '#1e293b', border: '1px solid #334155', color: '#fff', fontSize: '12px', textAlign: 'center' }}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {[300, 500, 700, 1000].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  className="btn-secondary"
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    backgroundColor: baseWidth === preset ? '#0284c7' : '#1e293b',
-                    borderColor: baseWidth === preset ? '#38bdf8' : '#334155',
-                  }}
-                  onClick={() => {
-                    setBaseWidth(preset);
-                    setBaseHeight(preset);
-                  }}
-                >
-                  {preset}px
-                </button>
-              ))}
-            </div>
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-              * ปรับเพิ่มขนาดกรอบ Canvas เมื่อซูมภาพขนาดใหญ่แล้วขอบรูปตกกรอบ
             </div>
           </div>
         </div>
 
-        {/* Actions Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '20px', borderTop: '1px solid #334155', paddingTop: '14px' }}>
+        {/* Modal Actions Footer */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '16px', borderTop: '1px solid #1e293b', paddingTop: '12px' }}>
           <button
             type="button"
             className="btn-secondary"
             onClick={handleReset}
-            style={{ fontSize: '12px', padding: '6px 12px' }}
+            style={{ fontSize: '12px', padding: '6px 14px' }}
           >
-            🔄 รีเซ็ต Crop
+            🔄 รีเซ็ตทั้งหมด
           </button>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
               type="button"
               className="btn-secondary"
-              onClick={onClose}
-              style={{ fontSize: '12px', padding: '6px 14px' }}
+              onClick={handleCancel}
+              style={{ fontSize: '12px', padding: '6px 16px' }}
             >
               ยกเลิก
             </button>
@@ -472,7 +558,7 @@ export default function LogoBrowserCropModal({
               className="btn-success"
               onClick={handleSave}
               disabled={isSaving}
-              style={{ fontSize: '12px', padding: '6px 18px', fontWeight: 'bold' }}
+              style={{ fontSize: '12px', padding: '6px 22px', fontWeight: 'bold' }}
             >
               {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก Crop'}
             </button>
