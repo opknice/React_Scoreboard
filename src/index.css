@@ -445,6 +445,7 @@ button:disabled {
 
 .modal-content.replay-control-modal {
   max-width: 760px;
+  max-height: 94vh;
   padding: 0;
   background: #0a0f14;
   border-color: #263746;
@@ -460,7 +461,7 @@ button:disabled {
 .modal-content.replay-control-modal .var-control,
 .modal-content.replay-control-modal .instant-replay-control {
   min-height: auto;
-  max-height: 90vh;
+  max-height: calc(94vh - 2px);
   overflow-y: auto;
 }
 

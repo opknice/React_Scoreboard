@@ -50,6 +50,13 @@ import {
   type ScoreBrowserSettings,
 } from '../types/scoreBrowserSettings';
 import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
+import {
+  DEFAULT_LOGO_BROWSER_SETTINGS,
+  LOGO_SETTINGS_STORAGE_KEY,
+  normalizeLogoBrowserSettings,
+  type LogoBrowserSettings,
+} from '../types/logoBrowserSettings';
+import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
 
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
@@ -230,6 +237,16 @@ export default function ScoreboardController() {
   });
   const [teamNameObsBusy, setTeamNameObsBusy] = useState(false);
   const [teamNameObsMessage, setTeamNameObsMessage] = useState('');
+  const [logoSettings, setLogoSettings] = useState<LogoBrowserSettings>(() => {
+    try {
+      const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
+      return saved ? normalizeLogoBrowserSettings(JSON.parse(saved)) : DEFAULT_LOGO_BROWSER_SETTINGS;
+    } catch {
+      return DEFAULT_LOGO_BROWSER_SETTINGS;
+    }
+  });
+  const [logoObsBusy, setLogoObsBusy] = useState(false);
+  const [logoObsMessage, setLogoObsMessage] = useState('');
   const [scoreSettings, setScoreSettings] = useState<ScoreBrowserSettings>(() => {
     try {
       const saved = localStorage.getItem(SCORE_SETTINGS_STORAGE_KEY);
@@ -271,6 +288,14 @@ export default function ScoreboardController() {
       console.warn('[Scoreboard] Unable to persist Score settings (storage may be full)');
     }
   }, [scoreSettings]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOGO_SETTINGS_STORAGE_KEY, JSON.stringify(logoSettings));
+    } catch {
+      console.warn('[Scoreboard] Unable to persist Logo settings (storage may be full)');
+    }
+  }, [logoSettings]);
 
   // --- Refs ---
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -343,6 +368,15 @@ export default function ScoreboardController() {
     both: buildScoreBrowserUrl(getOrigin(), 'both', scoreSettings),
   }), [scoreSettings]);
 
+  const logoUrls = useMemo(() => ({
+    A: buildLogoBrowserUrl(getOrigin(), 'A', logoSettings),
+    B: buildLogoBrowserUrl(getOrigin(), 'B', logoSettings),
+  }), [logoSettings]);
+
+  const updateLogoSettings = useCallback((patch: Partial<LogoBrowserSettings>) => {
+    setLogoSettings((current) => normalizeLogoBrowserSettings({ ...current, ...patch }));
+  }, []);
+
   const updateScoreSettings = useCallback((patch: Partial<ScoreBrowserSettings>) => {
     setScoreSettings((current) => normalizeScoreBrowserSettings({ ...current, ...patch }));
   }, []);
@@ -410,6 +444,40 @@ export default function ScoreboardController() {
     }
   }, [obs, scoreSettings, triggerToast]);
 
+  const copyLogoUrl = useCallback(async (side: 'A' | 'B') => {
+    try {
+      await navigator.clipboard.writeText(logoUrls[side]);
+      triggerToast(`คัดลอก URL Logo ${side} แล้ว`, 'success');
+    } catch {
+      triggerToast('ไม่สามารถคัดลอก URL Logo ได้', 'error');
+    }
+  }, [logoUrls, triggerToast]);
+
+  const runLogoObsAction = useCallback(async (action: 'add' | 'update') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    setLogoObsBusy(true);
+    setLogoObsMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const result = action === 'add'
+        ? await service.addOrUpdateLogoBrowserSources(logoSettings)
+        : await service.updateLogoBrowserSources(logoSettings);
+      setLogoObsMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า Logo ใน OBS ได้';
+      setLogoObsMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setLogoObsBusy(false);
+    }
+  }, [obs, logoSettings, triggerToast]);
+
   const database = useScoreboardDatabase({
     activeDb,
     targets: firebaseTargets,
@@ -476,7 +544,7 @@ export default function ScoreboardController() {
       colorB1,
       colorB2,
     });
-  }, [colorA1, colorA2, colorB1, colorB2, logoA, logoB, logoFolderPath, nameA, nameB, scoreA, scoreB]);
+  }, [colorA1, colorA2, colorB1, colorB2, logoA, logoB, logoFolderPath, nameA, nameB, scoreA, scoreB, teamsCacheVersion]);
 
   useScoreboardStateResponder({
     scoreA,
@@ -1899,6 +1967,15 @@ export default function ScoreboardController() {
         onCopyScoreUrl={copyScoreUrl}
         scoreObsBusy={scoreObsBusy}
         scoreObsMessage={scoreObsMessage}
+        logoSettings={logoSettings}
+        logoUrls={logoUrls}
+        logoObsBusy={logoObsBusy}
+        logoObsConnected={obs.isConnected}
+        logoObsMessage={logoObsMessage}
+        onLogoSettingsChange={updateLogoSettings}
+        onCopyLogoUrl={copyLogoUrl}
+        onQuickAddLogo={() => void runLogoObsAction('add')}
+        onUpdateLogo={() => void runLogoObsAction('update')}
         onQuickAddScore={() => void runScoreObsAction('add')}
         onUpdateScore={() => void runScoreObsAction('update')}
         onQuickAddTeamNames={() => void runTeamNameObsAction('add')}

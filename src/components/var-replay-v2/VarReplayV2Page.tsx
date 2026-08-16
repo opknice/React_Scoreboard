@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useObsVideoFolderContext } from '../../context/useObsVideoFolderContext';
 import { getVideoMimeType, isVideoFile } from '../../utils/replayFormatters';
+import ReplayShortcutSettings from './ReplayShortcutSettings';
 import { useVarReplayV2Channel } from './useVarReplayV2Channel';
-import { usePreviewScrollLock } from './usePreviewScrollLock';
+import {
+  formatReplayBinding,
+  matchesReplayBinding,
+  useReplayKeybindings,
+  type ReplayShortcutAction,
+} from './varReplayKeybindings';
 import type { VarReplayV2Message, VarReplayV2State, VarReplayV2Transform } from './varReplayV2Protocol';
 import styles from './VarReplayV2.module.css';
 
@@ -21,6 +27,7 @@ type PanDragState = {
 };
 
 const SPEED_PRESETS = [0.25, 0.5, 0.75, 1] as const;
+const KEYBOARD_ZOOM_STEP = 0.1;
 
 function createDefaultReplayState(): VarReplayV2State {
   return {
@@ -61,21 +68,6 @@ function clampTransform(transform: VarReplayV2Transform): VarReplayV2Transform {
     x: clamp(transform.x, -maxPan, maxPan),
     y: clamp(transform.y, -maxPan, maxPan),
   };
-}
-
-function zoomAroundPointer(
-  transform: VarReplayV2Transform,
-  nextZoom: number,
-  pointerX: number,
-  pointerY: number,
-) {
-  if (nextZoom <= 1) return { zoom: 1, x: 0, y: 0 };
-  const scaleRatio = nextZoom / transform.zoom;
-  return clampTransform({
-    zoom: nextZoom,
-    x: pointerX * (1 - scaleRatio) + transform.x * scaleRatio,
-    y: pointerY * (1 - scaleRatio) + transform.y * scaleRatio,
-  });
 }
 
 function getMarkerValues(marker: Marker, time: number, currentA: number | null, currentB: number | null) {
@@ -221,9 +213,6 @@ function Preview({
 }) {
   const panDragRef = useRef<PanDragState | null>(null);
   const [isPanning, setIsPanning] = useState(false);
-  const [isPointerInside, setIsPointerInside] = useState(false);
-
-  usePreviewScrollLock(isPointerInside);
 
   const handlePanStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || transform.zoom <= 1.01) return;
@@ -266,22 +255,6 @@ function Preview({
     setIsPanning(false);
   };
 
-  const handlePreviewWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const frame = event.currentTarget.getBoundingClientRect();
-    const pointerX = ((event.clientX - frame.left) / frame.width - 0.5) * 100;
-    const pointerY = ((event.clientY - frame.top) / frame.height - 0.5) * 100;
-    const normalizedDelta = event.deltaMode === 1
-      ? event.deltaY * 16
-      : event.deltaMode === 2
-        ? event.deltaY * frame.height
-        : event.deltaY;
-    const nextZoom = clamp(Number((transform.zoom * Math.exp(-normalizedDelta * 0.0008)).toFixed(3)), 1, 10);
-    if (nextZoom === transform.zoom) return;
-    onTransformChange(zoomAroundPointer(transform, nextZoom, pointerX, pointerY), true);
-  };
-
   return (
     <div className={styles.previewLayout}>
       <section className={styles.previewPanel}>
@@ -291,13 +264,10 @@ function Preview({
         </div>
         <div
           className={`${styles.previewFrame} ${transform.zoom > 1.01 ? styles.canPan : ''} ${isPanning ? styles.isPanning : ''}`}
-          onMouseEnter={() => setIsPointerInside(true)}
-          onMouseLeave={() => setIsPointerInside(false)}
           onPointerDown={handlePanStart}
           onPointerMove={handlePanMove}
           onPointerUp={handlePanEnd}
           onPointerCancel={handlePanEnd}
-          onWheel={handlePreviewWheel}
         >
           {previewUrl ? (
             <video
@@ -316,7 +286,9 @@ function Preview({
             <div className={styles.previewEmpty}>เลือกวิดีโอจากคลังเพื่อเริ่มต้น</div>
           )}
           <div className={styles.previewTime}>{formatTime(currentTime, true)} / {formatTime(duration, true)}</div>
-          {transform.zoom > 1.01 && !isPanning && <div className={styles.panHint}>คลิกซ้ายค้างแล้วลากเพื่อ Pan</div>}
+          <div className={styles.panHint}>
+            คลิกซ้ายลาก: Pan · กด 0: รีเซ็ต Zoom / Pan
+          </div>
         </div>
       </section>
       <ZoomControlRail zoom={transform.zoom} onZoom={onZoom} onReset={onResetTransform} />
@@ -417,35 +389,42 @@ function QuickActions({
   markerB,
   loopEnabled,
   onPlayPause,
+  onStop,
   onMarker,
   onLoop,
   onClear,
+  shortcutLabels,
 }: {
   isPlaying: boolean;
   markerA: number | null;
   markerB: number | null;
   loopEnabled: boolean;
   onPlayPause: () => void;
+  onStop: () => void;
   onMarker: (marker: Marker) => void;
   onLoop: () => void;
   onClear: () => void;
+  shortcutLabels: Record<ReplayShortcutAction, string>;
 }) {
   return (
     <div className={styles.quickActions}>
       <button className={`${styles.actionButton} ${isPlaying ? styles.pauseButton : styles.playButton}`} type="button" onClick={onPlayPause}>
-        {isPlaying ? 'หยุดชั่วคราว' : 'เล่น'} <kbd>Space</kbd>
+        {isPlaying ? 'หยุดชั่วคราว' : 'เล่น'} <kbd>{shortcutLabels.playPause}</kbd>
+      </button>
+      <button className={`${styles.actionButton} ${styles.stopButton}`} type="button" onClick={onStop}>
+        หยุด <kbd>{shortcutLabels.stop}</kbd>
       </button>
       <button className={`${styles.actionButton} ${markerA !== null ? styles.activeButton : ''}`} type="button" onClick={() => onMarker('A')}>
-        ตั้งจุด A {markerA !== null && <strong>{formatTime(markerA, true)}</strong>} <kbd>A</kbd>
+        ตั้งจุด A {markerA !== null && <strong>{formatTime(markerA, true)}</strong>} <kbd>{shortcutLabels.setMarkerA}</kbd>
       </button>
       <button className={`${styles.actionButton} ${markerB !== null ? styles.activeButton : ''}`} type="button" onClick={() => onMarker('B')}>
-        ตั้งจุด B {markerB !== null && <strong>{formatTime(markerB, true)}</strong>} <kbd>B</kbd>
+        ตั้งจุด B {markerB !== null && <strong>{formatTime(markerB, true)}</strong>} <kbd>{shortcutLabels.setMarkerB}</kbd>
       </button>
       <button className={`${styles.actionButton} ${loopEnabled ? styles.loopButton : ''}`} type="button" onClick={onLoop}>
-        Loop {loopEnabled ? 'เปิด' : 'ปิด'} <kbd>L</kbd>
+        Loop {loopEnabled ? 'เปิด' : 'ปิด'} <kbd>{shortcutLabels.toggleLoop}</kbd>
       </button>
       <button className={`${styles.actionButton} ${styles.clearButton}`} type="button" onClick={onClear}>
-        ล้างจุด <kbd>R</kbd>
+        ล้างจุด <kbd>{shortcutLabels.clearMarkers}</kbd>
       </button>
     </div>
   );
@@ -494,9 +473,12 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
   const [screenReady, setScreenReady] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const { bindings, bindingByAction, updateBinding, clearBinding, resetBindings } = useReplayKeybindings();
   const actualPreviewUrl = usePreviewObjectUrl(loadedFile);
   const currentFileRef = useRef<{ data: ArrayBuffer; mime: string; name: string } | null>(null);
   const currentStateRef = useRef<VarReplayV2State>(createDefaultReplayState());
+  const transformFrameRef = useRef<number | null>(null);
+  const pendingTransformRef = useRef<{ transform: VarReplayV2Transform; smooth: boolean } | null>(null);
 
   const files = useMemo(
     () => (videoFolder.isConnected ? videoFolder.videoFiles.filter(isVideoFile).sort((a, b) => b.lastModified - a.lastModified) : []),
@@ -530,14 +512,45 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
     };
   }, [currentTime, duration, isPlaying, loopEnabled, markerA, markerB, speed, transform]);
 
-  const setTransformAndSend = (next: VarReplayV2Transform, smooth = false) => {
+  const setTransformAndSend = useCallback((next: VarReplayV2Transform, smooth = false) => {
     const safe = clampTransform(next);
     setTransform(safe);
-    sendCommand({ type: 'command', action: 'set-transform', value: safe, smooth });
-  };
+    pendingTransformRef.current = {
+      transform: safe,
+      // Preserve a smooth transition if any update in the queued frame asks
+      // for it while rapid transform updates are being queued.
+      smooth: smooth || Boolean(pendingTransformRef.current?.smooth),
+    };
+
+    if (transformFrameRef.current !== null) return;
+    transformFrameRef.current = window.requestAnimationFrame(() => {
+      transformFrameRef.current = null;
+      const pending = pendingTransformRef.current;
+      pendingTransformRef.current = null;
+      if (!pending) return;
+      sendCommand({
+        type: 'command',
+        action: 'set-transform',
+        value: pending.transform,
+        smooth: pending.smooth,
+      });
+    });
+  }, [sendCommand]);
+
+  const clearPendingTransform = useCallback(() => {
+    if (transformFrameRef.current !== null) {
+      window.cancelAnimationFrame(transformFrameRef.current);
+      transformFrameRef.current = null;
+    }
+
+    pendingTransformRef.current = null;
+  }, []);
+
+  useEffect(() => clearPendingTransform, [clearPendingTransform]);
 
   const loadFile = useCallback(async (file: File) => {
     try {
+      clearPendingTransform();
       setError('');
       setSelectedFile(file);
       setLoadedFile(file);
@@ -567,7 +580,7 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
       setError('ไม่สามารถโหลดไฟล์วิดีโอได้');
       setIsPlaying(false);
     }
-  }, [sendCurrentFile]);
+  }, [clearPendingTransform, sendCurrentFile]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -581,6 +594,17 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
       setIsPlaying(true);
     }
   }, [isPlaying, sendCommand]);
+
+  const stopReplay = useCallback(() => {
+    videoRef.current?.pause();
+    if (videoRef.current) videoRef.current.currentTime = 0;
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setLoopEnabled(false);
+    sendCommand({ type: 'command', action: 'pause' });
+    sendCommand({ type: 'command', action: 'seek', value: 0 });
+    sendCommand({ type: 'command', action: 'set-loop', enabled: false });
+  }, [sendCommand]);
 
   const setMarker = useCallback((marker: Marker) => {
     const next = getMarkerValues(marker, currentTime, markerA, markerB);
@@ -710,30 +734,92 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
     };
   }, [actualPreviewUrl, loopEnabled, markerA, markerB]);
 
+  const adjustZoom = useCallback((delta: number) => {
+    setTransformAndSend({
+      ...transform,
+      // Round to one decimal to avoid floating-point drift during repeated key presses.
+      zoom: Number((transform.zoom + delta).toFixed(1)),
+    }, true);
+  }, [setTransformAndSend, transform]);
+
+  const executeReplayAction = useCallback((action: ReplayShortcutAction) => {
+    switch (action) {
+      case 'playPause':
+        togglePlay();
+        break;
+      case 'stop':
+        stopReplay();
+        break;
+      case 'setMarkerA':
+        setMarker('A');
+        break;
+      case 'setMarkerB':
+        setMarker('B');
+        break;
+      case 'toggleLoop':
+        toggleLoop();
+        break;
+      case 'clearMarkers':
+        clearMarkers();
+        break;
+      case 'zoomIn':
+        adjustZoom(KEYBOARD_ZOOM_STEP);
+        break;
+      case 'zoomOut':
+        adjustZoom(-KEYBOARD_ZOOM_STEP);
+        break;
+      case 'resetTransform':
+        setTransformAndSend({ zoom: 1, x: 0, y: 0 }, true);
+        break;
+      default:
+        break;
+    }
+  }, [adjustZoom, clearMarkers, setMarker, setTransformAndSend, stopReplay, toggleLoop, togglePlay]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) return;
-      if (event.code === 'Space') {
+      if (
+        target?.tagName === 'INPUT'
+        || target?.tagName === 'TEXTAREA'
+        || target?.isContentEditable
+        || target?.tagName === 'SELECT'
+      ) return;
+
+      const binding = bindings.find((item) => matchesReplayBinding(event, item));
+      if (binding) {
+        // Prevent accidental repeated actions while a control key is held down.
+        // Zoom remains repeatable so users can smoothly adjust it by holding the key.
+        if (event.repeat && binding.action !== 'zoomIn' && binding.action !== 'zoomOut') return;
         event.preventDefault();
-        togglePlay();
-      } else if (event.key.toLowerCase() === 'a') {
-        setMarker('A');
-      } else if (event.key.toLowerCase() === 'b') {
-        setMarker('B');
-      } else if (event.key.toLowerCase() === 'r') {
-        clearMarkers();
-      } else if (event.key.toLowerCase() === 'l') {
-        toggleLoop();
-      } else if (event.key === 'ArrowLeft') {
+        executeReplayAction(binding.action);
+        return;
+      }
+
+      // Preserve the existing timeline navigation shortcuts unless the user assigns them to an action.
+      if (event.code === 'ArrowLeft') {
+        event.preventDefault();
         handleSeek(currentTime - 0.5);
-      } else if (event.key === 'ArrowRight') {
+      } else if (event.code === 'ArrowRight') {
+        event.preventDefault();
         handleSeek(currentTime + 0.5);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [clearMarkers, currentTime, handleSeek, toggleLoop, togglePlay, setMarker]);
+  }, [bindings, currentTime, executeReplayAction, handleSeek]);
+
+  const shortcutLabels = useMemo(() => ({
+    playPause: formatReplayBinding(bindingByAction.get('playPause')),
+    stop: formatReplayBinding(bindingByAction.get('stop')),
+    setMarkerA: formatReplayBinding(bindingByAction.get('setMarkerA')),
+    setMarkerB: formatReplayBinding(bindingByAction.get('setMarkerB')),
+    toggleLoop: formatReplayBinding(bindingByAction.get('toggleLoop')),
+    clearMarkers: formatReplayBinding(bindingByAction.get('clearMarkers')),
+    zoomIn: formatReplayBinding(bindingByAction.get('zoomIn')),
+    zoomOut: formatReplayBinding(bindingByAction.get('zoomOut')),
+    resetTransform: formatReplayBinding(bindingByAction.get('resetTransform')),
+  }), [bindingByAction]);
 
   const screenUrl = `${window.location.origin}${import.meta.env.BASE_URL}var-replay-v2/screen`;
   const copyUrl = () => {
@@ -788,7 +874,19 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
               onSeek={onSeek}
               onMarkerPointerDown={(event, marker) => { event.stopPropagation(); markerDragRef.current = marker; }}
             />
-            <QuickActions isPlaying={isPlaying} markerA={markerA} markerB={markerB} loopEnabled={loopEnabled} onPlayPause={togglePlay} onMarker={setMarker} onLoop={toggleLoop} onClear={clearMarkers} />
+            <QuickActions
+              isPlaying={isPlaying}
+              markerA={markerA}
+              markerB={markerB}
+              loopEnabled={loopEnabled}
+              onPlayPause={togglePlay}
+              onStop={stopReplay}
+              onMarker={setMarker}
+              onLoop={toggleLoop}
+              onClear={clearMarkers}
+              shortcutLabels={shortcutLabels}
+            />
+            <ReplayShortcutSettings bindings={bindings} onUpdate={updateBinding} onClear={clearBinding} onReset={resetBindings} />
             <div className={styles.footer}>{loadedFile?.name || 'ยังไม่ได้โหลดสื่อ'} <span>V2 Channel: v3</span></div>
           </div>
         </div>

@@ -1,0 +1,32 @@
+.logo-only-animation-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+}
+
+.logo-only-instance {
+  position: absolute;
+  top: 2.5%;
+  width: 10vw;
+  height: 10vw;
+  max-width: 190px;
+  max-height: 190px;
+  min-width: 48px;
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+}
+
+.logo-only-instance--a { left: 10.4%; }
+.logo-only-instance--b { right: 10.4%; }
+
+.logo-only-instance img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

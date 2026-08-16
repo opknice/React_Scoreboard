@@ -6,6 +6,8 @@ import type { TeamNameBrowserSettings } from '../types/teamNameBrowserSettings';
 import { buildTeamNameBrowserUrl } from '../utils/teamNameBrowserUrl';
 import type { ScoreBrowserSettings } from '../types/scoreBrowserSettings';
 import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
+import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
+import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
 
 export interface SetupProgress {
   step: string;
@@ -266,6 +268,22 @@ export class OBSSetupService {
     };
   }
 
+  private getLogoBrowserConfig(
+    sourceName: 'Logo_Display_A' | 'Logo_Display_B',
+    settings?: LogoBrowserSettings,
+  ): SourceConfig {
+    const baseConfig = BROWSER_SOURCES.find((source) => source.name === sourceName);
+    if (!baseConfig) throw new Error(`Missing OBS configuration for ${sourceName}`);
+    const side = sourceName.endsWith('_A') ? 'A' : 'B';
+    return {
+      ...baseConfig,
+      settings: {
+        ...baseConfig.settings,
+        url: buildLogoBrowserUrl(getOrigin(), side, settings),
+      },
+    };
+  }
+
   /**
    * Add or update the two persistent Team Name Browser Sources. Existing GDI
    * sources are kept intact and simply hidden so the migration is reversible.
@@ -402,6 +420,71 @@ export class OBSSetupService {
       message: updatedSources.length > 0
         ? `อัปเดต Score Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
         : 'ไม่พบ Score A/B Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
+      updatedSources,
+    };
+  }
+
+  /** Add or update persistent Logo Browser Sources and hide legacy image sources. */
+  async addOrUpdateLogoBrowserSources(
+    settings?: LogoBrowserSettings,
+    sceneName = MAIN_SCENE_CONFIG.name,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
+
+    const updatedSources: string[] = [];
+    for (const sourceName of ['Logo_Display_A', 'Logo_Display_B'] as const) {
+      const config = this.getLogoBrowserConfig(sourceName, settings);
+      if (!(await this.sourceExists(config.name))) {
+        await this.obsRef.call('CreateInput', {
+          sceneName,
+          inputName: config.name,
+          inputKind: 'browser_source',
+          inputSettings: config.settings,
+          sceneItemEnabled: true,
+        });
+      } else {
+        await this.updateSourceSettings(config.name, config.settings);
+      }
+      await this.ensureSceneItem(sceneName, config.name, true);
+      if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
+      updatedSources.push(sourceName);
+    }
+
+    for (const sourceName of ['logo_team_a', 'logo_team_b']) {
+      await this.setSourceVisibility(sceneName, sourceName, false).catch(() => undefined);
+    }
+
+    return {
+      success: true,
+      message: 'เพิ่ม/อัปเดต Logo Browser Sources และซ่อน Image Source เดิมแล้ว',
+      updatedSources,
+    };
+  }
+
+  /** Update only existing Logo Browser Sources without creating missing inputs. */
+  async updateLogoBrowserSources(
+    settings?: LogoBrowserSettings,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+
+    const updatedSources: string[] = [];
+    const missingSources: string[] = [];
+    for (const sourceName of ['Logo_Display_A', 'Logo_Display_B'] as const) {
+      if (!(await this.sourceExists(sourceName))) {
+        missingSources.push(sourceName);
+        continue;
+      }
+      const config = this.getLogoBrowserConfig(sourceName, settings);
+      await this.updateSourceSettings(config.name, config.settings);
+      updatedSources.push(sourceName);
+    }
+
+    return {
+      success: true,
+      message: updatedSources.length > 0
+        ? `อัปเดต Logo Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
+        : 'ไม่พบ Logo Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
       updatedSources,
     };
   }

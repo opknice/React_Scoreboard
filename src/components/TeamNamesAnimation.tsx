@@ -30,7 +30,7 @@ const DEFAULT_NAMES = {
 };
 
 // Steps are checked in order; the first step whose `max` covers the name length wins.
-// Each entry mirrors the original clamp(min, vw, max) shape so it still scales with
+// Each entry mirrors the original clamp(min, vw, max) shape so it still scales with.
 // viewport width — just anchored to a smaller ceiling as the name gets longer.
 const TEAM_NAME_FONT_SIZE_STEPS: { max: number; size: string }[] = [
   { max: 10, size: 'clamp(2rem, 2.5vw, 3rem)' },

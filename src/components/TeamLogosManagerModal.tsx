@@ -120,17 +120,19 @@ export default function TeamLogosManagerModal({
       const unsubscribe = listenToFirebaseTeams(db, (fbTeamsMap) => {
         setTeamLogosMap((prev) => {
           const updated = { ...prev };
-          Object.keys(fbTeamsMap).forEach((key) => {
+          Object.keys(fbTeamsMap || {}).forEach((key) => {
             const fbItem = fbTeamsMap[key];
+            if (!fbItem) return;
             if (updated[key]) {
               updated[key] = {
                 ...updated[key],
-                logo: fbItem.logo || updated[key].logo
+                name: fbItem.name || updated[key].name || key,
+                logo: fbItem.logo || updated[key].logo || ''
               };
             } else {
               updated[key] = {
-                name: fbItem.name,
-                logo: fbItem.logo
+                name: fbItem.name || key,
+                logo: fbItem.logo || ''
               };
             }
           });
@@ -143,15 +145,16 @@ export default function TeamLogosManagerModal({
 
   if (!isOpen) return null;
 
-  const allTeamsKeys = Object.keys(teamLogosMap);
+  const allTeamsKeys = Object.keys(teamLogosMap || {});
   const filteredKeys = allTeamsKeys.filter((key) => {
     const item = teamLogosMap[key];
+    if (!item) return false;
     if (!searchTerm) return true;
-    return item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    return (item.name || key).toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   const totalTeams = allTeamsKeys.length;
-  const configuredTeams = allTeamsKeys.filter((k) => teamLogosMap[k].logo.startsWith('http')).length;
+  const configuredTeams = allTeamsKeys.filter((k) => (teamLogosMap[k]?.logo || '').startsWith('http')).length;
 
   const handleUpdateLogo = (teamName: string, url: string) => {
     const key = normalizeTeamKey(teamName);
@@ -159,7 +162,7 @@ export default function TeamLogosManagerModal({
       ...prev,
       [key]: {
         name: prev[key]?.name || teamName,
-        logo: url.trim()
+        logo: (url || '').trim()
       }
     }));
   };

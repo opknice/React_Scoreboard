@@ -1,4 +1,4 @@
-export type GoalAnimationTemplateId = 'classic' | 'score-only' | 'team-names';
+export type GoalAnimationTemplateId = 'classic' | 'score-only' | 'team-names' | 'team-logos';
 export type GoalAnimationSide = 'A' | 'B' | 'both';
 export type ScoreAnimationMode = 'number' | 'effect';
 
@@ -9,6 +9,8 @@ export function resolveGoalAnimationTemplate(value: string | null): GoalAnimatio
     ? 'score-only'
     : normalized === 'team-names' || normalized === 'team-name' || normalized === 'names'
       ? 'team-names'
+      : normalized === 'team-logos' || normalized === 'team-logo' || normalized === 'logos' || normalized === 'logo'
+        ? 'team-logos'
     : 'classic';
 }
 

@@ -14,6 +14,11 @@ export interface FileMessage {
   data: ArrayBuffer;
   mime: string;
   name: string;
+  /** Identifies one file transfer/playback attempt. */
+  playbackId?: string;
+  /** Present when the file is being played by the playlist runner. */
+  playlistItemId?: string;
+  playlistSessionId?: string;
 }
 
 /**
@@ -32,6 +37,7 @@ export interface CommandMessage {
  */
 export interface StatusMessage {
   type: 'status';
+  playbackId?: string;
   duration: number;
   currentTime: number;
   markerA: number | null;
@@ -43,6 +49,55 @@ export interface StatusMessage {
  * Used for type-safe BroadcastChannel communication
  */
 export type ChannelMessage = FileMessage | CommandMessage | StatusMessage;
+
+/** Event emitted by the replay screen when the current video reaches its end. */
+export interface ReplayVideoEndedEvent {
+  type: 'ReplayVideoEnded';
+  videoElement: 'InstantReplayScreen';
+  fileName?: string;
+  playbackId?: string;
+  playlistItemId?: string;
+  playlistSessionId?: string;
+  timestamp: number;
+  duration: number;
+  currentTime: number;
+}
+
+export interface ReplayPlaylistItem {
+  /** Stable identity derived from the file metadata. */
+  id: string;
+  fileName: string;
+  fileSize: number;
+  lastModified: number;
+  addedAt: number;
+}
+
+export type ReplayPlaylistStatus = 'idle' | 'playing' | 'completed' | 'stopped';
+
+export function createReplayFileId(file: Pick<File, 'name' | 'size' | 'lastModified'>): string {
+  return `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
+}
+
+export function createReplayPlaylistItem(file: File, addedAt = Date.now()): ReplayPlaylistItem {
+  return {
+    id: createReplayFileId(file),
+    fileName: file.name,
+    fileSize: file.size,
+    lastModified: file.lastModified,
+    addedAt,
+  };
+}
+
+export function isReplayVideoEndedEvent(value: unknown): value is ReplayVideoEndedEvent {
+  if (!value || typeof value !== 'object') return false;
+
+  const event = value as Partial<ReplayVideoEndedEvent>;
+  return event.type === 'ReplayVideoEnded'
+    && event.videoElement === 'InstantReplayScreen'
+    && typeof event.timestamp === 'number'
+    && Number.isFinite(event.duration)
+    && Number.isFinite(event.currentTime);
+}
 
 // ============================================================================
 // Component State Interfaces

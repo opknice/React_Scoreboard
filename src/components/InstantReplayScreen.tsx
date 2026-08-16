@@ -25,6 +25,10 @@ export default function InstantReplayScreen() {
   const objectUrlRef = useRef<string | null>(null);
   const canPlayHandlerRef = useRef<(() => void) | null>(null);
   const videoErrorHandlerRef = useRef<(() => void) | null>(null);
+  const activeFileNameRef = useRef<string | null>(null);
+  const activePlaybackIdRef = useRef<string | null>(null);
+  const activePlaylistItemIdRef = useRef<string | null>(null);
+  const activePlaylistSessionIdRef = useRef<string | null>(null);
   
   // BroadcastChannel hook integration (Requirement 10.4)
   const { channelRef, send } = useReplayChannel();
@@ -78,6 +82,7 @@ export default function InstantReplayScreen() {
 
     send({
       type: 'status',
+      playbackId: activePlaybackIdRef.current || undefined,
       duration: video.duration,
       currentTime: video.currentTime,
       markerA: loopARef.current,
@@ -116,6 +121,10 @@ export default function InstantReplayScreen() {
       // Handle file message (Requirement 2.5)
       if (checkIsFileMessage(message)) {
         cleanupPendingPlaybackHandlers();
+        activeFileNameRef.current = message.name;
+        activePlaybackIdRef.current = message.playbackId || null;
+        activePlaylistItemIdRef.current = message.playlistItemId || null;
+        activePlaylistSessionIdRef.current = message.playlistSessionId || null;
         // Revoke previous Blob URL to free memory (Requirement 10.9)
         if (objectUrlRef.current) {
           URL.revokeObjectURL(objectUrlRef.current);
@@ -271,6 +280,10 @@ export default function InstantReplayScreen() {
         const eventData = {
           type: 'ReplayVideoEnded',
           videoElement: 'InstantReplayScreen',
+          fileName: activeFileNameRef.current,
+          playbackId: activePlaybackIdRef.current,
+          playlistItemId: activePlaylistItemIdRef.current,
+          playlistSessionId: activePlaylistSessionIdRef.current,
           timestamp: Date.now(),
           duration: video.duration,
           currentTime: video.currentTime,

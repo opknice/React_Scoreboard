@@ -11,6 +11,7 @@ import {
 } from '../types/scoreboardEvent';
 import ScoreOnlyAnimation, { type ScoreOnlyDisplay } from './ScoreOnlyAnimation';
 import TeamNamesAnimation from './TeamNamesAnimation';
+import LogoOnlyAnimation from './LogoOnlyAnimation';
 import { requestScoreboardState } from '../hooks/useScoreboardChannels';
 import {
   resolveGoalAnimationSide,
@@ -85,7 +86,7 @@ export default function GoalAnimationOverlay() {
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
 
-    if (template === 'team-names') return;
+    if (template === 'team-names' || template === 'team-logos') return;
 
     const releasePendingScoreAnimation = (eventId: string) => {
       const pendingGoal = pendingScoreGoalRef.current;
@@ -230,6 +231,10 @@ export default function GoalAnimationOverlay() {
 
   if (template === 'team-names') {
     return <TeamNamesAnimation side={scoreSide} />;
+  }
+
+  if (template === 'team-logos') {
+    return <LogoOnlyAnimation side={scoreSide} />;
   }
 
   if (!goalEvent) {

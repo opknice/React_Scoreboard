@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useReplayChannel } from '../hooks/useReplayChannel';
+import { useReplayPlaylist } from '../hooks/useReplayPlaylist';
 import { formatTime, formatSize, findLatestFile, getVideoMimeType } from '../utils/replayFormatters';
-import type { CommandMessage } from '../types/instantReplay';
+import ReplayPlaylistPanel from './ReplayPlaylistPanel';
+import {
+  isReplayVideoEndedEvent,
+  createReplayFileId,
+  type CommandMessage,
+  type ReplayPlaylistStatus,
+} from '../types/instantReplay';
 import './InstantReplayControl.css';
 
 const STORAGE_KEYS = {
@@ -12,6 +19,14 @@ const STORAGE_KEYS = {
 const DEFAULTS = {
   REPLAY_DURATION: 8,
 } as const;
+
+type ReplayPlaybackMode = 'single' | 'playlist';
+
+interface ReplayPlaybackOptions {
+  mode?: ReplayPlaybackMode;
+  playlistItemId?: string;
+  playlistSessionId?: string;
+}
 
 function loadSettings() {
   try {
@@ -59,6 +74,18 @@ export default function InstantReplayControl() {
   // Fix #4: track "Full" preset active state separately from replayDuration value
   const [isFullMode, setIsFullMode] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(0.8); // Default: 0.8x
+  const playlist = useReplayPlaylist(videoFolder.videoFiles);
+  const playlistItems = playlist.items;
+  const resolvePlaylistItem = playlist.resolveItem;
+  const [playlistStatus, setPlaylistStatus] = useState<ReplayPlaylistStatus>('idle');
+  const [playlistCurrentItemId, setPlaylistCurrentItemId] = useState<string | null>(null);
+  const [playlistCurrentIndex, setPlaylistCurrentIndex] = useState(-1);
+
+  const playlistSessionRef = useRef<string | null>(null);
+  const playlistIndexRef = useRef(-1);
+  const playbackModeRef = useRef<ReplayPlaybackMode>('single');
+  const currentPlaybackIdRef = useRef<string | null>(null);
+  const lastHandledEndedPlaybackIdRef = useRef<string | null>(null);
 
   // Fix #2: keep ref in sync with state
   useEffect(() => {
@@ -95,10 +122,37 @@ export default function InstantReplayControl() {
     send({ type: 'cmd', action, value });
   }, [send]);
 
-  const loadAndPlayFile = useCallback(async (targetFile: File) => {
+  const cancelPlaylist = useCallback(() => {
+    playlistSessionRef.current = null;
+    playlistIndexRef.current = -1;
+    playbackModeRef.current = 'single';
+    currentPlaybackIdRef.current = null;
+    lastHandledEndedPlaybackIdRef.current = null;
+    setPlaylistCurrentItemId(null);
+    setPlaylistCurrentIndex(-1);
+    setPlaylistStatus((current) => current === 'playing' ? 'stopped' : current);
+  }, []);
+
+  const createPlaybackId = useCallback(() => (
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `replay_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  ), []);
+
+  const loadAndPlayFile = useCallback(async (
+    targetFile: File,
+    options: ReplayPlaybackOptions = {},
+  ): Promise<boolean> => {
+    const mode = options.mode || 'single';
+    if (mode === 'single') cancelPlaylist();
+
     try {
       setErrorMsg(null);
       setIsLoadingFile(true);
+
+      const playbackId = createPlaybackId();
+      playbackModeRef.current = mode;
+      currentPlaybackIdRef.current = playbackId;
 
       const data = await targetFile.arrayBuffer();
       send({
@@ -106,25 +160,115 @@ export default function InstantReplayControl() {
         data,
         mime: getVideoMimeType(targetFile),
         name: targetFile.name,
+        playbackId,
+        playlistItemId: options.playlistItemId,
+        playlistSessionId: options.playlistSessionId,
       });
 
       setLoadedFileName(targetFile.name);
+      durationRef.current = 0;
       setDuration(0);
       setCurrentTime(0);
       setMarkerA(null);
       setMarkerB(null);
-      
-      // Set default playback speed to 0.8x
-      setPlaybackSpeed(0.8);
-      sendCommand('setSpeed', 0.8);
+
+      if (mode === 'playlist') {
+        // Highlights should play in full at natural speed, independently of
+        // the short/slow Instant Replay settings.
+        setPlaybackSpeed(1);
+        sendCommand('clearLoop');
+        sendCommand('setSpeed', 1);
+      } else {
+        setPlaybackSpeed(0.8);
+        sendCommand('setSpeed', 0.8);
+      }
       sendCommand('play');
+      return true;
     } catch (error) {
       console.error('Failed to load file:', error);
       setErrorMsg(`ไม่สามารถโหลดไฟล์รีเพลย์ "${targetFile.name}" ได้`);
+      return false;
     } finally {
       setIsLoadingFile(false);
     }
-  }, [send, sendCommand]);
+  }, [cancelPlaylist, createPlaybackId, send, sendCommand]);
+
+  const finishPlaylist = useCallback((status: ReplayPlaylistStatus) => {
+    playlistSessionRef.current = null;
+    playlistIndexRef.current = -1;
+    playbackModeRef.current = 'single';
+    currentPlaybackIdRef.current = null;
+    lastHandledEndedPlaybackIdRef.current = null;
+    setPlaylistCurrentItemId(null);
+    setPlaylistCurrentIndex(-1);
+    setPlaylistStatus(status);
+  }, []);
+
+  const playPlaylistFromIndex = useCallback(async (
+    sessionId: string,
+    startIndex: number,
+    availableFiles: File[],
+  ): Promise<void> => {
+    for (let index = startIndex; index < playlistItems.length; index += 1) {
+      if (playlistSessionRef.current !== sessionId) return;
+
+      const item = playlistItems[index];
+      const file = resolvePlaylistItem(item, availableFiles);
+      if (!file) {
+        setErrorMsg(`ข้ามไฟล์ใน Playlist เนื่องจากไม่พบไฟล์ "${item.fileName}"`);
+        continue;
+      }
+
+      playlistIndexRef.current = index;
+      setPlaylistCurrentIndex(index);
+      setPlaylistCurrentItemId(item.id);
+
+      const loaded = await loadAndPlayFile(file, {
+        mode: 'playlist',
+        playlistItemId: item.id,
+        playlistSessionId: sessionId,
+      });
+
+      if (loaded) return;
+      setErrorMsg(`ไม่สามารถโหลดไฟล์ "${item.fileName}" ได้ ระบบจะข้ามไปไฟล์ถัดไป`);
+    }
+
+    if (playlistSessionRef.current === sessionId) {
+      finishPlaylist('completed');
+    }
+  }, [finishPlaylist, loadAndPlayFile, playlistItems, resolvePlaylistItem]);
+
+  const startPlaylist = useCallback(async () => {
+    if (!videoFolder.isConnected) {
+      setErrorMsg('กรุณาเชื่อมต่อโฟลเดอร์วิดีโอก่อนเล่น Playlist');
+      return;
+    }
+    if (playlistItems.length === 0) {
+      setErrorMsg('ยังไม่มีวิดีโอใน Playlist');
+      return;
+    }
+
+    const availableFiles = videoFolder.folderHandle
+      ? await videoFolder.rescan()
+      : videoFolder.videoFiles;
+    const sessionId = createPlaybackId();
+
+    playlistSessionRef.current = sessionId;
+    playlistIndexRef.current = -1;
+    playbackModeRef.current = 'playlist';
+    currentPlaybackIdRef.current = null;
+    lastHandledEndedPlaybackIdRef.current = null;
+    setPlaylistCurrentItemId(null);
+    setPlaylistCurrentIndex(-1);
+    setPlaylistStatus('playing');
+
+    await playPlaylistFromIndex(sessionId, 0, availableFiles);
+  }, [createPlaybackId, playPlaylistFromIndex, playlistItems.length, videoFolder]);
+
+  const stopPlaylist = useCallback(() => {
+    if (playlistStatus === 'playing') sendCommand('pause');
+    cancelPlaylist();
+  }, [cancelPlaylist, playlistStatus, sendCommand]);
 
   const loadAndPlayLatestFile = useCallback(async () => {
     if (!videoFolder.isConnected) {
@@ -220,6 +364,7 @@ export default function InstantReplayControl() {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       if (message.type !== 'status') return;
+      if (message.playbackId && message.playbackId !== currentPlaybackIdRef.current) return;
 
       setDuration(message.duration);
       setCurrentTime(message.currentTime);
@@ -229,7 +374,14 @@ export default function InstantReplayControl() {
       // Fix #2: use durationRef to avoid stale closure — applyAutoTrim fires
       // correctly on first status message after a new file is loaded
       if (message.duration > 0 && durationRef.current === 0) {
-        applyAutoTrim(message.duration);
+        if (playbackModeRef.current === 'single') {
+          applyAutoTrim(message.duration);
+        } else {
+          // Playlist items are full-length highlights and must not inherit the
+          // short Instant Replay trim markers from the previous clip.
+          setMarkerA(null);
+          setMarkerB(null);
+        }
       }
     };
 
@@ -237,6 +389,41 @@ export default function InstantReplayControl() {
     return () => channel.removeEventListener('message', handleMessage);
   // duration removed from deps — durationRef handles it without causing re-registration
   }, [channelRef, applyAutoTrim]);
+
+  // The screen notifies the control panel when a clip ends. In playlist mode
+  // this is the hand-off point for loading the next file.
+  useEffect(() => {
+    let replayEventChannel: BroadcastChannel | null = null;
+
+    try {
+      replayEventChannel = new BroadcastChannel('replay-events');
+      replayEventChannel.onmessage = (event: MessageEvent<unknown>) => {
+        if (!isReplayVideoEndedEvent(event.data)) return;
+        if (playbackModeRef.current !== 'playlist') return;
+
+        const endedEvent = event.data;
+        const activeSessionId = playlistSessionRef.current;
+        const activePlaybackId = currentPlaybackIdRef.current;
+        if (!activeSessionId) return;
+        if (endedEvent.playlistSessionId && endedEvent.playlistSessionId !== activeSessionId) return;
+        if (endedEvent.playbackId && endedEvent.playbackId !== activePlaybackId) return;
+        if (endedEvent.playbackId && endedEvent.playbackId === lastHandledEndedPlaybackIdRef.current) return;
+
+        lastHandledEndedPlaybackIdRef.current = endedEvent.playbackId || null;
+        void playPlaylistFromIndex(
+          activeSessionId,
+          playlistIndexRef.current + 1,
+          videoFolder.videoFiles,
+        );
+      };
+    } catch (error) {
+      console.error('[InstantReplayControl] Failed to create replay events channel:', error);
+    }
+
+    return () => {
+      replayEventChannel?.close();
+    };
+  }, [playPlaylistFromIndex, videoFolder.videoFiles]);
 
   // Listen for BroadcastChannel commands from Macros
   useEffect(() => {
@@ -349,15 +536,30 @@ export default function InstantReplayControl() {
                         <span>{new Date(file.lastModified).toLocaleTimeString('th-TH')}</span>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className={`replay-button ${isCurrent ? 'replay-button-small' : 'replay-button-primary replay-button-small'}`}
-                      onClick={() => void loadAndPlayFile(file)}
-                      disabled={isLoadingFile}
-                    >
-                      <i className={`fas ${isCurrent ? 'fa-redo' : 'fa-play'}`}></i>
-                      <span>{isCurrent ? 'เล่นซ้ำ' : 'เล่น'}</span>
-                    </button>
+                    <div className="recent-clip-actions">
+                      <button
+                        type="button"
+                        className={`replay-button ${isCurrent ? 'replay-button-small' : 'replay-button-primary replay-button-small'}`}
+                        onClick={() => void loadAndPlayFile(file)}
+                        disabled={isLoadingFile}
+                      >
+                        <i className={`fas ${isCurrent ? 'fa-redo' : 'fa-play'}`}></i>
+                        <span>{isCurrent ? 'เล่นซ้ำ' : 'เล่น'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="replay-button replay-button-small"
+                        onClick={() => {
+                          const added = playlist.addFile(file);
+                          if (!added) setErrorMsg(`วิดีโอ "${file.name}" มีอยู่ใน Playlist แล้ว`);
+                        }}
+                        disabled={playlist.items.some((item) => item.id === createReplayFileId(file))}
+                        title="เพิ่มวิดีโอนี้เข้า Playlist"
+                      >
+                        <i className="fas fa-plus"></i>
+                        <span>เพิ่ม</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -485,6 +687,26 @@ export default function InstantReplayControl() {
             />
           </div>
         </div>
+
+        {/* ── Highlight playlist (kept at the bottom of the Replay modal) ── */}
+        <ReplayPlaylistPanel
+          items={playlist.items}
+          missingItems={playlist.missingItems}
+          status={playlistStatus}
+          currentItemId={playlistCurrentItemId}
+          currentIndex={playlistCurrentIndex}
+          isLoading={isLoadingFile}
+          isFolderConnected={videoFolder.isConnected}
+          onPlayAll={() => void startPlaylist()}
+          onStop={stopPlaylist}
+          onRemove={playlist.removeItem}
+          onMove={playlist.moveItem}
+          onClear={() => {
+            playlist.clear();
+            setPlaylistCurrentItemId(null);
+            setPlaylistCurrentIndex(-1);
+          }}
+        />
 
       </section>
     </main>

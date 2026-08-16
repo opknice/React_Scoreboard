@@ -12,6 +12,11 @@ import {
   SCORE_MIN_FONT_SIZE,
   type ScoreBrowserSettings,
 } from '../types/scoreBrowserSettings';
+import {
+  LOGO_MAX_SIZE,
+  LOGO_MIN_SIZE,
+  type LogoBrowserSettings,
+} from '../types/logoBrowserSettings';
 import './QuickSetupModal.css';
 
 interface LocalFontData {
@@ -52,6 +57,15 @@ interface QuickSetupModalProps {
   scoreObsMessage: string;
   onQuickAddScore: () => void;
   onUpdateScore: () => void;
+  logoSettings: LogoBrowserSettings;
+  onLogoSettingsChange: (patch: Partial<LogoBrowserSettings>) => void;
+  logoUrls: { A: string; B: string };
+  logoObsBusy: boolean;
+  logoObsConnected: boolean;
+  logoObsMessage: string;
+  onCopyLogoUrl: (side: 'A' | 'B') => void;
+  onQuickAddLogo: () => void;
+  onUpdateLogo: () => void;
   onQuickAddTeamNames: () => void;
   onUpdateTeamNames: () => void;
   onOpenObsSetup: () => void;
@@ -83,6 +97,15 @@ export default function QuickSetupModal({
   scoreObsMessage,
   onQuickAddScore,
   onUpdateScore,
+  logoSettings,
+  onLogoSettingsChange,
+  logoUrls,
+  logoObsBusy,
+  logoObsConnected,
+  logoObsMessage,
+  onCopyLogoUrl,
+  onQuickAddLogo,
+  onUpdateLogo,
   onQuickAddTeamNames,
   onUpdateTeamNames,
   onOpenObsSetup,
@@ -90,7 +113,7 @@ export default function QuickSetupModal({
   onOpenDatabase,
   onClose,
 }: QuickSetupModalProps) {
-  const [openPanel, setOpenPanel] = useState<'team-name' | 'score' | null>(null);
+  const [openPanel, setOpenPanel] = useState<'team-name' | 'score' | 'logo' | null>(null);
   const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
   const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
 
@@ -250,6 +273,77 @@ export default function QuickSetupModal({
               </div>
             </details>
           </div>
+          </div> : null}
+        </div>
+
+        <div className="quick-setup-panel quick-setup-panel--logo">
+          <button
+            type="button"
+            className="quick-setup-panel-toggle"
+            aria-expanded={openPanel === 'logo'}
+            onClick={() => setOpenPanel((current) => current === 'logo' ? null : 'logo')}
+          >
+            <span><i className="fas fa-shield-halved"></i> Logo Browser Source</span>
+            <i className={`fas fa-chevron-${openPanel === 'logo' ? 'up' : 'down'}`} aria-hidden="true"></i>
+          </button>
+          {openPanel === 'logo' ? <div className="quick-setup-panel-content">
+            <p style={{ margin: '0 0 8px', color: '#cbd5e1', fontSize: '12px' }}>
+              ใช้โลโก้จาก Batch Team Logos Manager และอัปเดตแบบ Live ผ่าน Scoreboard State
+            </p>
+            <div style={{ display: 'grid', gap: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                {(['A', 'B'] as const).map((side) => {
+                  const sizeKey = side === 'A' ? 'sizeA' : 'sizeB';
+                  return (
+                    <label key={side} style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                      Logo {side} ขนาด px ({LOGO_MIN_SIZE} - {LOGO_MAX_SIZE})
+                      <input
+                        type="number"
+                        min={LOGO_MIN_SIZE}
+                        max={LOGO_MAX_SIZE}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={logoSettings[sizeKey]}
+                        onChange={(event) => onLogoSettingsChange({ [sizeKey]: Number(event.target.value) } as Partial<LogoBrowserSettings>)}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+
+              <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                โหมดพื้นหลัง (Background)
+                <select
+                  style={{ width: '100%', marginTop: '4px' }}
+                  value={logoSettings.backgroundMode}
+                  onChange={(event) => onLogoSettingsChange({ backgroundMode: event.target.value as LogoBrowserSettings['backgroundMode'] })}
+                >
+                  <option value="transparent">โปร่งใส (Transparent)</option>
+                  <option value="normal">ปกติ (Normal)</option>
+                </select>
+              </label>
+
+              <div style={{ display: 'grid', gap: '6px', marginTop: '4px' }}>
+                {(['A', 'B'] as const).map((side) => (
+                  <div key={side} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'center' }}>
+                    <span style={{ overflowWrap: 'anywhere', fontSize: '11px', color: '#94a3b8' }}>{side}: {logoUrls[side]}</span>
+                    <button className="btn-secondary" style={{ padding: '4px 7px', fontSize: '11px' }} onClick={() => onCopyLogoUrl(side)}>Copy</button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gap: '6px', marginTop: '6px' }}>
+                <button className="btn-success" disabled={logoObsBusy || !logoObsConnected} onClick={onQuickAddLogo}>
+                  <i className="fas fa-plug"></i> Quick Add Logo A/B to OBS
+                </button>
+                <button className="btn-primary" disabled={logoObsBusy || !logoObsConnected} onClick={onUpdateLogo}>
+                  <i className="fas fa-rotate"></i> Update Existing Logo Sources
+                </button>
+              </div>
+              <div style={{ marginTop: '4px', fontSize: '11px', color: logoObsConnected ? '#86efac' : '#fca5a5' }}>
+                {logoObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}
+                {logoObsMessage ? ` — ${logoObsMessage}` : ''}
+              </div>
+            </div>
           </div> : null}
         </div>
 
