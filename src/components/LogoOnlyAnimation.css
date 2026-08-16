@@ -16,8 +16,13 @@
   transition: width 0.2s ease, height 0.2s ease, background-color 0.2s ease;
 }
 
-.logo-only-instance--a { left: 10.4%; }
-.logo-only-instance--b { right: 10.4%; }
+.logo-only-instance--a {
+  left: 10.4%;
+}
+
+.logo-only-instance--b {
+  right: 10.4%;
+}
 
 .logo-only-instance img {
   display: block;
@@ -26,3 +31,101 @@
   object-fit: contain;
 }
 
+/* Goal animation — scoring team logo */
+.logo-only-instance--goal {
+  animation: logo-goal-bounce 4000ms ease-in-out both;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+/* Opponent logo animation — fade out during goal animation, fade in back at the end */
+.logo-only-instance--opponent-fade {
+  animation: logo-opponent-fade 4000ms ease-in-out both;
+  will-change: transform, opacity;
+}
+
+@keyframes logo-opponent-fade {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* Fade out อย่างนุ่มนวลในช่วงเริ่มยิงประตู */
+  15% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  /* ซ่อนอยู่ตลอดช่วงเด้งเฉลิมฉลอง */
+  80% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  /* Fade in สว่างกลับมาพร้อมจังหวะ Score */
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes logo-goal-bounce {
+  0% {
+    transform: scale(1);
+  }
+
+  /* เริ่มขยาย smooth */
+  10% {
+    transform: scale(3);
+  }
+
+  /* zoom-in กระแทก — ตรงกับ GOAL!!! 18% */
+  18% {
+    transform: scale(2);
+  }
+
+  /* กลับ soft — ตรงกับ GOAL!!! 24% */
+  24% {
+    transform: scale(1.8);
+  }
+
+  /* settle — ตรงกับ GOAL!!! 30% */
+  30% {
+    transform: scale(1.85);
+  }
+
+  /* Pulse ครั้งที่ 1 — ตรงกับ GOAL!!! 40% */
+  40% {
+    transform: scale(1.95);
+  }
+
+  /* กลับ — ตรงกับ GOAL!!! 46% */
+  46% {
+    transform: scale(1.8);
+  }
+
+  /* Pulse ครั้งที่ 2 — ตรงกับ GOAL!!! 56% */
+  56% {
+    transform: scale(1.9);
+  }
+
+  /* กลับ — ตรงกับ GOAL!!! 62% */
+  62% {
+    transform: scale(1.8);
+  }
+
+  /* Hold นิ่ง — ตรงกับ GOAL!!! 76% */
+  76% {
+    transform: scale(1.8);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-only-instance--goal {
+    animation: none;
+  }
+}

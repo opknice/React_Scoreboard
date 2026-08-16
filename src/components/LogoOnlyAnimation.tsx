@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  isGoalScoredEvent,
   isLogoCropUpdatedEvent,
   isLogoSettingsUpdatedEvent,
   isScoreboardStateEvent,
@@ -56,9 +57,14 @@ function readInitialLogoState(): LogoState {
   }
 }
 
+const LOGO_GOAL_ANIMATION_DURATION_MS = 4000;
+
 export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgroundMode }: LogoOnlyAnimationProps) {
   const [searchParams] = useSearchParams();
   const [logoState, setLogoState] = useState<LogoState>(readInitialLogoState);
+  const [goalTeam, setGoalTeam] = useState<'A' | 'B' | null>(null);
+  const [animationKey, setAnimationKey] = useState(0);
+  const goalTimerRef = useRef<number | null>(null);
   const [cropMetadata, setCropMetadata] = useState<{ A: CropMetadata | null; B: CropMetadata | null }>({
     A: null,
     B: null,
@@ -80,7 +86,7 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
         if (saved) {
           setLiveSettings(normalizeLogoBrowserSettings(JSON.parse(saved)));
         }
-      } catch {}
+      } catch { }
     };
 
     window.addEventListener('storage', updateSettings);
@@ -96,7 +102,7 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
     const loadCrops = () => {
       const teamAKey = normalizeTeamKey(logoState.nameA);
       const teamBKey = normalizeTeamKey(logoState.nameB);
-      
+
       const cropA = getCropMetadataFromLocalStorage(teamAKey);
       const cropB = getCropMetadataFromLocalStorage(teamBKey);
 
@@ -117,7 +123,17 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
     let channel: BroadcastChannel | null = null;
 
     const handleMessage = (event: MessageEvent<unknown>) => {
-      if (isScoreboardStateEvent(event.data)) {
+      if (isGoalScoredEvent(event.data)) {
+        if (goalTimerRef.current !== null) {
+          window.clearTimeout(goalTimerRef.current);
+        }
+        setGoalTeam(event.data.team);
+        setAnimationKey((k) => k + 1);
+        goalTimerRef.current = window.setTimeout(() => {
+          setGoalTeam(null);
+          goalTimerRef.current = null;
+        }, LOGO_GOAL_ANIMATION_DURATION_MS);
+      } else if (isScoreboardStateEvent(event.data)) {
         setLogoState(logoStateFromEvent(event.data));
       } else if (isLogoSettingsUpdatedEvent(event.data)) {
         try {
@@ -125,7 +141,7 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
           if (saved) {
             setLiveSettings(normalizeLogoBrowserSettings(JSON.parse(saved)));
           }
-        } catch {}
+        } catch { }
       } else if (isLogoCropUpdatedEvent(event.data)) {
         window.dispatchEvent(new Event('logoCropUpdated'));
       }
@@ -142,21 +158,25 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
     return () => {
       channel?.removeEventListener('message', handleMessage);
       channel?.close();
+      if (goalTimerRef.current !== null) {
+        window.clearTimeout(goalTimerRef.current);
+        goalTimerRef.current = null;
+      }
     };
   }, [side]);
 
   const displays = side === 'both'
     ? [
-        { team: 'A' as const, name: logoState.nameA, logo: logoState.logoA },
-        { team: 'B' as const, name: logoState.nameB, logo: logoState.logoB },
-      ]
+      { team: 'A' as const, name: logoState.nameA, logo: logoState.logoA },
+      { team: 'B' as const, name: logoState.nameB, logo: logoState.logoB },
+    ]
     : [
-        {
-          team: side,
-          name: side === 'A' ? logoState.nameA : logoState.nameB,
-          logo: side === 'A' ? logoState.logoA : logoState.logoB,
-        },
-      ];
+      {
+        team: side,
+        name: side === 'A' ? logoState.nameA : logoState.nameB,
+        logo: side === 'A' ? logoState.logoA : logoState.logoB,
+      },
+    ];
 
   return (
     <div className="logo-only-animation-overlay" aria-label="Team logos display">
@@ -169,7 +189,7 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
 
         const cropData = display.team === 'A' ? cropMetadata.A : cropMetadata.B;
         const presentation = getLogoPresentation(searchParams, display.team);
-        
+
         // Priority: override prop -> URL param (if present) -> liveSettings -> presentation fallback
         const fallbackSize = liveSettings ? (display.team === 'A' ? liveSettings.sizeA : liveSettings.sizeB) : presentation.size;
         const sizePx = overrideSize ?? (searchParams.has('size') || searchParams.has('sizeA') || searchParams.has('sizeB') ? presentation.size : fallbackSize);
@@ -186,14 +206,24 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
           boxSizing: 'border-box',
         };
 
+        const isGoal = goalTeam === display.team;
+        const isOpponent = goalTeam !== null && goalTeam !== display.team;
+
+        let animationClass = '';
+        if (isGoal) {
+          animationClass = ' logo-only-instance--goal';
+        } else if (isOpponent) {
+          animationClass = ' logo-only-instance--opponent-fade';
+        }
+
         return (
           <div
-            key={`${display.team}-${display.name}-${display.logo}`}
-            className={`logo-only-instance logo-only-instance--${display.team.toLowerCase()}`}
+            key={`${display.team}-${display.name}-${display.logo}-${goalTeam ? animationKey : 'idle'}`}
+            className={`logo-only-instance logo-only-instance--${display.team.toLowerCase()}${animationClass}`}
             style={containerStyle}
           >
             {cropData ? (
-              <LogoWithCrop 
+              <LogoWithCrop
                 url={logoSrc}
                 crop={cropData}
                 alt={`${display.name} logo`}
