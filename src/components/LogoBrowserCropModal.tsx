@@ -36,8 +36,8 @@ export default function LogoBrowserCropModal({
   const [rotation, setRotation] = useState<number>(0);
   const [offsetX, setOffsetX] = useState<number>(0);
   const [offsetY, setOffsetY] = useState<number>(0);
-  const [baseWidth, setBaseWidth] = useState<number>(200);
-  const [baseHeight, setBaseHeight] = useState<number>(200);
+  const [baseWidth, setBaseWidth] = useState<number>(500);
+  const [baseHeight, setBaseHeight] = useState<number>(500);
   const [customSize, setCustomSize] = useState<number>(0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
@@ -54,8 +54,8 @@ export default function LogoBrowserCropModal({
       setRotation(c.rotation || 0);
       setOffsetX(c.x || 0);
       setOffsetY(c.y || 0);
-      setBaseWidth(c.width || 200);
-      setBaseHeight(c.height || 200);
+      setBaseWidth(c.width || 500);
+      setBaseHeight(c.height || 500);
       setCustomSize(c.customSize || 0);
       if (existingData.originalUrl) {
         setActiveUrl(existingData.originalUrl);
@@ -65,8 +65,8 @@ export default function LogoBrowserCropModal({
       setRotation(0);
       setOffsetX(0);
       setOffsetY(0);
-      setBaseWidth(200);
-      setBaseHeight(200);
+      setBaseWidth(500);
+      setBaseHeight(500);
       setCustomSize(0);
     }
   }, [isOpen, teamKey, logoUrl, teamName]);
@@ -162,6 +162,8 @@ export default function LogoBrowserCropModal({
       setRotation(0);
       setOffsetX(0);
       setOffsetY(0);
+      setBaseWidth(500);
+      setBaseHeight(500);
       setCustomSize(0);
 
       window.dispatchEvent(new Event('logoCropUpdated'));
@@ -250,8 +252,8 @@ export default function LogoBrowserCropModal({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '16px' }}>
           <div
             style={{
-              width: '180px',
-              height: '180px',
+              width: '230px',
+              height: '230px',
               backgroundColor: '#0f172a',
               backgroundImage: 'linear-gradient(45deg, #1e293b 25%, transparent 25%), linear-gradient(-45deg, #1e293b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1e293b 75%), linear-gradient(-45deg, transparent 75%, #1e293b 75%)',
               backgroundSize: '16px 16px',
@@ -380,6 +382,68 @@ export default function LogoBrowserCropModal({
             </div>
             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
               * ปล่อยเป็น 0 หรือว่างไว้ เพื่อใช้ขนาดส่วนกลางจาก Quick Setup Modal
+            </div>
+          </div>
+
+          {/* Base Canvas Resolution (Width x Height) */}
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: '12px', marginTop: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#cbd5e1', marginBottom: '6px' }}>
+              <span>🖼️ ความละเอียดกรอบ Canvas (px):</span>
+              <strong style={{ color: '#38bdf8' }}>{baseWidth} × {baseHeight} px</strong>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+              <input
+                type="range"
+                min="200"
+                max="1000"
+                step="25"
+                value={baseWidth}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setBaseWidth(val);
+                  setBaseHeight(val);
+                }}
+                style={{ flex: 1, accentColor: '#38bdf8' }}
+              />
+              <input
+                type="number"
+                min="200"
+                max="1000"
+                value={baseWidth}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val > 0) {
+                    const clamped = Math.max(100, Math.min(1200, val));
+                    setBaseWidth(clamped);
+                    setBaseHeight(clamped);
+                  }
+                }}
+                style={{ width: '80px', padding: '4px 6px', borderRadius: '4px', background: '#1e293b', border: '1px solid #334155', color: '#fff', fontSize: '12px', textAlign: 'center' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {[300, 500, 700, 1000].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className="btn-secondary"
+                  style={{
+                    padding: '2px 8px',
+                    fontSize: '11px',
+                    backgroundColor: baseWidth === preset ? '#0284c7' : '#1e293b',
+                    borderColor: baseWidth === preset ? '#38bdf8' : '#334155',
+                  }}
+                  onClick={() => {
+                    setBaseWidth(preset);
+                    setBaseHeight(preset);
+                  }}
+                >
+                  {preset}px
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+              * ปรับเพิ่มขนาดกรอบ Canvas เมื่อซูมภาพขนาดใหญ่แล้วขอบรูปตกกรอบ
             </div>
           </div>
         </div>
