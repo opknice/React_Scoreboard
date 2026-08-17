@@ -79,9 +79,9 @@ export default defineConfig({
 
               // Check if file exists
               if (fs.existsSync(filePath)) {
-                // Security: Check file size (max 10MB)
+                // Security: Check file size (max 2MB)
                 const stats = fs.statSync(filePath);
-                if (stats.size > 10 * 1024 * 1024) {
+                if (stats.size > 2 * 1024 * 1024) {
                   res.statusCode = 413;
                   res.end('File too large');
                   return;

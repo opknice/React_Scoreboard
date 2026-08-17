@@ -109,7 +109,7 @@ export default function LogoBrowserCropModal({
         timestamp: Date.now(),
       });
       bc.close();
-    } catch {}
+    } catch { }
   }, [isOpen, teamKey, activeUrl, logoUrl, teamName, offsetX, offsetY, baseWidth, baseHeight, zoom, rotation, customSize]);
 
   // Mouse Dragging on Preview Canvas
@@ -156,7 +156,7 @@ export default function LogoBrowserCropModal({
         const existingLogos = JSON.parse(localStorage.getItem('teamLogos') || '{}');
         existingLogos[teamKey] = targetUrl;
         localStorage.setItem('teamLogos', JSON.stringify(existingLogos));
-      } catch {}
+      } catch { }
 
       try {
         const currentStateRaw = localStorage.getItem(SCOREBOARD_STATE_STORAGE_KEY);
@@ -175,7 +175,7 @@ export default function LogoBrowserCropModal({
           });
           bcState.close();
         }
-      } catch {}
+      } catch { }
 
       if (db) {
         try {
@@ -194,7 +194,7 @@ export default function LogoBrowserCropModal({
           timestamp: Date.now(),
         });
         bc.close();
-      } catch {}
+      } catch { }
 
       onToast?.(`✅ บันทึก Crop โลโก้ ${teamName} เรียบร้อยแล้ว`, 'success');
       onClose();
@@ -227,7 +227,7 @@ export default function LogoBrowserCropModal({
         timestamp: Date.now(),
       });
       bc.close();
-    } catch {}
+    } catch { }
 
     onClose();
   };
@@ -252,7 +252,7 @@ export default function LogoBrowserCropModal({
           timestamp: Date.now(),
         });
         bc.close();
-      } catch {}
+      } catch { }
       onToast?.(`🔄 รีเซ็ต Crop โลโก้ ${teamName} เป็นค่าเริ่มต้นแล้ว`, 'info');
       onClose();
     } catch (err: any) {
@@ -317,42 +317,6 @@ export default function LogoBrowserCropModal({
           >
             ✕
           </button>
-        </div>
-
-        {/* Top Controls Bar: URL Input & File Picker */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-          <input
-            type="text"
-            placeholder="วาง URL โลโก้ (https://...)"
-            value={activeUrl}
-            onChange={(e) => setActiveUrl(e.target.value)}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', fontSize: '12px' }}
-          />
-          <input
-            type="file"
-            accept="image/*"
-            id="modal-logo-file-input"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  if (event.target?.result) {
-                    setActiveUrl(event.target.result as string);
-                  }
-                };
-                reader.readAsDataURL(file);
-              }
-            }}
-          />
-          <label
-            htmlFor="modal-logo-file-input"
-            className="btn-secondary"
-            style={{ padding: '8px 14px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
-          >
-            📁 เลือกไฟล์
-          </label>
         </div>
 
         {/* Centerpiece: Interactive Canvas Preview */}

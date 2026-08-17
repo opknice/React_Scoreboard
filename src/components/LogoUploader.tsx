@@ -1,5 +1,7 @@
 // Cloudinary Logo Uploader (Unsigned Upload - No API Secret needed)
 import React, { useState } from 'react';
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '../constants/uploadConfig';
+import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
 
 interface LogoUploaderProps {
   onUploadSuccess?: (fileName: string, url: string, targetTeam?: 'A' | 'B' | 'none') => void;
@@ -14,6 +16,8 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [uploadedUrl, setUploadedUrl] = useState<string>('');
 
+  const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage } = useImageUploadQuota();
+
   // Cloudinary config (public info - safe to expose)
   const CLOUD_NAME = 'vayh51zb';
   const UPLOAD_PRESET = 'logo_upload'; // You'll create this in next step
@@ -21,15 +25,21 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
+      if (isQuotaExceeded) {
+        setError('คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว กรุณาสมัครสมาชิกเพื่อใช้งานไม่จำกัด');
+        return;
+      }
+
       // Validate file type
       if (!selectedFile.type.startsWith('image/')) {
         setError('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
         return;
       }
 
-      // Validate file size (10MB for Cloudinary)
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        setError('ไฟล์ใหญ่เกิน 10MB');
+      // Validate file size (2MB for Cloudinary)
+      if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+        const sizeInMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
+        setError(`ไฟล์ใหญ่เกิน ${MAX_FILE_SIZE_MB}MB (ขนาดปัจจุบัน ${sizeInMB}MB)`);
         return;
       }
 
@@ -48,6 +58,11 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   };
 
   const handleUpload = async () => {
+    if (isQuotaExceeded) {
+      setError('คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว กรุณาสมัครสมาชิกเพื่อใช้งานไม่จำกัด');
+      return;
+    }
+
     if (!file) {
       setError('กรุณาเลือกไฟล์');
       return;
@@ -81,6 +96,8 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       const data = await response.json();
       const imageUrl = data.secure_url;
 
+      await incrementUploadCount();
+
       setMessage(`✅ อัปโหลดสำเร็จ!`);
       setUploadedUrl(imageUrl);
       setFile(null);
@@ -113,12 +130,26 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
     }}>
       <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Cloudinary - ฟรี 25GB)</h3>
 
+      {/* Quota Banner */}
+      <div style={{
+        padding: '8px 12px',
+        borderRadius: '6px',
+        backgroundColor: isQuotaExceeded ? '#450a0a' : isUnlimited ? '#064e3b' : '#1e293b',
+        border: isQuotaExceeded ? '1px solid #ef4444' : isUnlimited ? '1px solid #10b981' : '1px solid #3b82f6',
+        color: '#fff',
+        fontSize: '12px',
+        marginBottom: '15px',
+        fontWeight: 500
+      }}>
+        ℹ️ {quotaMessage}
+      </div>
+
       <div style={{ marginBottom: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <input
           type="file"
           accept="image/*"
           onChange={handleFileChange}
-          disabled={uploading}
+          disabled={uploading || isQuotaExceeded}
           style={{
             padding: '8px',
             borderRadius: '4px',
@@ -168,19 +199,19 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
 
       <button
         onClick={handleUpload}
-        disabled={!file || uploading}
+        disabled={!file || uploading || isQuotaExceeded}
         style={{
           padding: '10px 20px',
-          backgroundColor: file && !uploading ? '#4CAF50' : '#666',
+          backgroundColor: isQuotaExceeded ? '#7f1d1d' : (file && !uploading ? '#4CAF50' : '#666'),
           color: '#fff',
           border: 'none',
           borderRadius: '4px',
-          cursor: file && !uploading ? 'pointer' : 'not-allowed',
+          cursor: file && !uploading && !isQuotaExceeded ? 'pointer' : 'not-allowed',
           fontSize: '14px',
           width: '100%'
         }}
       >
-        {uploading ? '⏳ กำลังอัปโหลด...' : '🚀 อัปโหลดทันที (ไม่ต้องรอ deploy)'}
+        {uploading ? '⏳ กำลังอัปโหลด...' : isQuotaExceeded ? '🚫 โควต้าการอัปโหลดเต็มแล้ว (10/10)' : '🚀 อัปโหลดทันที (ไม่ต้องรอ deploy)'}
       </button>
 
       {message && (

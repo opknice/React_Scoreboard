@@ -17,6 +17,7 @@ import {
   useScoreboardStateResponder,
 } from '../hooks/useScoreboardChannels';
 import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
+import { useAutoObsSourceSync } from '../hooks/useAutoObsSourceSync';
 import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
 import { translations } from '../constants/translations';
 import {
@@ -485,6 +486,11 @@ export default function ScoreboardController() {
     notify: triggerToast,
   });
 
+  // --- 2-Step Setup Onboarding Gate Checks ---
+  const isStep1Complete = videoFolder.isConnected;
+  const isStep2Complete = excelData.length > 0 || firebaseTargets.length > 0;
+  const isSetupComplete = isStep1Complete && isStep2Complete;
+
   // --- Prevent spacebar default behavior (except inside inputs/textareas) ---
   useEffect(() => {
     const preventSpacebar = (e: KeyboardEvent) => {
@@ -527,6 +533,13 @@ export default function ScoreboardController() {
     scoreB,
     formattedTime: timerHook.formattedTime,
     half: timerHook.half,
+  });
+
+  useAutoObsSourceSync({
+    obs,
+    teamNameSettings,
+    logoSettings,
+    scoreSettings,
   });
 
   // Keep the persistent score Browser Source synchronized, including after
@@ -759,7 +772,7 @@ export default function ScoreboardController() {
     reader.onload = (event) => {
       const buffer = event.target?.result as ArrayBuffer;
       if (buffer && requestId === excelRequestRef.current) {
-        processExcelBuffer(buffer, file.name, requestId).catch(() => {});
+        processExcelBuffer(buffer, file.name, requestId).catch(() => { });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -1233,25 +1246,20 @@ export default function ScoreboardController() {
               onClick={() => void handleVideoFolderConnect()}
               disabled={videoFolder.isConnecting}
               title={
-                videoFolder.isConnected 
-                  ? `โฟลเดอร์: ${videoFolder.folderName}\nPath: ${videoFolder.savedPath || 'ไม่ได้ระบุ'}\n\nคลิกเพื่อเปลี่ยนโฟลเดอร์` 
+                videoFolder.isConnected
+                  ? `โฟลเดอร์: ${videoFolder.folderName}\nPath: ${videoFolder.savedPath || 'ไม่ได้ระบุ'}\n\nคลิกเพื่อเปลี่ยนโฟลเดอร์`
                   : 'คลิกเพื่อเลือกโฟลเดอร์วิดีโอ OBS Replay'
               }
             >
               <span className="video-folder-status-dot" />
               {videoFolder.isConnecting ? (
-                <span>Video: กำลังเชื่อมต่อ...</span>
+                <span>Connecting ....</span>
               ) : videoFolder.isConnected ? (
                 <span>
-                  Video: {videoFolder.folderName} ({videoFolder.videoFiles.length} ไฟล์)
-                  {videoFolder.savedPath && (
-                    <span style={{ opacity: 0.6, fontSize: '0.85em', marginLeft: '4px' }}>
-                      · {videoFolder.savedPath}
-                    </span>
-                  )}
+                  📂 {videoFolder.savedPath || videoFolder.folderName} ({videoFolder.videoFiles.length} files)
                 </span>
               ) : (
-                <span>Video: Click to connect</span>
+                <span>Status OFF</span>
               )}
             </button>
             {videoFolder.isConnected && (
@@ -1267,829 +1275,942 @@ export default function ScoreboardController() {
             )}
           </div>
           {currentUser && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-            {currentUser.photoURL && (
-              <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
-            )}
-            <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
-              {currentUser.email}
-            </span>
-            {authAccess?.accessType === 'trial' && authAccess.trialExpiresAt && (
-              <span
-                style={{
-                  fontSize: '0.68rem',
-                  color: '#7dd3fc',
-                  background: 'rgba(14, 165, 233, 0.14)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  borderRadius: '6px',
-                  padding: '3px 6px',
-                  whiteSpace: 'nowrap',
-                }}
-                title="ระยะเวลาทดลองใช้งานฟรี 7 วัน"
-              >
-                🎁 {formatTrialRemaining(authAccess.trialExpiresAt)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              {currentUser.photoURL && (
+                <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
+              )}
+              <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
+                {currentUser.email}
               </span>
-            )}
-            {isSuperAdmin(currentUser.email) && (
+              {authAccess?.accessType === 'trial' && authAccess.trialExpiresAt && (
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    color: '#7dd3fc',
+                    background: 'rgba(14, 165, 233, 0.14)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    borderRadius: '6px',
+                    padding: '3px 6px',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title="ระยะเวลาทดลองใช้งานฟรี 7 วัน"
+                >
+                  🎁 {formatTrialRemaining(authAccess.trialExpiresAt)}
+                </span>
+              )}
+              {isSuperAdmin(currentUser.email) && (
+                <button
+                  onClick={() => navigate('/admin/whitelist')}
+                  className="btn-primary"
+                  style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
+                  title="จัดการ Whitelist"
+                >
+                  🛡️ Whitelist
+                </button>
+              )}
               <button
-                onClick={() => navigate('/admin/whitelist')}
-                className="btn-primary"
+                onClick={() => logoutUser()}
+                className="btn-secondary"
                 style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
-                title="จัดการ Whitelist"
+                title="ออกจากระบบ"
               >
-                🛡️ Whitelist
+                <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
               </button>
-            )}
-            <button
-              onClick={() => logoutUser()}
-              className="btn-secondary"
-              style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
-              title="ออกจากระบบ"
-            >
-              <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
-            </button>
-          </div>
+            </div>
           )}
         </div>
       </div>
 
-
-
-      {/* Controls Bar */}
-      <div className="card" style={{ padding: '8px 12px' }}>
-        <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
-          <div className="row" style={{ marginBottom: 0, gap: '6px' }}>
-            <button
-              className="btn-success btn-sm"
-              onClick={() => fileInputRef.current?.click()}
-              title="นำเข้าตารางแข่งขันจากไฟล์ Excel (.xlsx, .xls)"
-              style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
-            >
-              <i className="fas fa-file-excel" style={{ fontSize: '0.9rem' }}></i>
-              <span>นำเข้าไฟล์ Excel</span>
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              style={{ display: 'none' }}
-              accept=".xlsx, .xls"
-              onChange={handleExcelUpload}
-            />
-            <button
-              className="btn-primary btn-sm"
-              onClick={() => setShowUrlModal(true)}
-              title="ดึงข้อมูลตารางแข่งขันจาก URL หรือ Google Sheets"
-              style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
-            >
-              <i className="fas fa-link" style={{ fontSize: '0.9rem' }}></i>
-              <span>นำเข้าจาก URL</span>
-            </button>
-            <button
-              className="btn-success btn-sm"
-              onClick={() => setShowTeamLogosManagerModal(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Firebase Database ครั้งเดียว"
-            >
-              <i className="fas fa-shield-halved" style={{ fontSize: '0.9rem' }}></i>
-              <span>🛡️ จัดการโลโก้ประจำลีก</span>
-            </button>
-          </div>
-
-          <div className="row" style={{ marginBottom: 0, gap: '4px' }}>
-            <label htmlFor="matchIDInput" style={{ fontWeight: 600, fontSize: '0.85rem' }}>{trans.matchId}</label>
-            <button
-              onClick={() => {
-                if (matchIdInput > 1) {
-                  setMatchIdInput((prev) => prev - 1);
-                  applyMatch(matchIdInput - 1);
-                }
-              }}
-              style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
-              title="แมตช์ก่อนหน้า"
-            >
-              &lt;
-            </button>
-            <input
-              type="number"
-              id="matchIDInput"
-              min="1"
-              value={matchIdInput}
-              onChange={(e) => setMatchIdInput(parseInt(e.target.value, 10) || 1)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const val = parseInt((e.target as HTMLInputElement).value, 10) || 1;
-                  applyMatch(val);
-                }
-              }}
-              style={{ width: '48px', padding: '3px 6px', fontSize: '0.85rem', textAlign: 'center' }}
-              title="พิมพ์หมายเลขแมตช์แล้วกด Enter เพื่อโหลด"
-            />
-            <button
-              onClick={() => {
-                setMatchIdInput((prev) => prev + 1);
-                applyMatch(matchIdInput + 1);
-              }}
-              style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
-              title="แมตช์ถัดไป"
-            >
-              &gt;
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Team score and editor panel */}
-      <div className="card" style={{ padding: '12px', overflowX: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap', minWidth: '540px' }}>
-          {/* Score Team A */}
-          <div className="score-buttons" style={{ flexShrink: 0 }}>
-            <button className="plus" onClick={() => addGoal('A', 'manual')}>+</button>
-            <button className="minus" onClick={() => setScoreA((prev) => Math.max(0, prev - 1))}>-</button>
-          </div>
-
-          <div className="score-display" style={{ flexShrink: 0 }}>{scoreA}</div>
-
-          {/* Team Row A */}
-          <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
-            <div className="color-picker-stack">
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="color"
-                  className="color-picker"
-                  value={colorA1}
-                  onChange={(e) => {
-                    setColorA1(e.target.value);
-                    obs.setSourceColor('Color_Team_A', e.target.value);
-                    saveTeamColors(nameA, { color1: e.target.value, color2: colorA2 });
-                  }}
-                />
-                <input
-                  type="color"
-                  className="color-picker"
-                  value={colorA2}
-                  onChange={(e) => {
-                    setColorA2(e.target.value);
-                    obs.setSourceColor('Color_Team_A_2', e.target.value);
-                    saveTeamColors(nameA, { color1: colorA1, color2: e.target.value });
-                  }}
-                />
-              </div>
-              {/* Quick colors */}
-              <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                {['#98F527', '#FFEF00', '#F52727'].map((c) => (
-                  <div
-                    key={c}
-                    className="quick-color-box"
-                    style={{ background: c }}
-                    onClick={() => {
-                      setColorA1(c);
-                      obs.setSourceColor('Color_Team_A', c);
-                      saveTeamColors(nameA, { color1: c, color2: colorA2 });
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
-              {logoA || nameA ? (
-                <img
-                  key={`${logoA}-${nameA}-${teamsCacheVersion}`}
-                  src={getLogoSrc(logoA, nameA)}
-                  alt=""
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              ) : null}
-              <div className="logo-initials">{getTeamInitials(nameA)}</div>
-            </div>
-
-            <div className="name-control-area">
-              {isEditingA ? (
-                <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
-                  <input
-                    type="text"
-                    value={editNameAVal}
-                    onChange={(e) => setEditNameAVal(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                  <button
-                    className="btn-success"
-                    onClick={() => {
-                      setNameA(editNameAVal);
-                      setIsEditingA(false);
-                      obs.setText('name_team_a', editNameAVal.replace(/\//g, '\n'));
-                    }}
-                  >
-                    OK
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="name">{renderTeamName(nameA)}</div>
-                  <div style={{ display: 'flex', gap: '6px', width: '100%', justifyContent: 'center' }}>
-                    <button
-                      className="btn-secondary"
-                      style={{ flex: 1, maxWidth: '90px' }}
-                      onClick={() => {
-                        setEditNameAVal(nameA);
-                        setIsEditingA(true);
-                      }}
-                    >
-                      <i className="fas fa-pencil-alt"></i>
-                    </button>
-                    {teamSheetData.length > 0 && (
-                      <button
-                        className="btn-primary"
-                        style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
-                        title="เลือกทีมจากรายชื่อ"
-                        onClick={() => {
-                          setTeamSelectTarget('A');
-                          setTeamSelectSearch('');
-                          setShowTeamSelectModal(true);
-                        }}
-                      >
-                        <i className="fas fa-users"></i>
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Center Swapper */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <button
-              className="btn-warning"
-              onClick={swapTeams}
-              style={{ height: '42px', width: '42px', borderRadius: '50%', fontSize: '1.1rem' }}
-            >
-              <i className="fas fa-exchange-alt"></i>
-            </button>
-            <button className="btn-secondary" onClick={resetScore} style={{ borderRadius: '20px', fontSize: '0.75rem' }}>
-              <i className="fas fa-sync-alt"></i>
-              <span>{trans.reset}</span>
-            </button>
-          </div>
-
-          {/* Team Row B */}
-          <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
-            <div className="color-picker-stack">
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="color"
-                  className="color-picker"
-                  value={colorB1}
-                  onChange={(e) => {
-                    setColorB1(e.target.value);
-                    obs.setSourceColor('Color_Team_B', e.target.value);
-                    saveTeamColors(nameB, { color1: e.target.value, color2: colorB2 });
-                  }}
-                />
-                <input
-                  type="color"
-                  className="color-picker"
-                  value={colorB2}
-                  onChange={(e) => {
-                    setColorB2(e.target.value);
-                    obs.setSourceColor('Color_Team_B_2', e.target.value);
-                    saveTeamColors(nameB, { color1: colorB1, color2: e.target.value });
-                  }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                {['#98F527', '#FFEF00', '#F52727'].map((c) => (
-                  <div
-                    key={c}
-                    className="quick-color-box"
-                    style={{ background: c }}
-                    onClick={() => {
-                      setColorB1(c);
-                      obs.setSourceColor('Color_Team_B', c);
-                      saveTeamColors(nameB, { color1: c, color2: colorB2 });
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
-              {logoB || nameB ? (
-                <img
-                  key={`${logoB}-${nameB}-${teamsCacheVersion}`}
-                  src={getLogoSrc(logoB, nameB)}
-                  alt=""
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              ) : null}
-              <div className="logo-initials">{getTeamInitials(nameB)}</div>
-            </div>
-
-            <div className="name-control-area">
-              {isEditingB ? (
-                <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
-                  <input
-                    type="text"
-                    value={editNameBVal}
-                    onChange={(e) => setEditNameBVal(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                  <button
-                    className="btn-success"
-                    onClick={() => {
-                      setNameB(editNameBVal);
-                      setIsEditingB(false);
-                      obs.setText('name_team_b', editNameBVal.replace(/\//g, '\n'));
-                    }}
-                  >
-                    OK
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="name">{renderTeamName(nameB)}</div>
-                  <div style={{ display: 'flex', gap: '6px', width: '100%', justifyContent: 'center' }}>
-                    <button
-                      className="btn-secondary"
-                      style={{ flex: 1, maxWidth: '90px' }}
-                      onClick={() => {
-                        setEditNameBVal(nameB);
-                        setIsEditingB(true);
-                      }}
-                    >
-                      <i className="fas fa-pencil-alt"></i>
-                    </button>
-                    {teamSheetData.length > 0 && (
-                      <button
-                        className="btn-primary"
-                        style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
-                        title="เลือกทีมจากรายชื่อ"
-                        onClick={() => {
-                          setTeamSelectTarget('B');
-                          setTeamSelectSearch('');
-                          setShowTeamSelectModal(true);
-                        }}
-                      >
-                        <i className="fas fa-users"></i>
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="score-display" style={{ flexShrink: 0 }}>{scoreB}</div>
-
-          <div className="score-buttons" style={{ flexShrink: 0 }}>
-            <button className="plus" onClick={() => addGoal('B', 'manual')}>+</button>
-            <button className="minus" onClick={() => setScoreB((prev) => Math.max(0, prev - 1))}>-</button>
-          </div>
-        </div>
-      </div>
-      <ScoreboardTimerPanel
-        timer={timerHook}
-        onOpenPresetTime={() => setShowPresetTimeModal(true)}
-        onHideTime={handleHideTimer}
-        onPenaltyShootout={() => void handleOpenPenaltyShootout()}
-        onOpenVarReplay={() => {
-          broadcastScoreboardButton('var_replay');
-          setShowVarReplayV2Modal(true);
-        }}
-        onOpenInstantReplay={() => {
-          broadcastScoreboardButton('instant_replay');
-          setShowInstantReplayModal(true);
-        }}
+      {/* Hidden File Input for Excel Import */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        accept=".xlsx, .xls"
+        onChange={handleExcelUpload}
       />
 
-      {/* Match save triggers dynamically */}
-      {firebaseTargets.length > 0 && (
-        <div className="card">
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', textAlign: 'center' }}>บันทึกข้อมูลคะแนนแมตช์การแข่งขันไปยัง Firebase:</h3>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-            {firebaseTargets.map((target) => (
-              <button key={target.id} className="btn-primary" onClick={() => handleSaveMatchToFirebase(target)}>
-                <i className="fas fa-save"></i> บันทึกข้อมูลแมตช์ {target.name}
+      {/* 2-Step Setup Onboarding Wizard Gate */}
+      {!isSetupComplete ? (
+        <div className="card" style={{ padding: '24px', backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '12px', marginTop: '16px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <i className="fas fa-rocket"></i> เริ่มต้นตั้งค่าใช้งาน Scoreboard Controller
+            </h2>
+            <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>
+              กรุณาทำตามขั้นตอน <strong>2 ข้อแรก</strong> ด้านล่างให้ครบเพื่อปลดล็อกแผงควบคุมหลัก
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+            {/* Step 1 Card */}
+            <div style={{
+              padding: '16px',
+              borderRadius: '10px',
+              backgroundColor: isStep1Complete ? 'rgba(6, 78, 59, 0.4)' : '#1e293b',
+              border: isStep1Complete ? '1px solid #10b981' : '1px solid #334155',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '1rem', color: '#f8fafc' }}>
+                    1️⃣ Connect Video Folder
+                  </span>
+                  <span style={{
+                    fontSize: '0.75rem',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: isStep1Complete ? '#065f46' : '#991b1b',
+                    color: isStep1Complete ? '#6ee7b7' : '#fca5a5',
+                    fontWeight: 600
+                  }}>
+                    {isStep1Complete ? '🟢 เชื่อมต่อแล้ว' : '🔴 ยังไม่เชื่อมต่อ'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: 0, lineHeight: 1.4 }}>
+                  เลือกโฟลเดอร์คลิปวิดีโอ OBS Replay เพื่อรองรับระบบ Instant Replay และ VAR
+                </p>
+              </div>
+              <button
+                type="button"
+                className={isStep1Complete ? 'btn-secondary' : 'btn-primary'}
+                onClick={() => void handleVideoFolderConnect()}
+                disabled={videoFolder.isConnecting}
+                style={{ width: '100%', padding: '8px 12px', fontSize: '0.85rem', fontWeight: 600 }}
+              >
+                {videoFolder.isConnecting ? '⏳ กำลังเชื่อมต่อ...' : isStep1Complete ? '🔄 เปลี่ยนโฟลเดอร์' : '📂 เลือกโฟลเดอร์วิดีโอ'}
               </button>
-            ))}
+            </div>
+
+            {/* Step 2 Card */}
+            <div style={{
+              padding: '16px',
+              borderRadius: '10px',
+              backgroundColor: isStep2Complete ? 'rgba(6, 78, 59, 0.4)' : '#1e293b',
+              border: isStep2Complete ? '1px solid #10b981' : '1px solid #334155',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '1rem', color: '#f8fafc' }}>
+                    2️⃣ นำเข้าตารางแข่งขัน
+                  </span>
+                  <span style={{
+                    fontSize: '0.75rem',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: isStep2Complete ? '#065f46' : '#991b1b',
+                    color: isStep2Complete ? '#6ee7b7' : '#fca5a5',
+                    fontWeight: 600
+                  }}>
+                    {isStep2Complete ? '🟢 นำเข้าแล้ว' : '🔴 ยังไม่นำเข้า'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: 0, lineHeight: 1.4 }}>
+                  นำเข้าไฟล์ตารางแข่งขัน Excel (.xlsx) หรือดึงจาก URL / Google Sheets
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn-success"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                >
+                  <i className="fas fa-file-excel"></i> ไฟล์ Excel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setShowUrlModal(true)}
+                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                >
+                  <i className="fas fa-link"></i> จาก URL
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'center', fontSize: '0.8rem', color: '#64748b' }}>
+            💡 ทำครบทั้ง 2 ขั้นตอนด้านบนแล้ว ระบบจะเปิดแผงควบคุม Scoreboard ทั้งหมดให้อัตโนมัติ
           </div>
         </div>
-      )}
+      ) : (
+        <>
+          {/* Controls Bar */}
+          <div className="card" style={{ padding: '8px 12px' }}>
+            <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
+              <div className="row" style={{ marginBottom: 0, gap: '6px' }}>
+                <button
+                  className="btn-success btn-sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="นำเข้าตารางแข่งขันจากไฟล์ Excel (.xlsx, .xls)"
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <i className="fas fa-file-excel" style={{ fontSize: '0.9rem' }}></i>
+                  <span>นำเข้าไฟล์ Excel</span>
+                </button>
+                <button
+                  className="btn-primary btn-sm"
+                  onClick={() => setShowUrlModal(true)}
+                  title="ดึงข้อมูลตารางแข่งขันจาก URL หรือ Google Sheets"
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <i className="fas fa-link" style={{ fontSize: '0.9rem' }}></i>
+                  <span>นำเข้าจาก URL</span>
+                </button>
+                <button
+                  className="btn-success btn-sm"
+                  onClick={() => setShowTeamLogosManagerModal(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Firebase Database ครั้งเดียว"
+                >
+                  <i className="fas fa-shield-halved" style={{ fontSize: '0.9rem' }}></i>
+                  <span>🛡️ จัดการโลโก้ประจำลีก</span>
+                </button>
+              </div>
 
-      {/* Footer Settings & Buttons */}
-      <div className="card">
-        <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
-          <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
-            <i className="fas fa-sliders"></i>
-            <span>Quick Setup</span>
-          </button>
-          <button className="btn-primary" title="Auto Macros" onClick={() => setShowAutoMacrosModal(true)}>
-            <i className="fas fa-magic"></i>
-            <span>Auto Macros</span>
-          </button>
-          <button className="btn-primary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
-            <i className="fas fa-cog"></i>
-            <span>{trans.settings}</span>
-          </button>
-          <button className="btn-danger" title="คัดลอกข้อความ" onClick={copyDetailsToClipboard}>
-            <i className="fas fa-copy"></i>
-            <span>คัดลอกข้อความ</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Labels display bar */}
-      {excelData.length > 0 && (
-        <div className="card" style={{ padding: '8px 12px' }}>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-              <strong>Label 1:</strong> {label1 || '-'}
-            </div>
-            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-              <strong>Label 2:</strong> {label2 || '-'}
-            </div>
-            <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-              <strong>Label 3:</strong> {label3 || '-'}
+              <div className="row" style={{ marginBottom: 0, gap: '4px' }}>
+                <label htmlFor="matchIDInput" style={{ fontWeight: 600, fontSize: '0.85rem' }}>{trans.matchId}</label>
+                <button
+                  onClick={() => {
+                    if (matchIdInput > 1) {
+                      setMatchIdInput((prev) => prev - 1);
+                      applyMatch(matchIdInput - 1);
+                    }
+                  }}
+                  style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
+                  title="แมตช์ก่อนหน้า"
+                >
+                  &lt;
+                </button>
+                <input
+                  type="number"
+                  id="matchIDInput"
+                  min="1"
+                  value={matchIdInput}
+                  onChange={(e) => setMatchIdInput(parseInt(e.target.value, 10) || 1)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const val = parseInt((e.target as HTMLInputElement).value, 10) || 1;
+                      applyMatch(val);
+                    }
+                  }}
+                  style={{ width: '48px', padding: '3px 6px', fontSize: '0.85rem', textAlign: 'center' }}
+                  title="พิมพ์หมายเลขแมตช์แล้วกด Enter เพื่อโหลด"
+                />
+                <button
+                  onClick={() => {
+                    setMatchIdInput((prev) => prev + 1);
+                    applyMatch(matchIdInput + 1);
+                  }}
+                  style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
+                  title="แมตช์ถัดไป"
+                >
+                  &gt;
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+
+          {/* Team score and editor panel */}
+          <div className="card" style={{ padding: '12px', overflowX: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'nowrap', minWidth: '540px' }}>
+              {/* Score Team A */}
+              <div className="score-buttons" style={{ flexShrink: 0 }}>
+                <button className="plus" onClick={() => addGoal('A', 'manual')}>+</button>
+                <button className="minus" onClick={() => setScoreA((prev) => Math.max(0, prev - 1))}>-</button>
+              </div>
+
+              <div className="score-display" style={{ flexShrink: 0 }}>{scoreA}</div>
+
+              {/* Team Row A */}
+              <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
+                <div className="color-picker-stack">
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      className="color-picker"
+                      value={colorA1}
+                      onChange={(e) => {
+                        setColorA1(e.target.value);
+                        obs.setSourceColor('Color_Team_A', e.target.value);
+                        saveTeamColors(nameA, { color1: e.target.value, color2: colorA2 });
+                      }}
+                    />
+                    <input
+                      type="color"
+                      className="color-picker"
+                      value={colorA2}
+                      onChange={(e) => {
+                        setColorA2(e.target.value);
+                        obs.setSourceColor('Color_Team_A_2', e.target.value);
+                        saveTeamColors(nameA, { color1: colorA1, color2: e.target.value });
+                      }}
+                    />
+                  </div>
+                  {/* Quick colors */}
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                    {['#98F527', '#FFEF00', '#F52727'].map((c) => (
+                      <div
+                        key={c}
+                        className="quick-color-box"
+                        style={{ background: c }}
+                        onClick={() => {
+                          setColorA1(c);
+                          obs.setSourceColor('Color_Team_A', c);
+                          saveTeamColors(nameA, { color1: c, color2: colorA2 });
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
+                  {logoA || nameA ? (
+                    <img
+                      key={`${logoA}-${nameA}-${teamsCacheVersion}`}
+                      src={getLogoSrc(logoA, nameA)}
+                      alt=""
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : null}
+                  <div className="logo-initials">{getTeamInitials(nameA)}</div>
+                </div>
+
+                <div className="name-control-area">
+                  {isEditingA ? (
+                    <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                      <input
+                        type="text"
+                        value={editNameAVal}
+                        onChange={(e) => setEditNameAVal(e.target.value)}
+                        style={{ width: '100%' }}
+                      />
+                      <button
+                        className="btn-success"
+                        onClick={() => {
+                          setNameA(editNameAVal);
+                          setIsEditingA(false);
+                          obs.setText('name_team_a', editNameAVal.replace(/\//g, '\n'));
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="name">{renderTeamName(nameA)}</div>
+                      <div style={{ display: 'flex', gap: '6px', width: '100%', justifyContent: 'center' }}>
+                        <button
+                          className="btn-secondary"
+                          style={{ flex: 1, maxWidth: '90px' }}
+                          onClick={() => {
+                            setEditNameAVal(nameA);
+                            setIsEditingA(true);
+                          }}
+                        >
+                          <i className="fas fa-pencil-alt"></i>
+                        </button>
+                        {teamSheetData.length > 0 && (
+                          <button
+                            className="btn-primary"
+                            style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
+                            title="เลือกทีมจากรายชื่อ"
+                            onClick={() => {
+                              setTeamSelectTarget('A');
+                              setTeamSelectSearch('');
+                              setShowTeamSelectModal(true);
+                            }}
+                          >
+                            <i className="fas fa-users"></i>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Center Swapper */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <button
+                  className="btn-warning"
+                  onClick={swapTeams}
+                  style={{ height: '42px', width: '42px', borderRadius: '50%', fontSize: '1.1rem' }}
+                >
+                  <i className="fas fa-exchange-alt"></i>
+                </button>
+                <button className="btn-secondary" onClick={resetScore} style={{ borderRadius: '20px', fontSize: '0.75rem' }}>
+                  <i className="fas fa-sync-alt"></i>
+                  <span>{trans.reset}</span>
+                </button>
+              </div>
+
+              {/* Team Row B */}
+              <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
+                <div className="color-picker-stack">
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      className="color-picker"
+                      value={colorB1}
+                      onChange={(e) => {
+                        setColorB1(e.target.value);
+                        obs.setSourceColor('Color_Team_B', e.target.value);
+                        saveTeamColors(nameB, { color1: e.target.value, color2: colorB2 });
+                      }}
+                    />
+                    <input
+                      type="color"
+                      className="color-picker"
+                      value={colorB2}
+                      onChange={(e) => {
+                        setColorB2(e.target.value);
+                        obs.setSourceColor('Color_Team_B_2', e.target.value);
+                        saveTeamColors(nameB, { color1: colorB1, color2: e.target.value });
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                    {['#98F527', '#FFEF00', '#F52727'].map((c) => (
+                      <div
+                        key={c}
+                        className="quick-color-box"
+                        style={{ background: c }}
+                        onClick={() => {
+                          setColorB1(c);
+                          obs.setSourceColor('Color_Team_B', c);
+                          saveTeamColors(nameB, { color1: c, color2: colorB2 });
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
+                  {logoB || nameB ? (
+                    <img
+                      key={`${logoB}-${nameB}-${teamsCacheVersion}`}
+                      src={getLogoSrc(logoB, nameB)}
+                      alt=""
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : null}
+                  <div className="logo-initials">{getTeamInitials(nameB)}</div>
+                </div>
+
+                <div className="name-control-area">
+                  {isEditingB ? (
+                    <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                      <input
+                        type="text"
+                        value={editNameBVal}
+                        onChange={(e) => setEditNameBVal(e.target.value)}
+                        style={{ width: '100%' }}
+                      />
+                      <button
+                        className="btn-success"
+                        onClick={() => {
+                          setNameB(editNameBVal);
+                          setIsEditingB(false);
+                          obs.setText('name_team_b', editNameBVal.replace(/\//g, '\n'));
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="name">{renderTeamName(nameB)}</div>
+                      <div style={{ display: 'flex', gap: '6px', width: '100%', justifyContent: 'center' }}>
+                        <button
+                          className="btn-secondary"
+                          style={{ flex: 1, maxWidth: '90px' }}
+                          onClick={() => {
+                            setEditNameBVal(nameB);
+                            setIsEditingB(true);
+                          }}
+                        >
+                          <i className="fas fa-pencil-alt"></i>
+                        </button>
+                        {teamSheetData.length > 0 && (
+                          <button
+                            className="btn-primary"
+                            style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
+                            title="เลือกทีมจากรายชื่อ"
+                            onClick={() => {
+                              setTeamSelectTarget('B');
+                              setTeamSelectSearch('');
+                              setShowTeamSelectModal(true);
+                            }}
+                          >
+                            <i className="fas fa-users"></i>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="score-display" style={{ flexShrink: 0 }}>{scoreB}</div>
+
+              <div className="score-buttons" style={{ flexShrink: 0 }}>
+                <button className="plus" onClick={() => addGoal('B', 'manual')}>+</button>
+                <button className="minus" onClick={() => setScoreB((prev) => Math.max(0, prev - 1))}>-</button>
+              </div>
+            </div>
+          </div>
+          <ScoreboardTimerPanel
+            timer={timerHook}
+            onOpenPresetTime={() => setShowPresetTimeModal(true)}
+            onHideTime={handleHideTimer}
+            onPenaltyShootout={() => void handleOpenPenaltyShootout()}
+            onOpenVarReplay={() => {
+              broadcastScoreboardButton('var_replay');
+              setShowVarReplayV2Modal(true);
+            }}
+            onOpenInstantReplay={() => {
+              broadcastScoreboardButton('instant_replay');
+              setShowInstantReplayModal(true);
+            }}
+          />
+
+          {/* Match save triggers dynamically */}
+          {firebaseTargets.length > 0 && (
+            <div className="card">
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', textAlign: 'center' }}>บันทึกข้อมูลคะแนนแมตช์การแข่งขันไปยัง Firebase:</h3>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                {firebaseTargets.map((target) => (
+                  <button key={target.id} className="btn-primary" onClick={() => handleSaveMatchToFirebase(target)}>
+                    <i className="fas fa-save"></i> บันทึกข้อมูลแมตช์ {target.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Footer Settings & Buttons */}
+          <div className="card">
+            <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
+              <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
+                <i className="fas fa-sliders"></i>
+                <span>Quick Setup</span>
+              </button>
+              <button className="btn-primary" title="Auto Macros" onClick={() => setShowAutoMacrosModal(true)}>
+                <i className="fas fa-magic"></i>
+                <span>Auto Macros</span>
+              </button>
+              <button className="btn-primary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
+                <i className="fas fa-cog"></i>
+                <span>{trans.settings}</span>
+              </button>
+              <button className="btn-danger" title="คัดลอกข้อความ" onClick={copyDetailsToClipboard}>
+                <i className="fas fa-copy"></i>
+                <span>คัดลอกข้อความ</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Labels display bar */}
+          {excelData.length > 0 && (
+            <div className="card" style={{ padding: '8px 12px' }}>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+                  <strong>Label 1:</strong> {label1 || '-'}
+                </div>
+                <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+                  <strong>Label 2:</strong> {label2 || '-'}
+                </div>
+                <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+                  <strong>Label 3:</strong> {label3 || '-'}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <Suspense fallback={null}>
-      {showSettingsModal && <ScoreboardSettingsModal
-        isOpen={showSettingsModal}
-        trans={trans}
-        detailsTemplate={detailsTemplate}
-        nameA={nameA}
-        nameB={nameB}
-        scoreA={scoreA}
-        scoreB={scoreB}
-        formattedTime={timerHook.formattedTime}
-        half={timerHook.half}
-        label1={label1}
-        label2={label2}
-        label3={label3}
-        onTemplateChange={setDetailsTemplate}
-        onSave={() => {
-          localStorage.setItem('detailsText', detailsTemplate);
-          setShowSettingsModal(false);
-          triggerToast(trans.toastSaved, 'success');
-        }}
-        onClose={() => setShowSettingsModal(false)}
-      />}
-      {/* --- Logo Upload & Path Settings Modal --- */}
-      {showLogoPathModal && (
-        <div className="modal-overlay" onClick={() => setShowLogoPathModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>
-              <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
-            </h3>
-            <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>
-              {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Cloudinary / Firebase หรือใส่ URL โลโก้ของทีม مباشرة'}
-            </p>
+        {showSettingsModal && <ScoreboardSettingsModal
+          isOpen={showSettingsModal}
+          trans={trans}
+          detailsTemplate={detailsTemplate}
+          nameA={nameA}
+          nameB={nameB}
+          scoreA={scoreA}
+          scoreB={scoreB}
+          formattedTime={timerHook.formattedTime}
+          half={timerHook.half}
+          label1={label1}
+          label2={label2}
+          label3={label3}
+          onTemplateChange={setDetailsTemplate}
+          onSave={() => {
+            localStorage.setItem('detailsText', detailsTemplate);
+            setShowSettingsModal(false);
+            triggerToast(trans.toastSaved, 'success');
+          }}
+          onClose={() => setShowSettingsModal(false)}
+        />}
 
-            {/* Direct URL Inputs for Team A and Team B */}
-            <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div>
-                <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
-                  🖼️ URL โลโก้ Team A ({nameA}):
-                </label>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <input
-                    type="text"
-                    style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
-                    placeholder="https://res.cloudinary.com/..."
-                    value={logoA}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setLogoA(val);
-                      if (val.startsWith('http')) saveTeamLogo(nameA, val);
-                    }}
-                  />
-                  <button
-                    className="btn-secondary"
-                    onClick={async () => {
-                      try {
-                        const text = await navigator.clipboard.readText();
-                        if (text) {
-                          setLogoA(text);
-                          saveTeamLogo(nameA, text);
-                          triggerToast('วาง URL ให้ Team A เรียบร้อย', 'success');
+        {/* --- Logo Upload & Path Settings Modal --- */}
+        {showLogoPathModal && (
+          <div className="modal-overlay" onClick={() => setShowLogoPathModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+              <h3>
+                <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
+              </h3>
+              <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>
+                {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Cloudinary / Firebase หรือใส่ URL โลโก้ของทีม مباشرة'}
+              </p>
+
+              {/* Direct URL Inputs for Team A and Team B */}
+              <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                    🖼️ URL โลโก้ Team A ({nameA}):
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                      placeholder="https://res.cloudinary.com/..."
+                      value={logoA}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setLogoA(val);
+                        if (val.startsWith('http')) saveTeamLogo(nameA, val);
+                      }}
+                    />
+                    <button
+                      className="btn-secondary"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text) {
+                            setLogoA(text);
+                            saveTeamLogo(nameA, text);
+                            triggerToast('วาง URL ให้ Team A เรียบร้อย', 'success');
+                          }
+                        } catch {
+                          triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
                         }
-                          } catch {
-                        triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
-                      }
-                    }}
-                  >
-                    📋 วาง URL
-                  </button>
+                      }}
+                    >
+                      📋 วาง URL
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                    🖼️ URL โลโก้ Team B ({nameB}):
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                      placeholder="https://res.cloudinary.com/..."
+                      value={logoB}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setLogoB(val);
+                        if (val.startsWith('http')) saveTeamLogo(nameB, val);
+                      }}
+                    />
+                    <button
+                      className="btn-secondary"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text) {
+                            setLogoB(text);
+                            saveTeamLogo(nameB, text);
+                            triggerToast('วาง URL ให้ Team B เรียบร้อย', 'success');
+                          }
+                        } catch {
+                          triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
+                        }
+                      }}
+                    >
+                      📋 วาง URL
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div>
+              <div style={{ marginBottom: '16px' }}>
                 <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
-                  🖼️ URL โลโก้ Team B ({nameB}):
+                  📁 โฟลเดอร์รูปในเครื่อง (เฉพาะ Dev mode):
                 </label>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <input
-                    type="text"
-                    style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
-                    placeholder="https://res.cloudinary.com/..."
-                    value={logoB}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setLogoB(val);
-                      if (val.startsWith('http')) saveTeamLogo(nameB, val);
-                    }}
-                  />
-                  <button
-                    className="btn-secondary"
-                    onClick={async () => {
-                      try {
-                        const text = await navigator.clipboard.readText();
-                        if (text) {
-                          setLogoB(text);
-                          saveTeamLogo(nameB, text);
-                          triggerToast('วาง URL ให้ Team B เรียบร้อย', 'success');
-                        }
-                      } catch {
-                        triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
-                      }
-                    }}
-                  >
-                    📋 วาง URL
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
-                📁 โฟลเดอร์รูปในเครื่อง (เฉพาะ Dev mode):
-              </label>
-              <input
-                type="text"
-                style={{ width: '100%', padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
-                value={logoFolderPath}
-                onChange={(e) => setLogoFolderPath(e.target.value)}
-              />
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
-                🎬 Path โฟลเดอร์วิดีโอ (สำหรับอ้างอิง):
-              </label>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <input
                   type="text"
-                  style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
-                  placeholder="เช่น D:\OBS_football\replays หรือ C:\Users\YourName\Videos"
-                  value={videoFolder.savedPath}
-                  onChange={(e) => videoFolder.setSavedPath(e.target.value)}
+                  style={{ width: '100%', padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                  value={logoFolderPath}
+                  onChange={(e) => setLogoFolderPath(e.target.value)}
                 />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ fontSize: '12px', color: '#aaa', display: 'block', marginBottom: '4px' }}>
+                  🎬 Path โฟลเดอร์วิดีโอ (สำหรับอ้างอิง):
+                </label>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
+                    placeholder="เช่น D:\OBS_football\replays หรือ C:\Users\YourName\Videos"
+                    value={videoFolder.savedPath}
+                    onChange={(e) => videoFolder.setSavedPath(e.target.value)}
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={() => void handleVideoFolderReset()}
+                    title="ล้าง path และเลือกโฟลเดอร์ใหม่"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                <p style={{ fontSize: '11px', color: '#888', marginTop: '4px', marginBottom: 0 }}>
+                  💡 <strong>สำคัญ:</strong> Path นี้เป็นเพียงข้อมูลอ้างอิง ไม่ใช่ path จริง!<br />
+                  <span style={{ color: '#6ee7b7' }}>ระบบจะจำโฟลเดอร์ที่คุณ "คลิกเลือก" ผ่านปุ่ม Video อัตโนมัติ</span><br />
+                  <span style={{ color: '#fbbf24' }}>⚡ สำหรับผู้ใช้หลายคน: แต่ละคนเลือก path ของตัวเองได้ไม่ต้องตั้งค่าล่วงหน้า</span>
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '16px' }}>
                 <button
-                  className="btn-secondary"
-                  onClick={() => void handleVideoFolderReset()}
-                  title="ล้าง path และเลือกโฟลเดอร์ใหม่"
+                  className="btn-primary"
+                  onClick={() => {
+                    localStorage.setItem('logoFolderPath', logoFolderPath);
+                    videoFolder.savePathToStorage();
+                    setShowLogoPathModal(false);
+                    triggerToast(trans.toastSaved, 'success');
+                  }}
                 >
-                  🗑️
+                  {trans.save}
+                </button>
+                <button className="btn-secondary" onClick={() => setShowLogoPathModal(false)}>
+                  {trans.close}
                 </button>
               </div>
-              <p style={{ fontSize: '11px', color: '#888', marginTop: '4px', marginBottom: 0 }}>
-                💡 <strong>สำคัญ:</strong> Path นี้เป็นเพียงข้อมูลอ้างอิง ไม่ใช่ path จริง!<br />
-                <span style={{ color: '#6ee7b7' }}>ระบบจะจำโฟลเดอร์ที่คุณ "คลิกเลือก" ผ่านปุ่ม Video อัตโนมัติ</span><br />
-                <span style={{ color: '#fbbf24' }}>⚡ สำหรับผู้ใช้หลายคน: แต่ละคนเลือก path ของตัวเองได้ไม่ต้องตั้งค่าล่วงหน้า</span>
-              </p>
-            </div>
 
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '16px' }}>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  localStorage.setItem('logoFolderPath', logoFolderPath);
-                  videoFolder.savePathToStorage();
-                  setShowLogoPathModal(false);
-                  triggerToast(trans.toastSaved, 'success');
+              {/* Logo Uploader Component */}
+              <LogoUploader
+                onUploadSuccess={(fileName, url, targetTeam) => {
+                  triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ!`, 'success');
+                  if (targetTeam === 'B') {
+                    setLogoB(url);
+                    saveTeamLogo(nameB, url);
+                    obs.setImage('logo_team_b', url, logoFolderPath);
+                    triggerToast(`ตั้งค่าโลโก้ Team B (${nameB}) เป็นรูปภาพ Cloud แล้ว`, 'info');
+                  } else {
+                    setLogoA(url);
+                    saveTeamLogo(nameA, url);
+                    obs.setImage('logo_team_a', url, logoFolderPath);
+                    triggerToast(`ตั้งค่าโลโก้ Team A (${nameA}) เป็นรูปภาพ Cloud แล้ว`, 'info');
+                  }
                 }}
-              >
-                {trans.save}
-              </button>
-              <button className="btn-secondary" onClick={() => setShowLogoPathModal(false)}>
-                {trans.close}
-              </button>
+              />
             </div>
-
-            {/* Logo Uploader Component */}
-            <LogoUploader
-              onUploadSuccess={(fileName, url, targetTeam) => {
-                triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ!`, 'success');
-                if (targetTeam === 'B') {
-                  setLogoB(url);
-                  saveTeamLogo(nameB, url);
-                  obs.setImage('logo_team_b', url, logoFolderPath);
-                  triggerToast(`ตั้งค่าโลโก้ Team B (${nameB}) เป็นรูปภาพ Cloud แล้ว`, 'info');
-                } else {
-                  setLogoA(url);
-                  saveTeamLogo(nameA, url);
-                  obs.setImage('logo_team_a', url, logoFolderPath);
-                  triggerToast(`ตั้งค่าโลโก้ Team A (${nameA}) เป็นรูปภาพ Cloud แล้ว`, 'info');
-                }
-              }}
-            />
           </div>
-        </div>
-      )}
+        )}
 
-      {/* --- Batch Team Logos Manager Modal --- */}
-      {showTeamLogosManagerModal && <TeamLogosManagerModal
-        isOpen={showTeamLogosManagerModal}
-        onClose={() => setShowTeamLogosManagerModal(false)}
-        teamList={allUniqueTeams}
-        db={activeDb}
-        leagueName={leagueName}
-        logoFolderPath={logoFolderPath}
-        onLogoFolderPathChange={setLogoFolderPath}
-        onToast={triggerToast}
-      />}
+        {/* --- Batch Team Logos Manager Modal --- */}
+        {showTeamLogosManagerModal && <TeamLogosManagerModal
+          isOpen={showTeamLogosManagerModal}
+          onClose={() => setShowTeamLogosManagerModal(false)}
+          teamList={allUniqueTeams}
+          db={activeDb}
+          leagueName={leagueName}
+          logoFolderPath={logoFolderPath}
+          onLogoFolderPathChange={setLogoFolderPath}
+          onToast={triggerToast}
+        />}
 
-      {showPresetTimeModal && <PresetTimeModal
-        isOpen={showPresetTimeModal}
-        minutes={customTimeMinutes}
-        seconds={customTimeSeconds}
-        title={trans.timeSettingsTitle || 'ปรับแต่งเวลาเริ่มต้นครึ่งหลัง'}
-        closeLabel={trans.close}
-        onMinutesChange={setCustomTimeMinutes}
-        onSecondsChange={setCustomTimeSeconds}
-        onSetPreset={(minutes) => {
-          timerHook.setCountdownStartTime(minutes * 60);
-          setShowPresetTimeModal(false);
-          triggerToast(`ตั้งเวลาครึ่งหลังเป็น ${minutes} นาทีแล้ว`, 'success');
-        }}
-        onSetCountdown={(totalSeconds, applyNow) => {
-          timerHook.setCountdownStartTime(totalSeconds);
-          if (applyNow) timerHook.setTimerValue(totalSeconds);
-          setShowPresetTimeModal(false);
-          triggerToast(
-            applyNow
-              ? `ตั้งและใช้งานเวลา ${customTimeMinutes} นาที ${customTimeSeconds} วินาทีทันที`
-              : `ตั้งเวลาเป็น ${customTimeMinutes} นาที ${customTimeSeconds} วินาทีแล้ว`,
-            'success',
-          );
-        }}
-        onClose={() => setShowPresetTimeModal(false)}
-      />}
+        {showPresetTimeModal && <PresetTimeModal
+          isOpen={showPresetTimeModal}
+          minutes={customTimeMinutes}
+          seconds={customTimeSeconds}
+          title={trans.timeSettingsTitle || 'ปรับแต่งเวลาเริ่มต้นครึ่งหลัง'}
+          closeLabel={trans.close}
+          onMinutesChange={setCustomTimeMinutes}
+          onSecondsChange={setCustomTimeSeconds}
+          onSetPreset={(minutes) => {
+            timerHook.setCountdownStartTime(minutes * 60);
+            setShowPresetTimeModal(false);
+            triggerToast(`ตั้งเวลาครึ่งหลังเป็น ${minutes} นาทีแล้ว`, 'success');
+          }}
+          onSetCountdown={(totalSeconds, applyNow) => {
+            timerHook.setCountdownStartTime(totalSeconds);
+            if (applyNow) timerHook.setTimerValue(totalSeconds);
+            setShowPresetTimeModal(false);
+            triggerToast(
+              applyNow
+                ? `ตั้งและใช้งานเวลา ${customTimeMinutes} นาที ${customTimeSeconds} วินาทีทันที`
+                : `ตั้งเวลาเป็น ${customTimeMinutes} นาที ${customTimeSeconds} วินาทีแล้ว`,
+              'success',
+            );
+          }}
+          onClose={() => setShowPresetTimeModal(false)}
+        />}
 
-      {showQuickSetupModal && <QuickSetupModal
-        isOpen={showQuickSetupModal}
-        targets={firebaseTargets}
-        selectedTargetId={selectedQuickLeagueId}
-        tickerSpeed={tickerSpeed}
-        closeLabel={trans.close}
-        onTargetChange={setSelectedQuickLeagueId}
-        onTickerSpeedChange={(speed) => {
-          setTickerSpeed(speed);
-          localStorage.setItem('tickerSpeed', String(speed));
-        }}
-        teamNameSettings={teamNameSettings}
-        teamNameUrls={teamNameUrls}
-        teamNameObsBusy={teamNameObsBusy}
-        teamNameObsConnected={obs.isConnected}
-        teamNameObsMessage={teamNameObsMessage}
-        onTeamNameSettingsChange={updateTeamNameSettings}
-        onCopyTeamNameUrl={copyTeamNameUrl}
-        scoreSettings={scoreSettings}
-        scoreUrls={scoreUrls}
-        onScoreSettingsChange={updateScoreSettings}
-        onCopyScoreUrl={copyScoreUrl}
-        scoreObsBusy={scoreObsBusy}
-        scoreObsMessage={scoreObsMessage}
-        logoSettings={logoSettings}
-        logoUrls={logoUrls}
-        logoObsBusy={logoObsBusy}
-        logoObsConnected={obs.isConnected}
-        logoObsMessage={logoObsMessage}
-        onLogoSettingsChange={updateLogoSettings}
-        onCopyLogoUrl={copyLogoUrl}
-        onQuickAddLogo={() => void runLogoObsAction('add')}
-        onUpdateLogo={() => void runLogoObsAction('update')}
-        onQuickAddScore={() => void runScoreObsAction('add')}
-        onUpdateScore={() => void runScoreObsAction('update')}
-        onQuickAddTeamNames={() => void runTeamNameObsAction('add')}
-        onUpdateTeamNames={() => void runTeamNameObsAction('update')}
-        onOpenObsSetup={() => {
-          setShowQuickSetupModal(false);
-          setShowOBSSetupModal(true);
-        }}
-        onCopyOverlay={handleCopyOverlayUrl}
-        onOpenDatabase={() => {
-          if (!selectedQuickLeagueId) {
-            triggerToast('กรุณาเลือกลีกก่อน', 'error');
-            return;
-          }
-          setShowQuickSetupModal(false);
-          setShowDatabaseModal(true);
-          database.loadMatches();
-        }}
-        onClose={() => setShowQuickSetupModal(false)}
-      />}
+        {showQuickSetupModal && <QuickSetupModal
+          isOpen={showQuickSetupModal}
+          targets={firebaseTargets}
+          selectedTargetId={selectedQuickLeagueId}
+          tickerSpeed={tickerSpeed}
+          closeLabel={trans.close}
+          onTargetChange={setSelectedQuickLeagueId}
+          onTickerSpeedChange={(speed) => {
+            setTickerSpeed(speed);
+            localStorage.setItem('tickerSpeed', String(speed));
+          }}
+          teamNameSettings={teamNameSettings}
+          teamNameUrls={teamNameUrls}
+          teamNameObsBusy={teamNameObsBusy}
+          teamNameObsConnected={obs.isConnected}
+          teamNameObsMessage={teamNameObsMessage}
+          onTeamNameSettingsChange={updateTeamNameSettings}
+          onCopyTeamNameUrl={copyTeamNameUrl}
+          scoreSettings={scoreSettings}
+          scoreUrls={scoreUrls}
+          onScoreSettingsChange={updateScoreSettings}
+          onCopyScoreUrl={copyScoreUrl}
+          scoreObsBusy={scoreObsBusy}
+          scoreObsMessage={scoreObsMessage}
+          logoSettings={logoSettings}
+          logoUrls={logoUrls}
+          logoObsBusy={logoObsBusy}
+          logoObsConnected={obs.isConnected}
+          logoObsMessage={logoObsMessage}
+          onLogoSettingsChange={updateLogoSettings}
+          onCopyLogoUrl={copyLogoUrl}
+          onQuickAddLogo={() => void runLogoObsAction('add')}
+          onQuickAddScore={() => void runScoreObsAction('add')}
+          onQuickAddTeamNames={() => void runTeamNameObsAction('add')}
+          onOpenObsSetup={() => {
+            setShowQuickSetupModal(false);
+            setShowOBSSetupModal(true);
+          }}
+          onCopyOverlay={handleCopyOverlayUrl}
+          onOpenDatabase={() => {
+            if (!selectedQuickLeagueId) {
+              triggerToast('กรุณาเลือกลีกก่อน', 'error');
+              return;
+            }
+            setShowQuickSetupModal(false);
+            setShowDatabaseModal(true);
+            database.loadMatches();
+          }}
+          onClose={() => setShowQuickSetupModal(false)}
+        />}
 
-      {showOBSSetupModal && <ObsSetupModal
-        isOpen={showOBSSetupModal}
-        closeLabel={trans.close}
-        onDownload={handleDownloadTemplate}
-        onClose={() => setShowOBSSetupModal(false)}
-      />}
+        {showOBSSetupModal && <ObsSetupModal
+          isOpen={showOBSSetupModal}
+          closeLabel={trans.close}
+          onDownload={handleDownloadTemplate}
+          onClose={() => setShowOBSSetupModal(false)}
+        />}
 
-      {showDatabaseModal && <DatabaseMatchesModal
-        isOpen={showDatabaseModal}
-        isLoading={database.isLoading}
-        matches={database.matches}
-        searchTerm={database.searchTerm}
-        dateFilter={database.dateFilter}
-        onSearchChange={database.setSearchTerm}
-        onDateFilterChange={database.setDateFilter}
-        onRefresh={database.loadMatches}
-        onEdit={database.openEdit}
-        onDelete={database.deleteMatch}
-        onCopyTableUrl={() => handleCopyOverlayUrl('table', 'league-table')}
-        onCopyResultsUrl={() => handleCopyOverlayUrl('results', 'all-scores')}
-        onClose={() => setShowDatabaseModal(false)}
-        closeLabel={trans.close}
-      />}
-      {database.editingMatch && <EditDatabaseMatchModal
-        match={database.editingMatch}
-        onSave={database.saveEditedMatch}
-        onClose={database.closeEdit}
-        saveLabel={trans.save}
-      />}
+        {showDatabaseModal && <DatabaseMatchesModal
+          isOpen={showDatabaseModal}
+          isLoading={database.isLoading}
+          matches={database.matches}
+          searchTerm={database.searchTerm}
+          dateFilter={database.dateFilter}
+          onSearchChange={database.setSearchTerm}
+          onDateFilterChange={database.setDateFilter}
+          onRefresh={database.loadMatches}
+          onEdit={database.openEdit}
+          onDelete={database.deleteMatch}
+          onCopyTableUrl={() => handleCopyOverlayUrl('table', 'league-table')}
+          onCopyResultsUrl={() => handleCopyOverlayUrl('results', 'all-scores')}
+          onClose={() => setShowDatabaseModal(false)}
+          closeLabel={trans.close}
+        />}
+        {database.editingMatch && <EditDatabaseMatchModal
+          match={database.editingMatch}
+          onSave={database.saveEditedMatch}
+          onClose={database.closeEdit}
+          saveLabel={trans.save}
+        />}
 
-      {(showHelpModal || showDonateModal || showChangelogModal) && <ScoreboardInfoModals
-        trans={trans}
-        showHelp={showHelpModal}
-        showDonate={showDonateModal}
-        showChangelog={showChangelogModal}
-        onCloseHelp={() => setShowHelpModal(false)}
-        onCloseDonate={() => setShowDonateModal(false)}
-        onCloseChangelog={() => setShowChangelogModal(false)}
-      />}
+        {(showHelpModal || showDonateModal || showChangelogModal) && <ScoreboardInfoModals
+          trans={trans}
+          showHelp={showHelpModal}
+          showDonate={showDonateModal}
+          showChangelog={showChangelogModal}
+          onCloseHelp={() => setShowHelpModal(false)}
+          onCloseDonate={() => setShowDonateModal(false)}
+          onCloseChangelog={() => setShowChangelogModal(false)}
+        />}
 
-      {showTeamSelectModal && <TeamSelectModal
-        isOpen={showTeamSelectModal}
-        target={teamSelectTarget}
-        search={teamSelectSearch}
-        teams={teamSheetData}
-        closeLabel={trans.close}
-        onSearchChange={setTeamSelectSearch}
-        onSelect={(teamName) => {
-          applyTeamFromSheet(teamName, teamSelectTarget);
-          setShowTeamSelectModal(false);
-          setTeamSelectSearch('');
-        }}
-        onClose={() => setShowTeamSelectModal(false)}
-      />}
+        {showTeamSelectModal && <TeamSelectModal
+          isOpen={showTeamSelectModal}
+          target={teamSelectTarget}
+          search={teamSelectSearch}
+          teams={teamSheetData}
+          closeLabel={trans.close}
+          onSearchChange={setTeamSelectSearch}
+          onSelect={(teamName) => {
+            applyTeamFromSheet(teamName, teamSelectTarget);
+            setShowTeamSelectModal(false);
+            setTeamSelectSearch('');
+          }}
+          onClose={() => setShowTeamSelectModal(false)}
+        />}
 
-      <ReplayControlModals
-        showVarReplayV2={showVarReplayV2Modal}
-        showInstantReplay={showInstantReplayModal}
-        onCloseVarReplayV2={() => setShowVarReplayV2Modal(false)}
-        onCloseInstantReplay={() => setShowInstantReplayModal(false)}
-      />
-
-      {showPenaltyModal && <PenaltyShootoutModal
-        isOpen={showPenaltyModal}
-        obs={obs}
-        teamNameA={nameA}
-        teamNameB={nameB}
-        onClose={closePenaltyModal}
-      />}
-
-      {/* Auto Macros Panel */}
-      {showAutoMacrosModal && (
-        <AutoMacrosPanel
-          obs={obs}
-          onClose={() => setShowAutoMacrosModal(false)}
-          customMacrosHook={autoMacros}
+        <ReplayControlModals
+          showVarReplayV2={showVarReplayV2Modal}
+          showInstantReplay={showInstantReplayModal}
+          onCloseVarReplayV2={() => setShowVarReplayV2Modal(false)}
+          onCloseInstantReplay={() => setShowInstantReplayModal(false)}
         />
-      )}
 
-      {showUrlModal && <ExcelUrlModal
-        isOpen={showUrlModal}
-        url={excelUrlInput}
-        name={excelUrlNameInput}
-        presets={savedExcelUrls}
-        isLoading={isLoadingUrl}
-        onUrlChange={setExcelUrlInput}
-        onNameChange={setExcelUrlNameInput}
-        onLoad={() => { void handleExcelFromUrl(); }}
-        onSavePreset={handleSaveUrlPreset}
-        onSelectPreset={(preset) => handleSelectUrlPreset(preset as SavedExcelUrl)}
-        onDeletePreset={handleDeleteUrlPreset}
-        onClose={() => setShowUrlModal(false)}
-      />}
+        {showPenaltyModal && <PenaltyShootoutModal
+          isOpen={showPenaltyModal}
+          obs={obs}
+          teamNameA={nameA}
+          teamNameB={nameB}
+          onClose={closePenaltyModal}
+        />}
+
+        {/* Auto Macros Panel */}
+        {showAutoMacrosModal && (
+          <AutoMacrosPanel
+            obs={obs}
+            onClose={() => setShowAutoMacrosModal(false)}
+            customMacrosHook={autoMacros}
+          />
+        )}
+
+        {showUrlModal && <ExcelUrlModal
+          isOpen={showUrlModal}
+          url={excelUrlInput}
+          name={excelUrlNameInput}
+          presets={savedExcelUrls}
+          isLoading={isLoadingUrl}
+          onUrlChange={setExcelUrlInput}
+          onNameChange={setExcelUrlNameInput}
+          onLoad={() => { void handleExcelFromUrl(); }}
+          onSavePreset={handleSaveUrlPreset}
+          onSelectPreset={(preset) => handleSelectUrlPreset(preset as SavedExcelUrl)}
+          onDeletePreset={handleDeleteUrlPreset}
+          onClose={() => setShowUrlModal(false)}
+        />}
       </Suspense>
     </div>
   );

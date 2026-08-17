@@ -61,7 +61,6 @@ interface QuickSetupModalProps {
   scoreObsBusy: boolean;
   scoreObsMessage: string;
   onQuickAddScore: () => void;
-  onUpdateScore: () => void;
   logoSettings: LogoBrowserSettings;
   onLogoSettingsChange: (patch: Partial<LogoBrowserSettings>) => void;
   logoUrls: { A: string; B: string };
@@ -70,9 +69,7 @@ interface QuickSetupModalProps {
   logoObsMessage: string;
   onCopyLogoUrl: (side: 'A' | 'B') => void;
   onQuickAddLogo: () => void;
-  onUpdateLogo: () => void;
   onQuickAddTeamNames: () => void;
-  onUpdateTeamNames: () => void;
   onOpenObsSetup: () => void;
   onCopyOverlay: (viewType: string, standaloneFile?: string) => void;
   onOpenDatabase: () => void;
@@ -101,7 +98,6 @@ export default function QuickSetupModal({
   scoreObsBusy,
   scoreObsMessage,
   onQuickAddScore,
-  onUpdateScore,
   logoSettings,
   onLogoSettingsChange,
   logoUrls,
@@ -110,9 +106,7 @@ export default function QuickSetupModal({
   logoObsMessage,
   onCopyLogoUrl,
   onQuickAddLogo,
-  onUpdateLogo,
   onQuickAddTeamNames,
-  onUpdateTeamNames,
   onOpenObsSetup,
   onCopyOverlay,
   onOpenDatabase,
@@ -299,12 +293,14 @@ export default function QuickSetupModal({
               <button className="btn-success" disabled={teamNameObsBusy || !teamNameObsConnected} onClick={onQuickAddTeamNames}>
                 <i className="fas fa-plug"></i> Quick Add to OBS
               </button>
-              <button className="btn-primary" disabled={teamNameObsBusy || !teamNameObsConnected} onClick={onUpdateTeamNames}>
-                <i className="fas fa-rotate"></i> Update Existing Team Name Sources
-              </button>
             </div>
-            <div style={{ fontSize: '11px', color: teamNameObsConnected ? '#86efac' : '#fca5a5' }}>
-              {teamNameObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}
+            <div style={{ fontSize: '11px', color: teamNameObsConnected ? '#86efac' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span>{teamNameObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}</span>
+              {teamNameObsConnected && (
+                <span style={{ backgroundColor: '#065f46', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, fontSize: '10px' }}>
+                  ⚡ Auto Sync OBS: Active
+                </span>
+              )}
               {teamNameObsMessage ? ` — ${teamNameObsMessage}` : ''}
             </div>
             <details style={{ fontSize: '11px', color: '#94a3b8' }}>
@@ -573,12 +569,14 @@ export default function QuickSetupModal({
                 <button className="btn-success" disabled={logoObsBusy || !logoObsConnected} onClick={onQuickAddLogo}>
                   <i className="fas fa-plug"></i> Quick Add Logo A/B to OBS
                 </button>
-                <button className="btn-primary" disabled={logoObsBusy || !logoObsConnected} onClick={onUpdateLogo}>
-                  <i className="fas fa-rotate"></i> Update Existing Logo Sources
-                </button>
               </div>
-              <div style={{ marginTop: '4px', fontSize: '11px', color: logoObsConnected ? '#86efac' : '#fca5a5' }}>
-                {logoObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}
+              <div style={{ marginTop: '4px', fontSize: '11px', color: logoObsConnected ? '#86efac' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span>{logoObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}</span>
+                {logoObsConnected && (
+                  <span style={{ backgroundColor: '#065f46', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, fontSize: '10px' }}>
+                    ⚡ Auto Sync OBS: Active
+                  </span>
+                )}
                 {logoObsMessage ? ` — ${logoObsMessage}` : ''}
               </div>
             </div>
@@ -682,12 +680,14 @@ export default function QuickSetupModal({
               <button className="btn-success" disabled={scoreObsBusy || !teamNameObsConnected} onClick={onQuickAddScore}>
                 <i className="fas fa-plug"></i> Quick Add Score A/B to OBS
               </button>
-              <button className="btn-primary" disabled={scoreObsBusy || !teamNameObsConnected} onClick={onUpdateScore}>
-                <i className="fas fa-rotate"></i> Update Existing Score Sources
-              </button>
             </div>
-            <div style={{ fontSize: '11px', color: teamNameObsConnected ? '#86efac' : '#fca5a5' }}>
-              {teamNameObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}
+            <div style={{ fontSize: '11px', color: teamNameObsConnected ? '#86efac' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span>{teamNameObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}</span>
+              {teamNameObsConnected && (
+                <span style={{ backgroundColor: '#065f46', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, fontSize: '10px' }}>
+                  ⚡ Auto Sync OBS: Active
+                </span>
+              )}
               {scoreObsMessage ? ` — ${scoreObsMessage}` : ''}
             </div>
             <details style={{ fontSize: '11px', color: '#94a3b8' }}>

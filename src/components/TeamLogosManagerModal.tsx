@@ -7,6 +7,8 @@ import {
   listenToFirebaseTeams,
   normalizeTeamKey
 } from '../utils/logoResolver';
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '../constants/uploadConfig';
+import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
 
 interface TeamLogosManagerModalProps {
   isOpen: boolean;
@@ -42,16 +44,24 @@ export default function TeamLogosManagerModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const targetUploadTeamRef = useRef<string | null>(null);
 
+  const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage } = useImageUploadQuota();
+
   const handleDirectFileUpload = async (teamName: string, selectedFile: File) => {
     if (!selectedFile) return;
+
+    if (isQuotaExceeded) {
+      onToast?.('❌ คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว (กรุณาสมัครสมาชิกเพื่ออัปโหลดแบบไม่จำกัด)', 'error');
+      return;
+    }
 
     if (!selectedFile.type.startsWith('image/')) {
       onToast?.('❌ กรุณาเลือกไฟล์รูปภาพเท่านั้น', 'error');
       return;
     }
 
-    if (selectedFile.size > 10 * 1024 * 1024) {
-      onToast?.('❌ ไฟล์รูปภาพต้องมีขนาดไม่เกิน 10MB', 'error');
+    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      const sizeInMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
+      onToast?.(`❌ ไฟล์รูปภาพต้องมีขนาดไม่เกิน ${MAX_FILE_SIZE_MB}MB (ขนาดไฟล์ปัจจุบัน: ${sizeInMB}MB)`, 'error');
       return;
     }
 
@@ -82,6 +92,7 @@ export default function TeamLogosManagerModal({
       const data = await response.json();
       const imageUrl = data.secure_url;
 
+      await incrementUploadCount();
       handleUpdateLogo(teamName, imageUrl);
       onToast?.(`✅ อัปโหลดโลโก้ ${teamName} ขึ้น Cloud เรียบร้อยแล้ว!`, 'success');
     } catch (err: any) {
@@ -98,7 +109,7 @@ export default function TeamLogosManagerModal({
 
     // 1. Build initial map from teamList
     const initialMap: Record<string, { name: string; logo: string }> = {};
-    
+
     // Load local storage fallback
     const savedLocal = localStorage.getItem('teamLogos');
     const localMemory: Record<string, string> = savedLocal ? JSON.parse(savedLocal) : {};
@@ -176,7 +187,7 @@ export default function TeamLogosManagerModal({
     setIsSaving(true);
     try {
       await saveTeamsToFirebase(db, teamLogosMap);
-      
+
       // Update local storage backup
       const localBackup: Record<string, string> = {};
       Object.keys(teamLogosMap).forEach((k) => {
@@ -259,6 +270,30 @@ export default function TeamLogosManagerModal({
               🔄 ใช้ Default Path
             </button>
           </div>
+        </div>
+
+        {/* Quota Alert Banner */}
+        <div
+          style={{
+            padding: '10px 14px',
+            borderRadius: '6px',
+            backgroundColor: isQuotaExceeded ? '#450a0a' : isUnlimited ? '#064e3b' : '#1e293b',
+            border: isQuotaExceeded ? '1px solid #ef4444' : isUnlimited ? '1px solid #10b981' : '1px solid #3b82f6',
+            color: '#fff',
+            fontSize: '12px',
+            marginBottom: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontWeight: 500,
+          }}
+        >
+          <span>ℹ️ {quotaMessage}</span>
+          {isQuotaExceeded && (
+            <span style={{ color: '#f87171', fontWeight: 600, fontSize: '11px' }}>
+              🔒 ปิดการอัปโหลด
+            </span>
+          )}
         </div>
 
         {/* Stats & Search Bar */}
@@ -370,7 +405,7 @@ export default function TeamLogosManagerModal({
                             handleUpdateLogo(item.name, text);
                             onToast?.(`คัดลอก URL ให้ ${item.name} แล้ว`, 'success');
                           }
-                } catch {
+                        } catch {
                           onToast?.('อ่านคลิปบอร์ดไม่สำเร็จ', 'error');
                         }
                       }}
@@ -381,14 +416,25 @@ export default function TeamLogosManagerModal({
                     {/* Upload Button - Directly triggers native file browser */}
                     <button
                       className="btn-primary"
-                      disabled={uploadingTeam === item.name}
-                      style={{ padding: '6px 12px', fontSize: '12px', minWidth: '95px' }}
+                      disabled={uploadingTeam === item.name || isQuotaExceeded}
+                      title={isQuotaExceeded ? 'โควต้าการอัปโหลดรูปภาพเต็ม 10/10 รูปแล้ว' : 'อัปโหลดรูปภาพ'}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        minWidth: '95px',
+                        opacity: isQuotaExceeded ? 0.6 : 1,
+                        cursor: isQuotaExceeded ? 'not-allowed' : 'pointer',
+                      }}
                       onClick={() => {
+                        if (isQuotaExceeded) {
+                          onToast?.('❌ คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว กรุณาสมัครสมาชิกเพื่อใช้งานไม่จำกัด', 'error');
+                          return;
+                        }
                         targetUploadTeamRef.current = item.name;
                         fileInputRef.current?.click();
                       }}
                     >
-                      {uploadingTeam === item.name ? '⏳ อัปโหลด...' : '📤 อัปโหลด'}
+                      {uploadingTeam === item.name ? '⏳ อัปโหลด...' : isQuotaExceeded ? '🚫 โควต้าเต็ม' : '📤 อัปโหลด'}
                     </button>
                   </div>
                 );
