@@ -15,6 +15,7 @@ const PenaltyDotsOverlay = lazy(() => import('./components/PenaltyDotsOverlay'))
 const GoalAnimationOverlay = lazy(() => import('./components/GoalAnimationOverlay'));
 const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV2Page'));
 const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
+const TailwindTestPage = lazy(() => import('./pages/TailwindTestPage'));
 
 function App() {
   const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
@@ -91,6 +92,9 @@ function App() {
             }
           />
           <Route path="/replay/screen" element={<InstantReplayPage mode="screen" />} />
+
+          {/* Tailwind CSS Test Page */}
+          <Route path="/test-tailwind" element={<TailwindTestPage />} />
 
           {/* Catch-all redirect to main panel */}
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,4 +1,11 @@
 /* src/index.css */
+
+/* Tailwind CSS Directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom CSS Variables */
 :root {
   --bg-color: #0f1115;
   --card-bg-color: #181b22;
