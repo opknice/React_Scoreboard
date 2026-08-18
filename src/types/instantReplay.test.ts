@@ -3,6 +3,9 @@ import {
   isFileMessage,
   isCommandMessage,
   isStatusMessage,
+  isReplayVideoEndedEvent,
+  isReplayPlaylistItemEndedEvent,
+  isReplayPlaylistCompletedEvent,
   type ChannelMessage,
 } from './instantReplay';
 
@@ -174,6 +177,72 @@ describe('Type Guard Functions', () => {
         expect(message.markerA).toBe(5);
         expect(message.markerB).toBe(30);
       }
+    });
+  });
+
+  describe('Replay completion events', () => {
+    it('accepts a single ReplayVideoEnded event without playlist metadata', () => {
+      expect(isReplayVideoEndedEvent({
+        type: 'ReplayVideoEnded',
+        videoElement: 'InstantReplayScreen',
+        fileName: 'goal.mp4',
+        playbackId: 'playback-1',
+        timestamp: Date.now(),
+        duration: 8,
+        currentTime: 8,
+      })).toBe(true);
+    });
+
+    it('rejects legacy playlist-shaped ReplayVideoEnded events', () => {
+      expect(isReplayVideoEndedEvent({
+        type: 'ReplayVideoEnded',
+        videoElement: 'InstantReplayScreen',
+        fileName: 'highlight-1.mp4',
+        playbackId: 'playback-1',
+        playlistItemId: 'item-1',
+        playlistSessionId: 'session-1',
+        timestamp: Date.now(),
+        duration: 12,
+        currentTime: 12,
+      })).toBe(false);
+    });
+
+    it('accepts a private playlist item completion event', () => {
+      expect(isReplayPlaylistItemEndedEvent({
+        type: 'ReplayPlaylistItemEnded',
+        videoElement: 'InstantReplayScreen',
+        fileName: 'highlight-1.mp4',
+        playbackId: 'playback-1',
+        playlistItemId: 'item-1',
+        playlistSessionId: 'session-1',
+        timestamp: Date.now(),
+        duration: 12,
+        currentTime: 12,
+      })).toBe(true);
+    });
+
+    it('accepts a public playlist completion event', () => {
+      expect(isReplayPlaylistCompletedEvent({
+        type: 'ReplayPlaylistCompleted',
+        videoElement: 'InstantReplayScreen',
+        playlistSessionId: 'session-1',
+        completedItemCount: 3,
+        lastPlaylistItemId: 'item-3',
+        timestamp: Date.now(),
+      })).toBe(true);
+    });
+
+    it('rejects a playlist item event missing its session identity', () => {
+      expect(isReplayPlaylistItemEndedEvent({
+        type: 'ReplayPlaylistItemEnded',
+        videoElement: 'InstantReplayScreen',
+        fileName: 'highlight-1.mp4',
+        playbackId: 'playback-1',
+        playlistItemId: 'item-1',
+        timestamp: Date.now(),
+        duration: 12,
+        currentTime: 12,
+      })).toBe(false);
     });
   });
 

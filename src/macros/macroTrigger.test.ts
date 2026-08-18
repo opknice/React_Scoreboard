@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesMacroTrigger, normalizeMacroFilter } from './macroTrigger';
+import { isMacroEvent, matchesMacroTrigger, normalizeMacroFilter } from './macroTrigger';
 
 describe('macroTrigger', () => {
   it('matches semantic button filters', () => {
@@ -20,5 +20,14 @@ describe('macroTrigger', () => {
   it('does not treat missing event fields as a match', () => {
     const trigger = { event: 'ButtonClicked' as const, filter: { kind: 'button' as const, value: 'var_replay' } };
     expect(matchesMacroTrigger(trigger, 'ButtonClicked', {})).toBe(false);
+  });
+
+  it('recognizes playlist completion as a valid macro event', () => {
+    expect(isMacroEvent('ReplayPlaylistCompleted')).toBe(true);
+    expect(matchesMacroTrigger(
+      { event: 'ReplayPlaylistCompleted' },
+      'ReplayPlaylistCompleted',
+      { playlistSessionId: 'session-1', completedItemCount: 3 },
+    )).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import type { MacroEventData } from './macroChannels';
 const EVENT_SET = new Set<MacroEvent>([
   'ReplayBufferSaved',
   'ReplayVideoEnded',
+  'ReplayPlaylistCompleted',
   'ButtonClicked',
   'KeyPressed',
   'CustomEvent',

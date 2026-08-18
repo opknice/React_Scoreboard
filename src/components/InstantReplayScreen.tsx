@@ -4,8 +4,16 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useReplayChannel } from '../hooks/useReplayChannel';
-import type { ChannelMessage } from '../types/instantReplay';
-import { isFileMessage as checkIsFileMessage, isCommandMessage as checkIsCommandMessage } from '../types/instantReplay';
+import type {
+  ChannelMessage,
+  ReplayPlaylistItemEndedEvent,
+  ReplayVideoEndedEvent,
+} from '../types/instantReplay';
+import {
+  isFileMessage as checkIsFileMessage,
+  isCommandMessage as checkIsCommandMessage,
+  REPLAY_PLAYLIST_CONTROL_CHANNEL,
+} from '../types/instantReplay';
 import './InstantReplayScreen.css';
 
 /**
@@ -35,17 +43,26 @@ export default function InstantReplayScreen() {
   
   // BroadcastChannel for replay events (cross-tab/cross-process communication)
   const replayEventChannelRef = useRef<BroadcastChannel | null>(null);
+  // Internal channel for playlist hand-off. This must not be consumed by Auto Macros.
+  const playlistControlChannelRef = useRef<BroadcastChannel | null>(null);
   
   // Initialize replay events channel
   useEffect(() => {
+    let replayEventsChannel: BroadcastChannel | null = null;
+    let playlistControlChannel: BroadcastChannel | null = null;
+
     try {
-      const channel = new BroadcastChannel('replay-events');
-      replayEventChannelRef.current = channel;
+      replayEventsChannel = new BroadcastChannel('replay-events');
+      replayEventChannelRef.current = replayEventsChannel;
+      playlistControlChannel = new BroadcastChannel(REPLAY_PLAYLIST_CONTROL_CHANNEL);
+      playlistControlChannelRef.current = playlistControlChannel;
       console.log('[InstantReplayScreen] Replay events channel initialized');
       
       return () => {
-        channel.close();
+        replayEventsChannel?.close();
+        playlistControlChannel?.close();
         replayEventChannelRef.current = null;
+        playlistControlChannelRef.current = null;
         console.log('[InstantReplayScreen] Replay events channel closed');
       };
     } catch (e) {
@@ -274,33 +291,61 @@ export default function InstantReplayScreen() {
     };
 
     const handleVideoEnded = () => {
-      // Emit replay event via BroadcastChannel for cross-process communication
-      const channel = replayEventChannelRef.current;
-      if (channel) {
-        const eventData = {
-          type: 'ReplayVideoEnded',
+      const playlistSessionId = activePlaylistSessionIdRef.current;
+      const playlistItemId = activePlaylistItemIdRef.current;
+      const playbackId = activePlaybackIdRef.current;
+      const fileName = activeFileNameRef.current;
+
+      if (playlistSessionId && playlistItemId && playbackId && fileName) {
+        const playlistChannel = playlistControlChannelRef.current;
+        if (!playlistChannel) {
+          console.warn('[InstantReplay] Playlist ended - playlist control channel not available');
+          return;
+        }
+
+        const eventData: ReplayPlaylistItemEndedEvent = {
+          type: 'ReplayPlaylistItemEnded',
           videoElement: 'InstantReplayScreen',
-          fileName: activeFileNameRef.current,
-          playbackId: activePlaybackIdRef.current,
-          playlistItemId: activePlaylistItemIdRef.current,
-          playlistSessionId: activePlaylistSessionIdRef.current,
+          fileName,
+          playbackId,
+          playlistItemId,
+          playlistSessionId,
           timestamp: Date.now(),
           duration: video.duration,
           currentTime: video.currentTime,
-          videoSrc: video.src
         };
-        
-        console.log('[InstantReplay] Video playback ended - broadcasting event');
-        console.log('[InstantReplay] Event data:', eventData);
-        
+
+        console.log('[InstantReplay] Playlist item ended - handing off to Replay Controller', eventData);
         try {
-          channel.postMessage(eventData);
-          console.log('[InstantReplay] ReplayVideoEnded event broadcast successfully');
-        } catch (e) {
-          console.error('[InstantReplay] Failed to broadcast event:', e);
+          playlistChannel.postMessage(eventData);
+        } catch (error) {
+          console.error('[InstantReplay] Failed to broadcast playlist item end:', error);
         }
-      } else {
+        return;
+      }
+
+      // Single Replay completion is the public automation event.
+      const channel = replayEventChannelRef.current;
+      if (!channel) {
         console.warn('[InstantReplay] Video playback ended - replay events channel not available');
+        return;
+      }
+
+      const eventData: ReplayVideoEndedEvent = {
+        type: 'ReplayVideoEnded',
+        videoElement: 'InstantReplayScreen',
+        fileName: fileName || undefined,
+        playbackId: playbackId || undefined,
+        timestamp: Date.now(),
+        duration: video.duration,
+        currentTime: video.currentTime,
+      };
+
+      console.log('[InstantReplay] Single Replay ended - broadcasting automation event', eventData);
+      try {
+        channel.postMessage(eventData);
+      } catch (error) {
+        console.error('[InstantReplay] Failed to broadcast ReplayVideoEnded:', error);
       }
     };
 

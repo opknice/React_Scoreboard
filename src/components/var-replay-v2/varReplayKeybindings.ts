@@ -48,9 +48,9 @@ const DEFAULT_REPLAY_KEYBINDINGS: ReplayKeyBinding[] = [
   { action: 'setMarkerB', code: 'KeyB', label: 'B', ctrlKey: false, altKey: false, metaKey: false },
   { action: 'toggleLoop', code: 'KeyL', label: 'L', ctrlKey: false, altKey: false, metaKey: false },
   { action: 'clearMarkers', code: 'KeyR', label: 'R', ctrlKey: false, altKey: false, metaKey: false },
-  { action: 'zoomIn', code: 'Equal', label: '+ / =', ctrlKey: false, shiftKey: undefined, altKey: false, metaKey: false },
-  { action: 'zoomOut', code: 'Minus', label: '-', ctrlKey: false, altKey: false, metaKey: false },
-  { action: 'resetTransform', code: 'Digit0', label: '0', ctrlKey: false, altKey: false, metaKey: false },
+  { action: 'zoomIn', code: 'NumpadAdd', label: 'Num +', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false },
+  { action: 'zoomOut', code: 'NumpadSubtract', label: 'Num -', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false },
+  { action: 'resetTransform', code: 'Numpad0', label: 'Num 0', ctrlKey: false, altKey: false, metaKey: false },
 ];
 
 const ACTION_SET = new Set<ReplayShortcutAction>(REPLAY_SHORTCUT_DEFINITIONS.map(({ action }) => action));

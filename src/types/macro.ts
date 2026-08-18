@@ -1,6 +1,7 @@
 export type MacroEvent =
   | 'ReplayBufferSaved'
   | 'ReplayVideoEnded'
+  | 'ReplayPlaylistCompleted'
   | 'ButtonClicked'
   | 'KeyPressed'
   | 'CustomEvent'

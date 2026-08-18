@@ -2,7 +2,13 @@ import type { CustomMacro } from '../types/macro';
 import { MACRO_CHANNELS, type MacroEventData } from './macroChannels';
 import { matchesMacroTrigger } from './macroTrigger';
 
-const CUSTOM_CHANNEL_EVENTS = new Set(['ReplayVideoEnded', 'ButtonClicked', 'KeyPressed']);
+const CUSTOM_CHANNEL_EVENTS = new Set([
+  'ReplayVideoEnded',
+  'ReplayPlaylistCompleted',
+  'ButtonClicked',
+  'KeyPressed',
+]);
+const REPLAY_AUTOMATION_EVENTS = new Set(['ReplayVideoEnded', 'ReplayPlaylistCompleted']);
 
 export interface MacroSubscriptionOptions {
   obsRef: any;
@@ -39,11 +45,13 @@ export function subscribeToMacroEvents(options: MacroSubscriptionOptions): () =>
   const cleanupFunctions: Array<() => void> = [];
   const macrosForEvent = (eventName: string) => enabledMacros.filter((macro) => macro.trigger.event === eventName);
 
-  if (macrosForEvent('ReplayVideoEnded').length > 0) {
+  if ([...REPLAY_AUTOMATION_EVENTS].some((eventName) => macrosForEvent(eventName).length > 0)) {
     const cleanup = subscribeChannel(MACRO_CHANNELS.replayEvents, (eventData) => {
-      if (eventData.type !== 'ReplayVideoEnded') return;
-      macrosForEvent('ReplayVideoEnded').forEach((macro) => {
-        if (matchesMacroTrigger(macro.trigger, 'ReplayVideoEnded', eventData)) options.executeMacro(macro);
+      const eventName = eventData.type;
+      if (typeof eventName !== 'string' || !REPLAY_AUTOMATION_EVENTS.has(eventName)) return;
+
+      macrosForEvent(eventName).forEach((macro) => {
+        if (matchesMacroTrigger(macro.trigger, eventName, eventData)) options.executeMacro(macro);
       });
     });
     if (cleanup) cleanupFunctions.push(cleanup);

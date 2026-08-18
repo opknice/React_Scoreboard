@@ -31,7 +31,7 @@ const checkFileContent = (filePath, searchString, description) => {
     console.log(`${found ? '✅' : '❌'} ${description}`);
     if (!found) allPassed = false;
     return found;
-  } catch (error) {
+  } catch {
     console.log(`❌ ${description} (file read error)`);
     allPassed = false;
     return false;
@@ -102,7 +102,7 @@ try {
   checkDep('tailwindcss', 'Tailwind CSS');
   checkDep('postcss', 'PostCSS');
   checkDep('autoprefixer', 'Autoprefixer');
-} catch (error) {
+} catch {
   console.log('❌ Could not read package.json');
   allPassed = false;
 }

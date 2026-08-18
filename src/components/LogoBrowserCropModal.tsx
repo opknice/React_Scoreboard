@@ -99,7 +99,21 @@ export default function LogoBrowserCropModal({
     const targetUrl = activeUrl || logoUrl || getLogoSrc('', teamName);
     if (!targetUrl) return;
 
-    saveCropMetadataToLocalStorage(teamKey, targetUrl, currentCrop);
+    // Reconstruct currentCrop inside the effect so all deps are declared explicitly
+    // (avoids referencing the unstable object identity from the render scope)
+    const liveCrop: CropMetadata = {
+      x: offsetX,
+      y: offsetY,
+      width: baseWidth,
+      height: baseHeight,
+      zoom,
+      rotation,
+      aspectRatio: baseWidth > 0 && baseHeight > 0 ? baseWidth / baseHeight : 1,
+      createdAt: new Date().toISOString(),
+      ...(customSize > 0 ? { customSize } : {}),
+    };
+
+    saveCropMetadataToLocalStorage(teamKey, targetUrl, liveCrop);
     window.dispatchEvent(new Event('logoCropUpdated'));
     try {
       const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);

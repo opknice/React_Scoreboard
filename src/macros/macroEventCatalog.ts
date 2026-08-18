@@ -19,7 +19,14 @@ export const MACRO_EVENT_OPTIONS: MacroEventOption[] = [
   {
     value: 'ReplayVideoEnded',
     label: 'เมื่อ Replay เล่นจบ',
-    description: 'ทำงานหลังวิดีโอ Replay ในแอปเล่นจบ',
+    description: 'ทำงานหลัง Replay ปกติแบบ Single เล่นจบ (ไม่รวม Highlight Playlist)',
+    category: 'scoreboard',
+    filterKind: 'any',
+  },
+  {
+    value: 'ReplayPlaylistCompleted',
+    label: 'เมื่อ Highlight Playlist เล่นจบ',
+    description: 'ทำงานเมื่อวิดีโอทุกคลิปใน Highlight Playlist เล่นครบทั้งชุด',
     category: 'scoreboard',
     filterKind: 'any',
   },

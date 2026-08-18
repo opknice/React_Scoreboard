@@ -4,10 +4,13 @@ import { useReplayChannel } from '../hooks/useReplayChannel';
 import { useReplayPlaylist } from '../hooks/useReplayPlaylist';
 import { formatTime, formatSize, findLatestFile, getVideoMimeType } from '../utils/replayFormatters';
 import ReplayPlaylistPanel from './ReplayPlaylistPanel';
+import { MACRO_CHANNELS, postMacroChannelMessage } from '../macros/macroChannels';
 import {
-  isReplayVideoEndedEvent,
+  isReplayPlaylistItemEndedEvent,
+  REPLAY_PLAYLIST_CONTROL_CHANNEL,
   createReplayFileId,
   type CommandMessage,
+  type ReplayPlaylistCompletedEvent,
   type ReplayPlaylistStatus,
 } from '../types/instantReplay';
 import './InstantReplayControl.css';
@@ -194,6 +197,25 @@ export default function InstantReplayControl() {
   }, [cancelPlaylist, createPlaybackId, send, sendCommand]);
 
   const finishPlaylist = useCallback((status: ReplayPlaylistStatus) => {
+    const completedSessionId = playlistSessionRef.current;
+    const completedItemIndex = playlistIndexRef.current;
+    const lastPlaylistItemId = completedItemIndex >= 0
+      ? playlistItems[completedItemIndex]?.id
+      : undefined;
+
+    if (status === 'completed' && completedSessionId) {
+      const completedEvent: ReplayPlaylistCompletedEvent = {
+        type: 'ReplayPlaylistCompleted',
+        videoElement: 'InstantReplayScreen',
+        playlistSessionId: completedSessionId,
+        completedItemCount: Math.max(0, completedItemIndex + 1),
+        lastPlaylistItemId,
+        timestamp: Date.now(),
+      };
+
+      postMacroChannelMessage(MACRO_CHANNELS.replayEvents, { ...completedEvent });
+    }
+
     playlistSessionRef.current = null;
     playlistIndexRef.current = -1;
     playbackModeRef.current = 'single';
@@ -202,7 +224,7 @@ export default function InstantReplayControl() {
     setPlaylistCurrentItemId(null);
     setPlaylistCurrentIndex(-1);
     setPlaylistStatus(status);
-  }, []);
+  }, [playlistItems]);
 
   const playPlaylistFromIndex = useCallback(async (
     sessionId: string,
@@ -390,26 +412,30 @@ export default function InstantReplayControl() {
   // duration removed from deps — durationRef handles it without causing re-registration
   }, [channelRef, applyAutoTrim]);
 
-  // The screen notifies the control panel when a clip ends. In playlist mode
-  // this is the hand-off point for loading the next file.
+  // The screen notifies the control panel when a playlist item ends. This is
+  // intentionally a private channel so Auto Macros only see the final
+  // ReplayPlaylistCompleted event, not every highlight clip.
   useEffect(() => {
     let replayEventChannel: BroadcastChannel | null = null;
 
     try {
-      replayEventChannel = new BroadcastChannel('replay-events');
+      replayEventChannel = new BroadcastChannel(REPLAY_PLAYLIST_CONTROL_CHANNEL);
       replayEventChannel.onmessage = (event: MessageEvent<unknown>) => {
-        if (!isReplayVideoEndedEvent(event.data)) return;
+        if (!isReplayPlaylistItemEndedEvent(event.data)) return;
         if (playbackModeRef.current !== 'playlist') return;
 
         const endedEvent = event.data;
         const activeSessionId = playlistSessionRef.current;
         const activePlaybackId = currentPlaybackIdRef.current;
         if (!activeSessionId) return;
-        if (endedEvent.playlistSessionId && endedEvent.playlistSessionId !== activeSessionId) return;
-        if (endedEvent.playbackId && endedEvent.playbackId !== activePlaybackId) return;
-        if (endedEvent.playbackId && endedEvent.playbackId === lastHandledEndedPlaybackIdRef.current) return;
+        if (endedEvent.playlistSessionId !== activeSessionId) return;
+        if (endedEvent.playbackId !== activePlaybackId) return;
+        if (endedEvent.playbackId === lastHandledEndedPlaybackIdRef.current) return;
 
-        lastHandledEndedPlaybackIdRef.current = endedEvent.playbackId || null;
+        const activeItem = playlistItems[playlistIndexRef.current];
+        if (activeItem && endedEvent.playlistItemId !== activeItem.id) return;
+
+        lastHandledEndedPlaybackIdRef.current = endedEvent.playbackId;
         void playPlaylistFromIndex(
           activeSessionId,
           playlistIndexRef.current + 1,
@@ -423,7 +449,7 @@ export default function InstantReplayControl() {
     return () => {
       replayEventChannel?.close();
     };
-  }, [playPlaylistFromIndex, videoFolder.videoFiles]);
+  }, [playPlaylistFromIndex, playlistItems, videoFolder.videoFiles]);
 
   // Listen for BroadcastChannel commands from Macros
   useEffect(() => {

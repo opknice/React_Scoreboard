@@ -6,6 +6,13 @@
 // ============================================================================
 
 /**
+ * Internal channel used only to hand off completed playlist items from the
+ * OBS screen back to the replay controller. It is deliberately separate from
+ * the public automation channel so Auto Macros do not run for every item.
+ */
+export const REPLAY_PLAYLIST_CONTROL_CHANNEL = 'replay-playlist-control';
+
+/**
  * Message type for sending video file data from Control Panel to Screen Mode
  * Validates: Requirement 6.3
  */
@@ -56,11 +63,32 @@ export interface ReplayVideoEndedEvent {
   videoElement: 'InstantReplayScreen';
   fileName?: string;
   playbackId?: string;
-  playlistItemId?: string;
-  playlistSessionId?: string;
   timestamp: number;
   duration: number;
   currentTime: number;
+}
+
+/** Internal event: one item in a playlist reached its natural end. */
+export interface ReplayPlaylistItemEndedEvent {
+  type: 'ReplayPlaylistItemEnded';
+  videoElement: 'InstantReplayScreen';
+  fileName: string;
+  playbackId: string;
+  playlistItemId: string;
+  playlistSessionId: string;
+  timestamp: number;
+  duration: number;
+  currentTime: number;
+}
+
+/** Public automation event: the active playlist finished all its items. */
+export interface ReplayPlaylistCompletedEvent {
+  type: 'ReplayPlaylistCompleted';
+  videoElement: 'InstantReplayScreen';
+  playlistSessionId: string;
+  completedItemCount: number;
+  lastPlaylistItemId?: string;
+  timestamp: number;
 }
 
 export interface ReplayPlaylistItem {
@@ -91,12 +119,51 @@ export function createReplayPlaylistItem(file: File, addedAt = Date.now()): Repl
 export function isReplayVideoEndedEvent(value: unknown): value is ReplayVideoEndedEvent {
   if (!value || typeof value !== 'object') return false;
 
-  const event = value as Partial<ReplayVideoEndedEvent>;
+  const event = value as Partial<ReplayVideoEndedEvent> & {
+    playlistItemId?: unknown;
+    playlistSessionId?: unknown;
+  };
   return event.type === 'ReplayVideoEnded'
     && event.videoElement === 'InstantReplayScreen'
+    // Reject legacy playlist-shaped events so stale screens cannot trigger
+    // the single-Replay automation by accident.
+    && !('playlistItemId' in event)
+    && !('playlistSessionId' in event)
     && typeof event.timestamp === 'number'
     && Number.isFinite(event.duration)
     && Number.isFinite(event.currentTime);
+}
+
+export function isReplayPlaylistItemEndedEvent(value: unknown): value is ReplayPlaylistItemEndedEvent {
+  if (!value || typeof value !== 'object') return false;
+
+  const event = value as Partial<ReplayPlaylistItemEndedEvent>;
+  return event.type === 'ReplayPlaylistItemEnded'
+    && event.videoElement === 'InstantReplayScreen'
+    && typeof event.fileName === 'string'
+    && typeof event.playbackId === 'string'
+    && typeof event.playlistItemId === 'string'
+    && typeof event.playlistSessionId === 'string'
+    && typeof event.timestamp === 'number'
+    && Number.isFinite(event.timestamp)
+    && typeof event.duration === 'number'
+    && Number.isFinite(event.duration)
+    && typeof event.currentTime === 'number'
+    && Number.isFinite(event.currentTime);
+}
+
+export function isReplayPlaylistCompletedEvent(value: unknown): value is ReplayPlaylistCompletedEvent {
+  if (!value || typeof value !== 'object') return false;
+
+  const event = value as Partial<ReplayPlaylistCompletedEvent>;
+  return event.type === 'ReplayPlaylistCompleted'
+    && event.videoElement === 'InstantReplayScreen'
+    && typeof event.playlistSessionId === 'string'
+    && typeof event.completedItemCount === 'number'
+    && Number.isInteger(event.completedItemCount)
+    && event.completedItemCount >= 0
+    && typeof event.timestamp === 'number'
+    && Number.isFinite(event.timestamp);
 }
 
 // ============================================================================
