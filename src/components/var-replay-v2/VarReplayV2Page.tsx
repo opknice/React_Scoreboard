@@ -348,14 +348,15 @@ function Timeline({
   const toPercent = (time: number | null) => (duration && time !== null ? clamp((time / duration) * 100, 0, 100) : 0);
 
   return (
-    <section className={styles.panel}>
+    <section className={`${styles.panel} ${styles.timelinePanel}`}>
       <div className={styles.sectionHeading}>
-        <span>Timeline</span>
+        <span>ตำแหน่งวิดีโอ</span>
         <b>{formatTime(currentTime, true)} / {formatTime(duration, true)}</b>
       </div>
-      <div className={styles.timeline} ref={timelineRef} onPointerDown={onSeek} role="slider" aria-label="ตำแหน่งวิดีโอ" aria-valuemin={0} aria-valuemax={duration} aria-valuenow={currentTime} tabIndex={0}>
+      <div className={styles.timeline} ref={timelineRef} onPointerDown={onSeek} role="slider" aria-label="ตำแหน่งวิดีโอ" aria-valuemin={0} aria-valuemax={duration} aria-valuenow={currentTime} aria-valuetext={`${formatTime(currentTime, true)} จาก ${formatTime(duration, true)}`} tabIndex={0}>
         <div className={styles.timelineTrack} />
         <div className={styles.timelineFill} style={{ width: `${toPercent(currentTime)}%` }} />
+        <div className={styles.timelinePlayhead} style={{ left: `${toPercent(currentTime)}%` }} aria-hidden="true" />
         {markerA !== null && (
           <button
             className={`${styles.marker} ${styles.markerA}`}
@@ -439,16 +440,54 @@ function SpeedControl({
 }) {
   return (
     <section className={styles.speedControlPanel}>
-      <div className={styles.controlLabel}>
-        <span>ความเร็ว</span>
-        <b>{speed.toFixed(2)}x</b>
+      <div className={styles.speedHeader}>
+        <div className={styles.speedTitle}>
+          <span className={styles.speedIcon} aria-hidden="true">▶</span>
+          <div>
+            <strong id="var-speed-label">ความเร็วการเล่น</strong>
+            <small>ปรับความเร็ววิดีโอ โดยไม่เปลี่ยนตำแหน่งเวลา</small>
+          </div>
+        </div>
+        <output className={styles.speedValue} htmlFor="var-speed-range" aria-live="polite">
+          {speed.toFixed(2)}x
+        </output>
       </div>
-      <div className={styles.speedGrid}>
+      <div className={styles.speedGrid} role="group" aria-label="ค่าความเร็วที่ใช้บ่อย">
         {SPEED_PRESETS.map((preset) => (
-          <button className={`${styles.speedButton} ${speed === preset ? styles.activeButton : ''}`} key={preset} type="button" onClick={() => onSpeed(preset)}>{preset}x</button>
+          <button
+            className={`${styles.speedButton} ${speed === preset ? styles.speedActiveButton : ''}`}
+            key={preset}
+            type="button"
+            aria-pressed={speed === preset}
+            onClick={() => onSpeed(preset)}
+          >
+            {preset}x
+          </button>
         ))}
       </div>
-      <input aria-label="ความเร็ววิดีโอ" type="range" min="0.01" max="2" step="0.01" value={speed} onChange={(event) => onSpeed(Number(event.target.value))} />
+      <div className={styles.speedFineTune}>
+        <div className={styles.speedScaleLabels} aria-hidden="true">
+          <span>ช้ามาก</span>
+          <span>ปรับละเอียด</span>
+          <span>เร็ว</span>
+        </div>
+        <input
+          id="var-speed-range"
+          className={styles.speedRange}
+          aria-labelledby="var-speed-label"
+          aria-valuetext={`${speed.toFixed(2)} เท่า`}
+          type="range"
+          min="0.01"
+          max="2"
+          step="0.01"
+          value={speed}
+          onChange={(event) => onSpeed(Number(event.target.value))}
+        />
+        <div className={styles.speedRangeValues} aria-hidden="true">
+          <span>0.01x</span>
+          <span>2.00x</span>
+        </div>
+      </div>
     </section>
   );
 }
@@ -864,7 +903,6 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
               onResetTransform={() => setTransformAndSend({ zoom: 1, x: 0, y: 0 }, true)}
               onTransformChange={setTransformAndSend}
             />
-            <SpeedControl speed={speed} onSpeed={handleSpeed} />
             <Timeline
               timelineRef={timelineRef}
               duration={duration}
@@ -886,6 +924,7 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
               onClear={clearMarkers}
               shortcutLabels={shortcutLabels}
             />
+            <SpeedControl speed={speed} onSpeed={handleSpeed} />
             <ReplayShortcutSettings bindings={bindings} onUpdate={updateBinding} onClear={clearBinding} onReset={resetBindings} />
             <div className={styles.footer}>{loadedFile?.name || 'ยังไม่ได้โหลดสื่อ'} <span>V2 Channel: v3</span></div>
           </div>

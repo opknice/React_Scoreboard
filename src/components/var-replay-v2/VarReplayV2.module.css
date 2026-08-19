@@ -108,12 +108,14 @@
 .zoomSlider { width: 12px; height: 155px; margin: 5px 0; accent-color: #39d5ff; writing-mode: vertical-lr; direction: rtl; cursor: pointer; }
 .zoomResetButton { width: 100%; padding: 7px 4px; font-size: .62rem; line-height: 1.25; white-space: normal; }
 
-.timeline { position: relative; height: 44px; border: 1px solid #233c4b; border-radius: 6px; background: #071016; cursor: pointer; touch-action: none; outline: none; }
+.timelinePanel { border-color: #2d5263; }
+.timeline { position: relative; height: 58px; border: 1px solid #233c4b; border-radius: 8px; background: #071016; cursor: pointer; touch-action: none; outline: none; }
 .timeline:focus { border-color: #39d5ff; box-shadow: 0 0 0 2px rgba(57, 213, 255, .18); }
 .timelineTrack,
-.timelineFill { position: absolute; top: 20px; left: 0; height: 5px; border-radius: 4px; pointer-events: none; }
+.timelineFill { position: absolute; top: 25px; left: 0; height: 8px; border-radius: 4px; pointer-events: none; }
 .timelineTrack { width: 100%; background: #304452; }
-.timelineFill { background: #39d5ff; transition: width .08s linear; }
+.timelineFill { background: linear-gradient(90deg, #209fc2, #39d5ff); transition: width .08s linear; }
+.timelinePlayhead { position: absolute; top: 19px; width: 18px; height: 20px; border: 2px solid #e8fbff; border-radius: 6px; background: #39d5ff; box-shadow: 0 0 0 2px rgba(7, 16, 22, .85), 0 0 12px rgba(57, 213, 255, .75); transform: translateX(-50%); pointer-events: none; z-index: 1; }
 .marker { position: absolute; top: 3px; bottom: 3px; width: 20px; padding: 0; border: 0; background: transparent; color: #061118; font-size: .58rem; font-weight: 800; transform: translateX(-50%); cursor: ew-resize; z-index: 2; }
 .marker::before { content: ''; position: absolute; top: 0; bottom: 0; left: 9px; width: 2px; background: currentColor; box-shadow: 0 0 7px currentColor; }
 .markerA { color: #ff5c68; }
@@ -140,11 +142,28 @@
 .clearButton { color: #ff9ca4; background: #321b22; border-color: #63323b; }
 kbd { padding: 2px 4px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 3px; color: #c9dbe4; font: .56rem monospace; }
 
-.speedControlPanel { display: grid; gap: 10px; padding: 12px; background: #101b25; border: 1px solid #294051; border-radius: 10px; }
-.speedControlPanel .controlLabel { margin-bottom: 1px; }
-.speedGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.speedButton { padding: 8px 4px; background: #1a2a36; border-color: #304b5c; font-size: .68rem; }
-.speedControlPanel input[type="range"] { width: 100%; accent-color: #39d5ff; }
+.speedControlPanel { display: grid; gap: 12px; padding: 14px; background: linear-gradient(135deg, #17131d, #111923); border: 1px solid #58462b; border-radius: 10px; }
+.speedHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.speedTitle { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.speedTitle > div { display: grid; gap: 3px; min-width: 0; }
+.speedTitle strong { color: #f5e8cc; font-size: .78rem; letter-spacing: .04em; }
+.speedTitle small { color: #a99a82; font-size: .64rem; }
+.speedIcon { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border: 1px solid #8f6d32; border-radius: 50%; color: #ffc857; background: rgba(255, 200, 87, .12); font-size: .62rem; }
+.speedValue { min-width: 62px; padding: 6px 9px; border: 1px solid #8f6d32; border-radius: 7px; color: #ffd878; background: rgba(255, 200, 87, .1); text-align: center; font: 800 .85rem monospace; }
+.speedGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.speedButton { padding: 9px 4px; background: #211d25; border-color: #4c4140; font-size: .7rem; }
+.speedButton:hover { border-color: #ffc857; color: #ffe4a0; }
+.speedActiveButton { color: #221708; background: #ffc857; border-color: #ffe29a; box-shadow: 0 0 0 2px rgba(255, 200, 87, .16); }
+.speedActiveButton:hover { color: #221708; background: #ffd878; }
+.speedFineTune { display: grid; gap: 5px; padding-top: 2px; }
+.speedScaleLabels,
+.speedRangeValues { display: flex; align-items: center; justify-content: space-between; color: #a99a82; font-size: .61rem; }
+.speedScaleLabels span:nth-child(2) { color: #d6c29a; font-weight: 700; }
+.speedRange { width: 100%; margin: 2px 0; accent-color: #ffc857; cursor: pointer; }
+.speedRange::-webkit-slider-runnable-track { height: 6px; border: 1px solid #6d572e; border-radius: 999px; background: linear-gradient(90deg, #6b4821, #ffc857, #fff0b0); }
+.speedRange::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6px; border: 2px solid #fff0b0; border-radius: 50%; background: #ffc857; box-shadow: 0 0 0 2px rgba(25, 19, 12, .85), 0 0 10px rgba(255, 200, 87, .55); appearance: none; }
+.speedRange::-moz-range-track { height: 6px; border: 1px solid #6d572e; border-radius: 999px; background: linear-gradient(90deg, #6b4821, #ffc857, #fff0b0); }
+.speedRange::-moz-range-thumb { width: 13px; height: 13px; border: 2px solid #fff0b0; border-radius: 50%; background: #ffc857; box-shadow: 0 0 0 2px rgba(25, 19, 12, .85), 0 0 10px rgba(255, 200, 87, .55); }
 
 .primaryButton,
 .secondaryButton { padding: 8px 12px; font-size: .68rem; }

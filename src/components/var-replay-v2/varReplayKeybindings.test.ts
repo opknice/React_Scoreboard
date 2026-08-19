@@ -21,7 +21,7 @@ describe('varReplayKeybindings', () => {
 
     expect(bindings).toHaveLength(9);
     expect(formatReplayBinding(bindings.find((binding) => binding.action === 'playPause'))).toBe('Space');
-    expect(formatReplayBinding(bindings.find((binding) => binding.action === 'zoomIn'))).toBe('+ / =');
+    expect(formatReplayBinding(bindings.find((binding) => binding.action === 'zoomIn'))).toBe('Num +');
   });
 
   it('creates and matches modifier-aware bindings from keyboard events', () => {
@@ -39,14 +39,14 @@ describe('varReplayKeybindings', () => {
     expect(matchesReplayBinding(new KeyboardEvent('keydown', { code: 'KeyP', key: 'P', ctrlKey: true }), binding!)).toBe(false);
   });
 
-  it('detects conflicts, including the default Equal binding accepting + and =', () => {
+  it('detects conflicts for the default Numpad Add binding', () => {
     const bindings = getDefaultReplayKeybindings();
     const zoomOut = bindings.find((binding) => binding.action === 'zoomOut')!;
-    const equalWithShift = { ...zoomOut, action: 'zoomOut' as const, code: 'Equal', label: '+', shiftKey: true };
+    const numpadAddBinding = { ...zoomOut, action: 'zoomOut' as const, code: 'NumpadAdd', label: 'Num +', shiftKey: false };
     const zoomIn = bindings.find((binding) => binding.action === 'zoomIn')!;
 
-    expect(bindingsConflict(zoomIn, equalWithShift)).toBe(true);
-    expect(findReplayBindingConflict(bindings, equalWithShift, 'zoomOut')).toBe('zoomIn');
+    expect(bindingsConflict(zoomIn, numpadAddBinding)).toBe(true);
+    expect(findReplayBindingConflict(bindings, numpadAddBinding, 'zoomOut')).toBe('zoomIn');
   });
 
   it('persists valid bindings and ignores malformed stored values', () => {
