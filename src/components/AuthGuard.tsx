@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import {
-  getFirebaseAuth,
-  loginWithGoogle,
-  logoutUser,
-  verifyUserWhitelist,
-  getEnvFirebaseConfig,
-  recordUserLoginAttempt,
+  getSupabaseCurrentUser,
+  loginWithGoogleSupabase,
+  logoutSupabaseUser,
+  subscribeToSupabaseAuth,
+  getSupabaseUserDisplayName,
+  getSupabaseUserPhotoUrl,
+} from '../config/supabaseAuth';
+import {
+  verifySupabaseUserAccess,
+  recordSupabaseLoginAttempt,
   FREE_TRIAL_DAYS,
   type AccessDecision,
-} from '../config/firebaseAuth';
+} from '../config/supabaseAccess';
 import { AuthAccessProvider } from '../context/AuthAccessProvider';
 
 interface AuthGuardProps {
@@ -23,15 +27,6 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [whitelistReason, setWhitelistReason] = useState<string | null>(null);
   const [accessDecision, setAccessDecision] = useState<AccessDecision | null>(null);
-  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
-
-  // Settings inputs for fallback configuration
-  const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
-    return localStorage.getItem('firebase_auth_api_key') || getEnvFirebaseConfig().apiKey || '';
-  });
-  const [whitelistInput, setWhitelistInput] = useState<string>(() => {
-    return localStorage.getItem('local_allowed_emails') || '';
-  });
 
   const checkUserAccess = useCallback(async (currentUser: User | null) => {
     if (!currentUser) {
@@ -45,34 +40,55 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     setLoading(true);
     setUser(currentUser);
 
-    // Automatically record / update user login profile & timestamp in Realtime DB
+    // Update the Supabase access record created by the auth.users trigger.
     try {
-      await recordUserLoginAttempt(currentUser);
-    } catch (err) {
+      await recordSupabaseLoginAttempt();
+    } catch (err: unknown) {
       console.warn('[AuthGuard] Auto record login attempt failed:', err);
     }
 
-    const result = await verifyUserWhitelist(currentUser.email);
-    setIsAllowed(result.isAllowed);
-    setWhitelistReason(result.reason || null);
-    setAccessDecision(result);
-    setLoading(false);
+    try {
+      const result = await verifySupabaseUserAccess(currentUser);
+      setIsAllowed(result.isAllowed);
+      setWhitelistReason(result.reason || null);
+      setAccessDecision(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'ไม่สามารถตรวจสอบสิทธิ์ได้';
+      console.error('[AuthGuard] Supabase access check failed:', err);
+      setAuthError(message);
+      setIsAllowed(false);
+      setWhitelistReason(message);
+      setAccessDecision(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
+    let mounted = true;
     try {
-      const auth = getFirebaseAuth();
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        checkUserAccess(currentUser);
-      }, (error) => {
-        console.error('Auth state change error:', error);
-        setAuthError(error.message);
-        setLoading(false);
+      const unsubscribe = subscribeToSupabaseAuth((_event, session) => {
+        if (mounted) void checkUserAccess(session?.user ?? null);
       });
 
-      return () => unsubscribe();
-    } catch (err: any) {
-      console.warn('Firebase Auth Initialization Warning:', err);
+      void getSupabaseCurrentUser()
+        .then((currentUser) => {
+          if (mounted) void checkUserAccess(currentUser);
+        })
+        .catch((err: unknown) => {
+          if (!mounted) return;
+          const message = err instanceof Error ? err.message : 'ไม่สามารถเริ่มต้น Supabase Auth ได้';
+          console.error('Supabase Auth Initialization Warning:', err);
+          setAuthError(message);
+          setLoading(false);
+        });
+
+      return () => {
+        mounted = false;
+        unsubscribe();
+      };
+    } catch (err: unknown) {
+      console.warn('Supabase Auth Initialization Warning:', err);
       setLoading(false);
     }
   }, [checkUserAccess]);
@@ -94,13 +110,10 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     setAuthError(null);
     setLoading(true);
     try {
-      const loggedUser = await loginWithGoogle();
-      await checkUserAccess(loggedUser);
-    } catch (err: any) {
+      await loginWithGoogleSupabase();
+    } catch (err: unknown) {
       console.error('Login Failed:', err);
-      if (err?.code !== 'auth/popup-closed-by-user') {
-        setAuthError(err?.message || 'Login failed. Please try again.');
-      }
+      setAuthError(err instanceof Error ? err.message : 'Login failed. Please try again.');
       setLoading(false);
     }
   };
@@ -108,7 +121,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const handleLogout = async () => {
     setLoading(true);
     try {
-      await logoutUser();
+      await logoutSupabaseUser();
       setUser(null);
       setIsAllowed(false);
       setAccessDecision(null);
@@ -116,24 +129,6 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       console.error('Logout Failed:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (whitelistInput.trim()) {
-      localStorage.setItem('local_allowed_emails', whitelistInput.trim());
-    } else {
-      localStorage.removeItem('local_allowed_emails');
-    }
-    if (apiKeyInput.trim()) {
-      const currentConfig = getEnvFirebaseConfig();
-      currentConfig.apiKey = apiKeyInput.trim();
-      localStorage.setItem('firebase_auth_config', JSON.stringify(currentConfig));
-    }
-    setShowConfigModal(false);
-    if (user) {
-      checkUserAccess(user);
     }
   };
 
@@ -189,55 +184,6 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           </button>
         </div>
 
-        {/* Config Modal */}
-        {showConfigModal && (
-          <div style={styles.modalOverlay}>
-            <div style={styles.modalCard}>
-              <h3 style={{ margin: '0 0 16px 0', color: '#f8fafc' }}>⚙️ การตั้งค่าระบบยืนยันตัวตน</h3>
-              <form onSubmit={handleSaveSettings}>
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={styles.label}>
-                    รายชื่ออีเมลอนุญาต (Local Whitelist - คั่นด้วยจุลภาค ,):
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={whitelistInput}
-                    onChange={(e) => setWhitelistInput(e.target.value)}
-                    placeholder="example@gmail.com, admin@gmail.com"
-                    style={styles.textarea}
-                  />
-                  <small style={{ color: '#94a3b8' }}>
-                    * สามารถตั้งค่า VITE_ALLOWED_EMAILS ในไฟล์ .env ได้เช่นกัน
-                  </small>
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={styles.label}>Firebase API Key (ถ้าไม่ได้ตั้งใน .env):</label>
-                  <input
-                    type="text"
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    placeholder="AIzaSy..."
-                    style={styles.input}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowConfigModal(false)}
-                    style={styles.cancelBtn}
-                  >
-                    ยกเลิก
-                  </button>
-                  <button type="submit" style={styles.saveBtn}>
-                    บันทึกการตั้งค่า
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -261,15 +207,15 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           </p>
 
           <div style={styles.userInfoBox}>
-            {user.photoURL && (
+            {getSupabaseUserPhotoUrl(user) && (
               <img
-                src={user.photoURL}
-                alt={user.displayName || 'User'}
+                src={getSupabaseUserPhotoUrl(user)}
+                alt={getSupabaseUserDisplayName(user)}
                 style={styles.userAvatar}
               />
             )}
             <div>
-              <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{user.displayName || 'Google User'}</div>
+              <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{getSupabaseUserDisplayName(user)}</div>
               <div style={{ fontSize: '13px', color: '#94a3b8' }}>{user.email}</div>
             </div>
           </div>
@@ -445,72 +391,5 @@ const styles: Record<string, React.CSSProperties> = {
     borderTopColor: '#3b82f6',
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    backdropFilter: 'blur(4px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-  },
-  modalCard: {
-    width: '90%',
-    maxWidth: '450px',
-    backgroundColor: '#1e293b',
-    borderRadius: '16px',
-    padding: '24px',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
-  },
-  label: {
-    display: 'block',
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#cbd5e1',
-    marginBottom: '6px',
-  },
-  input: {
-    width: '100%',
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
-    color: '#f8fafc',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    boxSizing: 'border-box',
-  },
-  textarea: {
-    width: '100%',
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
-    color: '#f8fafc',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    fontSize: '14px',
-    boxSizing: 'border-box',
-    fontFamily: 'monospace',
-  },
-  saveBtn: {
-    backgroundColor: '#2563eb',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '10px 16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  cancelBtn: {
-    backgroundColor: '#334155',
-    color: '#cbd5e1',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '10px 16px',
-    cursor: 'pointer',
   },
 };

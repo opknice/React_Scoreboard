@@ -14,6 +14,7 @@
     "verify:tailwind": "node verify-tailwind.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
     "exceljs": "^4.4.0",
     "firebase": "^12.16.0",
     "obs-websocket-js": "^5.0.8",

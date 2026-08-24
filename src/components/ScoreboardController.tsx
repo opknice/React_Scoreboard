@@ -1,8 +1,13 @@
 import React, { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
-import { onAuthStateChanged, type User } from 'firebase/auth';
-import { getFirebaseAuth, logoutUser, isSuperAdmin } from '../config/firebaseAuth';
+import type { User } from '@supabase/supabase-js';
+import {
+  logoutSupabaseUser,
+  subscribeToSupabaseAuth,
+  getSupabaseUserDisplayName,
+  getSupabaseUserPhotoUrl,
+} from '../config/supabaseAuth';
 import { useTimer } from '../hooks/useTimer';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 import { useAutoMacros } from '../hooks/useAutoMacros';
@@ -156,15 +161,10 @@ export default function ScoreboardController() {
   }, [authAccess?.accessType]);
 
   useEffect(() => {
-    try {
-      const auth = getFirebaseAuth();
-      const unsubscribe = onAuthStateChanged(auth, (usr) => {
-        setCurrentUser(usr);
-      });
-      return () => unsubscribe();
-    } catch {
-      // ignore if auth not initialized
-    }
+    const unsubscribe = subscribeToSupabaseAuth((_event, session) => {
+      setCurrentUser(session?.user ?? null);
+    });
+    return () => unsubscribe();
   }, []);
 
   const saveTeamLogo = (teamName: string, url: string) => {
@@ -1276,8 +1276,8 @@ export default function ScoreboardController() {
           </div>
           {currentUser && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-              {currentUser.photoURL && (
-                <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
+              {getSupabaseUserPhotoUrl(currentUser) && (
+                <img src={getSupabaseUserPhotoUrl(currentUser)} alt={getSupabaseUserDisplayName(currentUser)} style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
               )}
               <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
                 {currentUser.email}
@@ -1298,7 +1298,7 @@ export default function ScoreboardController() {
                   🎁 {formatTrialRemaining(authAccess.trialExpiresAt)}
                 </span>
               )}
-              {isSuperAdmin(currentUser.email) && (
+              {authAccess?.accessType === 'super-admin' && (
                 <button
                   onClick={() => navigate('/admin/whitelist')}
                   className="btn-primary"
@@ -1309,7 +1309,7 @@ export default function ScoreboardController() {
                 </button>
               )}
               <button
-                onClick={() => logoutUser()}
+                onClick={() => void logoutSupabaseUser()}
                 className="btn-secondary"
                 style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
                 title="ออกจากระบบ"

@@ -1,40 +1,43 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { useNavigate } from 'react-router-dom';
 import {
-  getFirebaseAuth,
-  loginWithGoogle,
-  logoutUser,
-  isSuperAdmin,
+  loginWithGoogleSupabase,
+  logoutSupabaseUser,
+  subscribeToSupabaseAuth,
+} from '../config/supabaseAuth';
+import {
+  fetchAllSupabaseUserPermissions,
+  isSupabaseSuperAdmin,
+  setSupabaseUserAccessStatus,
   SUPER_ADMIN_EMAILS,
-  fetchAllUserPermissions,
-  setUserAccessStatus,
-  type UserAccessRecord
-} from '../config/firebaseAuth';
+  type SupabaseAdminUserRecord,
+} from '../config/supabaseAccess';
 import { evaluateTrialAccess } from '../utils/trialAccess';
 
 export default function AdminWhitelist() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
-  const [userRecords, setUserRecords] = useState<UserAccessRecord[]>([]);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [userRecords, setUserRecords] = useState<SupabaseAdminUserRecord[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(false);
   const [newEmail, setNewEmail] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'allowed' | 'pending' | 'denied'>('all');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  // Load all user records from Firebase Realtime Database
+  // Load all user access records from Supabase.
   const loadUserRecords = useCallback(async () => {
     setLoadingData(true);
     try {
-      const records = await fetchAllUserPermissions();
+      const records = await fetchAllSupabaseUserPermissions();
       setUserRecords(records);
     } catch (err: any) {
       console.error('Error fetching user permissions:', err);
       const detail = err?.message || 'Permission denied';
       setMessage({
-        text: `ไม่สามารถโหลดข้อมูลสิทธิ์จาก Firebase ได้: ${detail}`,
+        text: `ไม่สามารถโหลดข้อมูลสิทธิ์จาก Supabase ได้: ${detail}`,
         type: 'error',
       });
     } finally {
@@ -43,20 +46,21 @@ export default function AdminWhitelist() {
   }, []);
 
   useEffect(() => {
-    try {
-      const auth = getFirebaseAuth();
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        setUser(currentUser);
-        setAuthLoading(false);
-        if (currentUser && isSuperAdmin(currentUser.email)) {
-          loadUserRecords();
-        }
-      });
-      return () => unsubscribe();
-    } catch (err) {
-      console.error('Auth Error:', err);
+    const unsubscribe = subscribeToSupabaseAuth((_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      setIsAdmin(false);
       setAuthLoading(false);
-    }
+      if (currentUser) {
+        void isSupabaseSuperAdmin(currentUser)
+          .then((isAdmin) => {
+            setIsAdmin(isAdmin);
+            if (isAdmin) void loadUserRecords();
+          })
+          .catch((err: unknown) => console.error('Supabase role check failed:', err));
+      }
+    });
+    return () => unsubscribe();
   }, [loadUserRecords]);
 
   // Handle 1-click status change (Allow / Deny / Pending)
@@ -68,13 +72,13 @@ export default function AdminWhitelist() {
 
     setLoadingData(true);
     try {
-      const updatedList = await setUserAccessStatus(targetEmail, newStatus);
+      const updatedList = await setSupabaseUserAccessStatus(targetEmail, newStatus);
       setUserRecords(updatedList);
       const actionLabel = newStatus === 'allowed' ? 'อนุญาต' : newStatus === 'denied' ? 'ระงับ/บล็อก' : 'ตั้งเป็นรออนุมัติ';
       setMessage({ text: `เปลี่ยนสิทธิ์สำหรับ ${targetEmail} เป็น "${actionLabel}" เรียบร้อยแล้ว!`, type: 'success' });
     } catch (err: any) {
       console.error('Error changing status:', err);
-      setMessage({ text: 'เกิดข้อผิดพลาดในการอัปเดตสิทธิ์บน Firebase', type: 'error' });
+      setMessage({ text: 'เกิดข้อผิดพลาดในการอัปเดตสิทธิ์บน Supabase', type: 'error' });
     } finally {
       setLoadingData(false);
     }
@@ -93,13 +97,13 @@ export default function AdminWhitelist() {
 
     setLoadingData(true);
     try {
-      const updatedList = await setUserAccessStatus(target, 'allowed');
+      const updatedList = await setSupabaseUserAccessStatus(target, 'allowed');
       setUserRecords(updatedList);
       setNewEmail('');
       setMessage({ text: `เพิ่มและอนุญาตสิทธิ์อีเมล ${target} เรียบร้อยแล้ว!`, type: 'success' });
     } catch (err: any) {
       console.error('Error adding email:', err);
-      setMessage({ text: 'เกิดข้อผิดพลาดในการบันทึกไปยัง Firebase Database', type: 'error' });
+      setMessage({ text: 'เกิดข้อผิดพลาดในการบันทึกไปยัง Supabase', type: 'error' });
     } finally {
       setLoadingData(false);
     }
@@ -107,15 +111,15 @@ export default function AdminWhitelist() {
 
   const handleLogin = async () => {
     try {
-      await loginWithGoogle();
-    } catch (err: any) {
+      await loginWithGoogleSupabase();
+    } catch (err: unknown) {
       console.error('Login Error:', err);
     }
   };
 
   const handleLogout = async () => {
     try {
-      await logoutUser();
+      await logoutSupabaseUser();
       setUser(null);
     } catch (err) {
       console.error('Logout Error:', err);
@@ -139,7 +143,7 @@ export default function AdminWhitelist() {
   }
 
   // If not logged in OR not Super Admin (thanakrit_kas@hotmail.com)
-  if (!user || !isSuperAdmin(user.email)) {
+  if (!user || !isAdmin) {
     return (
       <div style={styles.container}>
         <div style={{ ...styles.card, maxWidth: '480px', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
@@ -237,11 +241,11 @@ export default function AdminWhitelist() {
               <div style={{ marginTop: '12px', fontSize: '13px', color: '#fca5a5', borderTop: '1px solid rgba(239,68,68,0.2)', paddingTop: '10px' }}>
                 💡 <strong>วิธีตั้งค่า Realtime Database อย่างปลอดภัย:</strong>
                 <ol style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: '1.6' }}>
-                  <li>เข้าสู่ <strong>Firebase Console</strong> ➔ โปรเจกต์ <strong>authen-obs-scoreboard</strong></li>
+                  <li>เข้าสู่ <strong>Supabase Dashboard</strong> ➔ ตรวจสอบรายการผู้ใช้และสิทธิ์</li>
                   <li>ไปที่เมนู <strong>Build</strong> ➔ <strong>Realtime Database</strong> (กด <em>Create Database</em> หากยังไม่ได้สร้าง)</li>
                   <li>เลือกแท็บ <strong>Rules</strong> แล้วนำเนื้อหาจากไฟล์ <strong>database.rules.json</strong> ในโปรเจกต์ไปใช้ จากนั้นกด <strong>Publish</strong></li>
                   <li>ห้ามตั้งค่า <code>.read: true</code> หรือ <code>.write: true</code> ในระบบจริง เพราะจะทำให้ผู้ใช้แก้สิทธิ์และวันทดลองเองได้</li>
-                  <li>กลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Firebase"</strong></li>
+                  <li>กลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Supabase"</strong></li>
                 </ol>
               </div>
             )}
@@ -322,7 +326,7 @@ export default function AdminWhitelist() {
         <div style={styles.tableContainer}>
           {filteredRecords.length === 0 ? (
             <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-              {loadingData ? 'กำลังดึงข้อมูลจาก Firebase...' : 'ยังไม่มีประวัติการเข้าใช้งานหรืออีเมลในระบบ'}
+              {loadingData ? 'กำลังดึงข้อมูลจาก Supabase...' : 'ยังไม่มีประวัติการเข้าใช้งานหรืออีเมลในระบบ'}
             </div>
           ) : (
             filteredRecords.map((rec) => {
@@ -422,7 +426,7 @@ export default function AdminWhitelist() {
         {/* Refresh & Logout Footer */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <button onClick={loadUserRecords} style={styles.secondaryBtn}>
-            🔄 รีเฟรชข้อมูลจาก Firebase
+            🔄 รีเฟรชข้อมูลจาก Supabase
           </button>
           <button onClick={handleLogout} style={styles.dangerBtn}>
             🚪 ออกจากระบบ
