@@ -38,6 +38,18 @@ export function replaceGlobalTeamsCache(teamsData: Record<string, any> | null | 
   if (teamsData) updateGlobalTeamsCache(teamsData);
 }
 
+/** Replaces the shared cache from the owner-scoped Supabase teams records. */
+export function replaceGlobalTeamsCacheFromSupabase(
+  teams: ReadonlyArray<{ name: string; logoUrl: string }>,
+): void {
+  Object.keys(globalTeamsCache).forEach((key) => delete globalTeamsCache[key]);
+  teams.forEach((team) => {
+    const key = normalizeTeamKey(team.name);
+    const logoUrl = team.logoUrl.trim();
+    if (key && logoUrl) globalTeamsCache[key] = logoUrl;
+  });
+}
+
 /**
  * Utility function to resolve team logo URLs consistently across all components.
  * 

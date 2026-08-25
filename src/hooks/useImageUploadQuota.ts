@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { getSupabaseCurrentUser, subscribeToSupabaseAuth } from '../config/supabaseAuth';
 import { getSupabaseClient } from '../config/supabaseClient';
 import { getSupabaseUserAccess } from '../config/supabaseAccess';
 import { useAuthAccess } from './useAuthAccess';
+import { useAuthUser } from './useAuthUser';
 import { FREE_TRIAL_IMAGE_LIMIT } from '../constants/uploadConfig';
 
 export interface UseImageUploadQuotaResult {
@@ -18,18 +17,10 @@ export interface UseImageUploadQuotaResult {
 
 export function useImageUploadQuota(): UseImageUploadQuotaResult {
   const accessDecision = useAuthAccess();
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const currentUser = useAuthUser();
 
   const [uploadedCount, setUploadedCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToSupabaseAuth((_event, session) => {
-      setCurrentUser(session?.user ?? null);
-    });
-    void getSupabaseCurrentUser().then(setCurrentUser).catch(() => setCurrentUser(null));
-    return () => unsubscribe();
-  }, []);
 
   // Unlimited if super-admin or whitelist
   const isUnlimited = accessDecision?.accessType === 'super-admin' || accessDecision?.accessType === 'whitelist';

@@ -1,20 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Database } from 'firebase/database';
+import type { DataProvider } from '../config/dataProvider';
 import {
   getLogoSrc,
   getTeamInitials,
   saveTeamsToFirebase,
   listenToFirebaseTeams,
-  normalizeTeamKey
+  normalizeTeamKey,
+  replaceGlobalTeamsCacheFromSupabase,
 } from '../utils/logoResolver';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '../constants/uploadConfig';
 import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
+import { listSupabaseTeams, upsertSupabaseTeam } from '../services/supabaseLeagueService';
 
 interface TeamLogosManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   teamList: string[];
   db: Database | null;
+  dataProvider?: DataProvider;
+  supabaseLeagueId?: string;
   leagueName?: string;
   logoFolderPath: string;
   onLogoFolderPathChange: (path: string) => void;
@@ -26,6 +31,8 @@ export default function TeamLogosManagerModal({
   onClose,
   teamList,
   db,
+  dataProvider = 'firebase',
+  supabaseLeagueId = '',
   leagueName,
   logoFolderPath,
   onLogoFolderPathChange,
@@ -126,7 +133,34 @@ export default function TeamLogosManagerModal({
 
     setTeamLogosMap(initialMap);
 
-    // 2. Listen to Firebase Realtime DB `teams` node
+    // 2. Load the owner-scoped Supabase teams for the selected league.
+    if (dataProvider === 'supabase') {
+      if (!supabaseLeagueId) return undefined;
+
+      let cancelled = false;
+      void listSupabaseTeams(supabaseLeagueId)
+        .then((supabaseTeams) => {
+          if (cancelled) return;
+          setTeamLogosMap((prev) => {
+            const updated = { ...prev };
+            supabaseTeams.forEach((team) => {
+              const key = normalizeTeamKey(team.name);
+              updated[key] = { name: team.name, logo: team.logoUrl };
+            });
+            return updated;
+          });
+        })
+        .catch((error: unknown) => {
+          console.error('[TeamLogosManagerModal] Supabase teams load error:', error);
+          onToast?.(`❌ โหลดโลโก้ทีมจาก Supabase ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // 3. Listen to Firebase Realtime DB `teams` node
     if (db) {
       const unsubscribe = listenToFirebaseTeams(db, (fbTeamsMap) => {
         setTeamLogosMap((prev) => {
@@ -152,7 +186,7 @@ export default function TeamLogosManagerModal({
       });
       return () => unsubscribe();
     }
-  }, [isOpen, db, teamList]);
+  }, [dataProvider, db, isOpen, onToast, supabaseLeagueId, teamList]);
 
   if (!isOpen) return null;
 
@@ -178,15 +212,35 @@ export default function TeamLogosManagerModal({
     }));
   };
 
-  const handleSaveAllToFirebase = async () => {
-    if (!db) {
+  const handleSaveAll = async () => {
+    if (dataProvider === 'supabase' && !supabaseLeagueId) {
+      onToast?.('❌ กรุณาเลือกลีก Supabase ก่อนบันทึกโลโก้ทีม', 'error');
+      return;
+    }
+    if (dataProvider === 'firebase' && !db) {
       onToast?.('❌ กรุณาเชื่อมต่อ Firebase Realtime Database ก่อนบันทึก', 'error');
       return;
     }
 
     setIsSaving(true);
     try {
-      await saveTeamsToFirebase(db, teamLogosMap);
+      if (dataProvider === 'supabase') {
+        const existingTeams = await listSupabaseTeams(supabaseLeagueId);
+        const existingByKey = new Map(existingTeams.map((team) => [normalizeTeamKey(team.name), team]));
+        await Promise.all(Object.values(teamLogosMap).map((team) => upsertSupabaseTeam({
+          leagueId: supabaseLeagueId,
+          teamKey: normalizeTeamKey(team.name),
+          name: team.name.trim(),
+          logoUrl: team.logo.trim(),
+          cropMetadata: existingByKey.get(normalizeTeamKey(team.name))?.cropMetadata ?? null,
+        })));
+        replaceGlobalTeamsCacheFromSupabase(Object.values(teamLogosMap).map((team) => ({
+          name: team.name,
+          logoUrl: team.logo,
+        })));
+      } else if (db) {
+        await saveTeamsToFirebase(db, teamLogosMap);
+      }
 
       // Update local storage backup
       const localBackup: Record<string, string> = {};
@@ -197,11 +251,11 @@ export default function TeamLogosManagerModal({
       });
       localStorage.setItem('teamLogos', JSON.stringify(localBackup));
 
-      onToast?.(`✅ บันทึกโลโก้ทีม ${Object.keys(teamLogosMap).length} ทีมลง Firebase สำเร็จ!`, 'success');
+      onToast?.(`✅ บันทึกโลโก้ทีม ${Object.keys(teamLogosMap).length} ทีมลง ${dataProvider === 'supabase' ? 'Supabase' : 'Firebase'} สำเร็จ!`, 'success');
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Save teams error:', err);
-      onToast?.(`❌ เกิดข้อผิดพลาดในการบันทึก: ${err.message}`, 'error');
+      onToast?.(`❌ เกิดข้อผิดพลาดในการบันทึก: ${err instanceof Error ? err.message : 'ไม่ทราบสาเหตุ'}`, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -222,7 +276,7 @@ export default function TeamLogosManagerModal({
           </h2>
           <p style={{ margin: '6px 0 0 0', color: 'var(--text-muted-color)', fontSize: '13px' }}>
             {leagueName ? `สำหรับลีก: ${leagueName} | ` : ''}
-            อัปโหลดหรือใส่ URL โลโก้ของทุกทีมที่ดึงจาก Excel แล้วบันทึกลง Firebase ครั้งแรกเพียงครั้งเดียว
+            อัปโหลดหรือใส่ URL โลโก้ของทุกทีม แล้วบันทึกลง {dataProvider === 'supabase' ? 'Supabase' : 'Firebase'}
           </p>
         </div>
 
@@ -466,10 +520,10 @@ export default function TeamLogosManagerModal({
           <button
             className="btn-success"
             style={{ padding: '10px 24px', fontSize: '14px', fontWeight: 'bold' }}
-            onClick={handleSaveAllToFirebase}
+            onClick={handleSaveAll}
             disabled={isSaving}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกโลโก้ทีมทั้งหมดลง Firebase Database'}
+            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึกโลโก้ทีมทั้งหมดลง ${dataProvider === 'supabase' ? 'Supabase' : 'Firebase Database'}`}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { DataProvider } from '../config/dataProvider';
 import type { FirebaseSaveTarget } from '../utils/excelParser';
 import {
   TEAM_NAME_FONT_OPTIONS,
@@ -43,6 +44,10 @@ interface QuickSetupModalProps {
   isOpen: boolean;
   targets: FirebaseSaveTarget[];
   selectedTargetId: string;
+  dataProvider?: DataProvider;
+  supabaseLeagueId?: string;
+  publicOverlayEnabled?: boolean;
+  publicOverlayBusy?: boolean;
   tickerSpeed: number;
   closeLabel: string;
   onTargetChange: (targetId: string) => void;
@@ -72,6 +77,7 @@ interface QuickSetupModalProps {
   onQuickAddTeamNames: () => void;
   onOpenObsSetup: () => void;
   onCopyOverlay: (viewType: string, standaloneFile?: string) => void;
+  onPublicOverlayChange?: (enabled: boolean) => void;
   onOpenDatabase: () => void;
   onClose: () => void;
 }
@@ -80,6 +86,10 @@ export default function QuickSetupModal({
   isOpen,
   targets,
   selectedTargetId,
+  dataProvider = 'firebase',
+  supabaseLeagueId,
+  publicOverlayEnabled = false,
+  publicOverlayBusy = false,
   tickerSpeed,
   closeLabel,
   onTargetChange,
@@ -109,6 +119,7 @@ export default function QuickSetupModal({
   onQuickAddTeamNames,
   onOpenObsSetup,
   onCopyOverlay,
+  onPublicOverlayChange,
   onOpenDatabase,
   onClose,
 }: QuickSetupModalProps) {
@@ -589,6 +600,8 @@ export default function QuickSetupModal({
                 teamSide={cropModalTarget.teamSide}
                 teamName={cropModalTarget.teamName}
                 logoUrl={cropModalTarget.logoUrl}
+                dataProvider={dataProvider}
+                supabaseLeagueId={supabaseLeagueId}
               />
             )}
           </div> : null}
@@ -711,6 +724,24 @@ export default function QuickSetupModal({
           <button className="btn-primary" onClick={() => onCopyOverlay('table')}><i className="fas fa-table"></i> Copy League Table URL</button>
           <button className="btn-success" onClick={() => onCopyOverlay('results')}><i className="fas fa-list"></i> Copy Match Results URL</button>
           <button className="btn-primary" style={{ background: '#0ea5e9', borderColor: '#0ea5e9', fontWeight: 'bold' }} onClick={() => onCopyOverlay('combined', 'all-score-combined')}><i className="fas fa-trophy"></i> Copy Combined All Score & Table URL</button>
+          {dataProvider === 'supabase' && (
+            <div style={{ padding: '10px 12px', backgroundColor: publicOverlayEnabled ? '#052e16' : '#262626', borderRadius: '6px', border: publicOverlayEnabled ? '1px solid #22c55e' : '1px solid #64748b' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: publicOverlayEnabled ? '#86efac' : '#cbd5e1', fontSize: '12px', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={publicOverlayEnabled}
+                  disabled={publicOverlayBusy || !supabaseLeagueId}
+                  onChange={(event) => onPublicOverlayChange?.(event.target.checked)}
+                />
+                {publicOverlayEnabled ? 'เปิด Public Overlay สำหรับลีกนี้' : 'ลีกนี้ยังเป็น Private Overlay'}
+              </label>
+              <div style={{ marginTop: '5px', fontSize: '11px', color: '#94a3b8' }}>
+                {publicOverlayEnabled
+                  ? 'ผู้ชมและนักแข่งเปิดตารางได้โดยไม่ต้อง Login และ URL ไม่มีวันหมดอายุ'
+                  : 'เมื่อเปิด ระบบจะสร้าง Public URL ตามลีกที่เลือกและยังคงป้องกันการแก้ไขข้อมูล'}
+              </div>
+            </div>
+          )}
           <div style={{ padding: '10px 12px', backgroundColor: '#262626', borderRadius: '6px', border: '1px solid #ffb74d' }}>
             <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffb74d', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}><i className="fas fa-gauge-high"></i> ตั้งค่าความเร็วการวิ่งของตัวหนังสือ (Live Ticker):</label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>

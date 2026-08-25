@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref, remove, update, type Database } from 'firebase/database';
 import type { FirebaseSaveTarget } from '../utils/excelParser';
+import type { DataProvider } from '../config/dataProvider';
+import {
+  deleteSupabaseMatch,
+  listSupabaseMatches,
+  subscribeSupabaseMatches,
+  updateSupabaseMatch,
+} from '../services/supabaseLeagueService';
 
 export interface DatabaseMatch {
   id: string;
@@ -17,6 +24,8 @@ interface UseScoreboardDatabaseOptions {
   activeDb: Database | null;
   targets: FirebaseSaveTarget[];
   selectedTargetId: string;
+  provider?: DataProvider;
+  supabaseLeagueId?: string;
   notify: (message: string, type?: string) => void;
 }
 
@@ -24,6 +33,8 @@ export function useScoreboardDatabase({
   activeDb,
   targets,
   selectedTargetId,
+  provider = 'firebase',
+  supabaseLeagueId = '',
   notify,
 }: UseScoreboardDatabaseOptions) {
   const [matches, setMatches] = useState<DatabaseMatch[]>([]);
@@ -51,9 +62,38 @@ export function useScoreboardDatabase({
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
     };
-  }, [activeDb, selectedTarget]);
+  }, [activeDb, provider, selectedTarget, supabaseLeagueId]);
 
   const loadMatches = useCallback(() => {
+    if (provider === 'supabase') {
+      if (!supabaseLeagueId) {
+        notifyRef.current('กรุณาเลือกลีก Supabase ก่อน', 'error');
+        return;
+      }
+
+      unsubscribeRef.current?.();
+      setIsLoading(true);
+      void listSupabaseMatches(supabaseLeagueId)
+        .then((nextMatches) => {
+          setMatches(nextMatches);
+          setIsLoading(false);
+          unsubscribeRef.current = subscribeSupabaseMatches(
+            supabaseLeagueId,
+            (updatedMatches) => setMatches(updatedMatches),
+            (error: unknown) => {
+              const detail = error instanceof Error ? error.message : String(error);
+              notifyRef.current(`Supabase Realtime error: ${detail}`, 'error');
+            },
+          );
+        })
+        .catch((error: unknown) => {
+          setIsLoading(false);
+          const detail = error instanceof Error ? error.message : String(error);
+          notifyRef.current(`โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ${detail}`, 'error');
+        });
+      return;
+    }
+
     if (!selectedTarget || !activeDb) {
       notifyRef.current('กรุณาเลือกลีกและตรวจสอบการเชื่อมต่อ Firebase', 'error');
       return;
@@ -86,13 +126,30 @@ export function useScoreboardDatabase({
           notifyRef.current(`Error: ${error.message}`, 'error');
         },
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       setIsLoading(false);
-      notifyRef.current(`Error: ${error?.message || error}`, 'error');
+      const detail = error instanceof Error ? error.message : String(error);
+      notifyRef.current(`Error: ${detail}`, 'error');
     }
-  }, [activeDb, selectedTarget]);
+  }, [activeDb, provider, selectedTarget, supabaseLeagueId]);
 
   const deleteMatch = useCallback((match: DatabaseMatch) => {
+    if (provider === 'supabase') {
+      if (!supabaseLeagueId) return;
+      if (!window.confirm(`ต้องการลบแมตช์ ${match.teamA || ''} vs ${match.teamB || ''} ใช่หรือไม่?`)) return;
+
+      void deleteSupabaseMatch(supabaseLeagueId, match.id)
+        .then(() => {
+          notifyRef.current('ลบข้อมูลจาก Supabase สำเร็จ', 'success');
+          loadMatches();
+        })
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          notifyRef.current(`ลบข้อมูลจาก Supabase ไม่สำเร็จ: ${detail}`, 'error');
+        });
+      return;
+    }
+
     if (!selectedTarget || !activeDb) return;
     if (!window.confirm(`ต้องการลบแมตช์ ${match.teamA || ''} vs ${match.teamB || ''} ใช่หรือไม่?`)) return;
 
@@ -102,9 +159,33 @@ export function useScoreboardDatabase({
         loadMatches();
       })
       .catch((error) => notifyRef.current(`ลบข้อมูลไม่สำเร็จ: ${error.message}`, 'error'));
-  }, [activeDb, loadMatches, selectedTarget]);
+  }, [activeDb, loadMatches, provider, selectedTarget, supabaseLeagueId]);
 
   const saveEditedMatch = useCallback((match: DatabaseMatch) => {
+    if (provider === 'supabase') {
+      if (!supabaseLeagueId) return;
+
+      void updateSupabaseMatch(supabaseLeagueId, match.id, {
+        date: match.date || null,
+        teamA: match.teamA || '',
+        scoreA: parseInt(String(match.scoreA ?? 0), 10) || 0,
+        teamB: match.teamB || '',
+        scoreB: parseInt(String(match.scoreB ?? 0), 10) || 0,
+        roundLabel: match.roundLabel || '',
+        url: match.url || '',
+      })
+        .then(() => {
+          notifyRef.current('บันทึกข้อมูลใน Supabase สำเร็จ', 'success');
+          setEditingMatch(null);
+          loadMatches();
+        })
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          notifyRef.current(`บันทึกข้อมูลใน Supabase ไม่สำเร็จ: ${detail}`, 'error');
+        });
+      return;
+    }
+
     if (!selectedTarget || !activeDb) return;
 
     const updated = {
@@ -124,7 +205,7 @@ export function useScoreboardDatabase({
         loadMatches();
       })
       .catch((error) => notifyRef.current(`บันทึกไม่สำเร็จ: ${error.message}`, 'error'));
-  }, [activeDb, loadMatches, selectedTarget]);
+  }, [activeDb, loadMatches, provider, selectedTarget, supabaseLeagueId]);
 
   const filteredMatches = useMemo(() => {
     const normalizedSearch = searchTerm.toLowerCase();

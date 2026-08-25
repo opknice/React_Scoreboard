@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Database } from 'firebase/database';
+import type { DataProvider } from '../config/dataProvider';
+import type { Json } from '../types/database';
 import {
   getCropMetadataFromLocalStorage,
   saveCropMetadataToLocalStorage,
   saveCropMetadataToFirebase,
   removeCropMetadata,
   type CropMetadata,
+  isValidCropMetadata,
 } from '../utils/logoCropMetadata';
 import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
 import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
 import LogoWithCrop from './LogoWithCrop';
+import { findSupabaseTeam, updateSupabaseTeam, upsertSupabaseTeam } from '../services/supabaseLeagueService';
 
 interface LogoBrowserCropModalProps {
   isOpen: boolean;
@@ -19,6 +23,8 @@ interface LogoBrowserCropModalProps {
   teamName: string;
   logoUrl: string;
   db?: Database | null;
+  dataProvider?: DataProvider;
+  supabaseLeagueId?: string;
   onToast?: (message: string, type?: string) => void;
 }
 
@@ -29,6 +35,8 @@ export default function LogoBrowserCropModal({
   teamName,
   logoUrl,
   db,
+  dataProvider = 'firebase',
+  supabaseLeagueId = '',
   onToast,
 }: LogoBrowserCropModalProps) {
   const teamKey = normalizeTeamKey(teamName || `Team ${teamSide}`);
@@ -78,7 +86,31 @@ export default function LogoBrowserCropModal({
       setBaseHeight(500);
       setCustomSize(0);
     }
-  }, [isOpen, teamKey, logoUrl, teamName]);
+
+    if (dataProvider === 'supabase' && supabaseLeagueId) {
+      void findSupabaseTeam(supabaseLeagueId, teamKey)
+        .then((team) => {
+          if (!team) return;
+          const remoteCrop = isValidCropMetadata(team.cropMetadata) ? team.cropMetadata : null;
+          initialCropRef.current = remoteCrop
+            ? { originalUrl: team.logoUrl || logoUrl, crop: remoteCrop }
+            : existingData;
+          if (team.logoUrl) setActiveUrl(team.logoUrl);
+          if (!remoteCrop) return;
+          saveCropMetadataToLocalStorage(teamKey, team.logoUrl || logoUrl, remoteCrop);
+          setZoom(remoteCrop.zoom || 1);
+          setRotation(remoteCrop.rotation || 0);
+          setOffsetX(remoteCrop.x || 0);
+          setOffsetY(remoteCrop.y || 0);
+          setBaseWidth(remoteCrop.width || 500);
+          setBaseHeight(remoteCrop.height || 500);
+          setCustomSize(remoteCrop.customSize || 0);
+        })
+        .catch((error: unknown) => {
+          console.warn('[LogoBrowserCropModal] Supabase crop load warning:', error);
+        });
+    }
+  }, [dataProvider, isOpen, logoUrl, supabaseLeagueId, teamKey, teamName]);
 
   const currentCrop: CropMetadata = {
     x: offsetX,
@@ -199,6 +231,16 @@ export default function LogoBrowserCropModal({
         }
       }
 
+      if (dataProvider === 'supabase' && supabaseLeagueId) {
+        await upsertSupabaseTeam({
+          leagueId: supabaseLeagueId,
+          teamKey,
+          name: teamName.trim(),
+          logoUrl: targetUrl,
+          cropMetadata: currentCrop as unknown as Json,
+        });
+      }
+
       window.dispatchEvent(new Event('logoCropUpdated'));
       try {
         const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
@@ -212,9 +254,9 @@ export default function LogoBrowserCropModal({
 
       onToast?.(`✅ บันทึก Crop โลโก้ ${teamName} เรียบร้อยแล้ว`, 'success');
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[LogoBrowserCropModal] Save error:', err);
-      onToast?.(`❌ บันทึกไม่สำเร็จ: ${err.message}`, 'error');
+      onToast?.(`❌ บันทึกไม่สำเร็จ: ${err instanceof Error ? err.message : 'ไม่ทราบสาเหตุ'}`, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -249,6 +291,9 @@ export default function LogoBrowserCropModal({
   const handleReset = async () => {
     try {
       await removeCropMetadata(db || null, teamKey);
+      if (dataProvider === 'supabase' && supabaseLeagueId) {
+        await updateSupabaseTeam(supabaseLeagueId, teamKey, { cropMetadata: null });
+      }
       setZoom(1);
       setRotation(0);
       setOffsetX(0);
@@ -269,7 +314,7 @@ export default function LogoBrowserCropModal({
       } catch { }
       onToast?.(`🔄 รีเซ็ต Crop โลโก้ ${teamName} เป็นค่าเริ่มต้นแล้ว`, 'info');
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[LogoBrowserCropModal] Reset error:', err);
     }
   };
@@ -572,4 +617,3 @@ export default function LogoBrowserCropModal({
     document.body
   );
 }
-

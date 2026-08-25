@@ -4,6 +4,7 @@ import type { Json } from '../types/database';
 
 export interface LeagueRecord {
   id: string;
+  ownerId: string;
   name: string;
   slug: string;
   isPublic: boolean;
@@ -71,8 +72,15 @@ export interface UpsertTeamInput {
 export type MatchChangeListener = (matches: MatchRecord[]) => void;
 export type TeamChangeListener = (teams: TeamRecord[]) => void;
 
+export interface SupabaseOverlaySnapshot {
+  league: { id: string; name: string; slug: string };
+  matches: MatchRecord[];
+  teams: TeamRecord[];
+}
+
 function mapLeague(row: {
   id: string;
+  owner_id: string;
   name: string;
   slug: string;
   is_public: boolean;
@@ -80,6 +88,7 @@ function mapLeague(row: {
 }): LeagueRecord {
   return {
     id: row.id,
+    ownerId: row.owner_id,
     name: row.name,
     slug: row.slug,
     isPublic: row.is_public,
@@ -145,10 +154,116 @@ function requireData<T>(data: T | null, error: { message: string } | null): T {
   return data;
 }
 
+function isJsonObject(value: Json | undefined | null): value is { [key: string]: Json | undefined } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function jsonString(value: Json | undefined, field: string): string {
+  if (typeof value !== 'string') throw new Error(`Supabase overlay field ${field} is invalid`);
+  return value;
+}
+
+function jsonNumber(value: Json | undefined, field: string): number {
+  if (typeof value !== 'number') throw new Error(`Supabase overlay field ${field} is invalid`);
+  return value;
+}
+
+function jsonNullableString(value: Json | undefined): string | null {
+  return value === null || value === undefined ? null : jsonString(value, 'nullable string');
+}
+
+function parseOverlaySnapshot(value: Json | null): SupabaseOverlaySnapshot {
+  if (!isJsonObject(value) || !isJsonObject(value.league) || !Array.isArray(value.matches) || !Array.isArray(value.teams)) {
+    throw new Error('Supabase overlay returned an invalid snapshot');
+  }
+
+  const league = value.league;
+  const matches = value.matches.map((item) => {
+    if (!isJsonObject(item)) throw new Error('Supabase overlay returned an invalid match');
+    return {
+      id: jsonString(item.id, 'match id'),
+      legacyFirebaseId: jsonNullableString(item.legacyFirebaseId),
+      leagueId: jsonString(item.leagueId, 'match league id'),
+      date: jsonNullableString(item.date) || '',
+      teamA: jsonString(item.teamA, 'team A'),
+      teamB: jsonString(item.teamB, 'team B'),
+      scoreA: jsonNumber(item.scoreA, 'score A'),
+      scoreB: jsonNumber(item.scoreB, 'score B'),
+      roundLabel: jsonString(item.roundLabel, 'round label'),
+      url: jsonString(item.url, 'match URL'),
+      logoA: jsonString(item.logoA, 'logo A'),
+      logoB: jsonString(item.logoB, 'logo B'),
+    } satisfies MatchRecord;
+  });
+  const teams = value.teams.map((item) => {
+    if (!isJsonObject(item)) throw new Error('Supabase overlay returned an invalid team');
+    return {
+      id: jsonString(item.id, 'team id'),
+      leagueId: jsonString(item.leagueId, 'team league id'),
+      teamKey: jsonString(item.teamKey, 'team key'),
+      name: jsonString(item.name, 'team name'),
+      logoUrl: jsonString(item.logoUrl, 'team logo URL'),
+      cropMetadata: item.cropMetadata ?? null,
+    } satisfies TeamRecord;
+  });
+
+  return {
+    league: {
+      id: jsonString(league.id, 'league id'),
+      name: jsonString(league.name, 'league name'),
+      slug: jsonString(league.slug, 'league slug'),
+    },
+    matches,
+    teams,
+  };
+}
+
+export async function createSupabaseOverlayAccessToken(
+  leagueId: string,
+  ttlSeconds = 604800,
+): Promise<{ token: string; expiresAt: string }> {
+  const { data, error } = await getSupabaseClient().rpc('create_overlay_access_token', {
+    target_league_id: leagueId,
+    ttl_seconds: ttlSeconds,
+  });
+  const row = requireData(data, error)[0];
+  if (!row) throw new Error('Supabase ไม่ส่ง Overlay token กลับมา');
+  return { token: row.access_token, expiresAt: row.expires_at };
+}
+
+export async function readSupabaseOverlaySnapshot(token: string): Promise<SupabaseOverlaySnapshot> {
+  const { data, error } = await getSupabaseClient().rpc('read_overlay_snapshot', {
+    request_token: token,
+  });
+  throwIfError(error);
+  return parseOverlaySnapshot(data);
+}
+
+export async function setSupabaseLeaguePublicOverlay(
+  leagueId: string,
+  enabled: boolean,
+): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('set_league_public_overlay', {
+    target_league_id: leagueId,
+    enabled,
+  });
+  throwIfError(error);
+}
+
+export async function readSupabasePublicOverlaySnapshot(
+  leagueId: string,
+): Promise<SupabaseOverlaySnapshot> {
+  const { data, error } = await getSupabaseClient().rpc('read_public_overlay_snapshot', {
+    target_league_id: leagueId,
+  });
+  throwIfError(error);
+  return parseOverlaySnapshot(data);
+}
+
 export async function listSupabaseLeagues(): Promise<LeagueRecord[]> {
   const { data, error } = await getSupabaseClient()
     .from('leagues')
-    .select('id, name, slug, is_public, is_active')
+    .select('id, owner_id, name, slug, is_public, is_active')
     .eq('is_active', true)
     .order('name', { ascending: true });
 
@@ -158,7 +273,7 @@ export async function listSupabaseLeagues(): Promise<LeagueRecord[]> {
 export async function findSupabaseLeagueBySlug(slug: string): Promise<LeagueRecord | null> {
   const { data, error } = await getSupabaseClient()
     .from('leagues')
-    .select('id, name, slug, is_public, is_active')
+    .select('id, owner_id, name, slug, is_public, is_active')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -167,10 +282,14 @@ export async function findSupabaseLeagueBySlug(slug: string): Promise<LeagueReco
 }
 
 export async function createSupabaseLeague(name: string, slug: string): Promise<LeagueRecord> {
+  const { data: userData, error: userError } = await getSupabaseClient().auth.getUser();
+  throwIfError(userError);
+  if (!userData.user) throw new Error('ต้องเข้าสู่ระบบก่อนสร้างลีก');
+
   const { data, error } = await getSupabaseClient()
     .from('leagues')
-    .insert({ name: name.trim(), slug: slug.trim() })
-    .select('id, name, slug, is_public, is_active')
+    .insert({ name: name.trim(), slug: slug.trim(), owner_id: userData.user.id, is_public: false })
+    .select('id, owner_id, name, slug, is_public, is_active')
     .single();
 
   return mapLeague(requireData(data, error));
@@ -255,6 +374,21 @@ export async function listSupabaseTeams(leagueId: string): Promise<TeamRecord[]>
   return requireData(data, error).map(mapTeam);
 }
 
+export async function findSupabaseTeam(
+  leagueId: string,
+  teamKey: string,
+): Promise<TeamRecord | null> {
+  const { data, error } = await getSupabaseClient()
+    .from('teams')
+    .select('id, league_id, team_key, name, logo_url, crop_metadata')
+    .eq('league_id', leagueId)
+    .eq('team_key', teamKey)
+    .maybeSingle();
+
+  throwIfError(error);
+  return data ? mapTeam(data) : null;
+}
+
 export async function upsertSupabaseTeam(input: UpsertTeamInput): Promise<TeamRecord> {
   const { data, error } = await getSupabaseClient()
     .from('teams')
@@ -268,6 +402,27 @@ export async function upsertSupabaseTeam(input: UpsertTeamInput): Promise<TeamRe
       },
       { onConflict: 'league_id,team_key' },
     )
+    .select('id, league_id, team_key, name, logo_url, crop_metadata')
+    .single();
+
+  return mapTeam(requireData(data, error));
+}
+
+export async function updateSupabaseTeam(
+  leagueId: string,
+  teamKey: string,
+  input: { name?: string; logoUrl?: string; cropMetadata?: Json | null },
+): Promise<TeamRecord> {
+  const update = {
+    ...(input.name !== undefined ? { name: input.name } : {}),
+    ...(input.logoUrl !== undefined ? { logo_url: input.logoUrl } : {}),
+    ...(input.cropMetadata !== undefined ? { crop_metadata: input.cropMetadata } : {}),
+  };
+  const { data, error } = await getSupabaseClient()
+    .from('teams')
+    .update(update)
+    .eq('league_id', leagueId)
+    .eq('team_key', teamKey)
     .select('id, league_id, team_key, name, logo_url, crop_metadata')
     .single();
 

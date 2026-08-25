@@ -1,4 +1,4 @@
-import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
+import type { AuthChangeEvent, RealtimeChannel, Session, User } from '@supabase/supabase-js';
 import { getSupabaseClient } from './supabaseClient';
 
 export type SupabaseAuthStateListener = (
@@ -47,4 +47,37 @@ export function subscribeToSupabaseAuth(
 ): () => void {
   const { data } = getSupabaseClient().auth.onAuthStateChange(listener);
   return () => data.subscription.unsubscribe();
+}
+
+/**
+ * Watches the signed-in user's permission records so an admin change is
+ * reflected without waiting for a tab refresh or a fallback check.
+ */
+export function subscribeToSupabasePermissionChanges(
+  userId: string,
+  onChange: () => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  const client = getSupabaseClient();
+  const channel: RealtimeChannel = client
+    .channel(`auth-permissions:${userId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'user_access', filter: `user_id=eq.${userId}` },
+      onChange,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'user_roles', filter: `user_id=eq.${userId}` },
+      onChange,
+    )
+    .subscribe((status) => {
+      if (status === 'CHANNEL_ERROR') {
+        onError?.(new Error('Supabase permission Realtime channel error'));
+      }
+    });
+
+  return () => {
+    void client.removeChannel(channel);
+  };
 }

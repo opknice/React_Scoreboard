@@ -13,6 +13,7 @@ export interface Database {
       leagues: TableDefinition<
         {
           id: string;
+          owner_id: string;
           name: string;
           slug: string;
           is_public: boolean;
@@ -22,6 +23,7 @@ export interface Database {
         },
         {
           id?: string;
+          owner_id: string;
           name: string;
           slug: string;
           is_public?: boolean;
@@ -31,6 +33,7 @@ export interface Database {
         },
         {
           name?: string;
+          owner_id?: string;
           slug?: string;
           is_public?: boolean;
           is_active?: boolean;
@@ -181,6 +184,11 @@ export interface Database {
       record_user_login: { Args: Record<string, never>; Returns: undefined };
       increment_image_upload_count: { Args: { amount?: number }; Returns: number };
       admin_set_user_access: { Args: { target_user_id: string; next_status: 'allowed' | 'pending' | 'denied' }; Returns: undefined };
+      create_overlay_access_token: { Args: { target_league_id: string; ttl_seconds?: number }; Returns: { access_token: string; expires_at: string }[] };
+      read_overlay_snapshot: { Args: { request_token: string }; Returns: Json | null };
+      revoke_overlay_access_tokens: { Args: { target_league_id: string }; Returns: undefined };
+      set_league_public_overlay: { Args: { target_league_id: string; enabled: boolean }; Returns: undefined };
+      read_public_overlay_snapshot: { Args: { target_league_id: string }; Returns: Json | null };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

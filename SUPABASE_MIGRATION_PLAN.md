@@ -1,9 +1,55 @@
 # แผนถอน Firebase และย้ายระบบไป Supabase
 
-**สถานะ:** แผนงาน — ยังไม่เริ่มแก้โค้ด  
+**สถานะ:** อยู่ระหว่าง migration — Supabase Auth, owner-only leagues, matches, teams, crop metadata, Private/Public Overlay และ Permission Realtime ใช้งานได้แล้ว แต่ Firebase runtime/adapter ยังไม่ถูกถอนทั้งหมด
+**อัปเดตล่าสุด:** 24 สิงหาคม 2026
 **ขอบเขต:** ย้าย Firebase ออกจากระบบทั้งหมด โดยยังคง OBS, Replay, IndexedDB, localStorage, Excel และ Cloudinary ไว้ก่อน  
 **สถาปัตยกรรมเป้าหมาย:** Supabase Project เดียว แยกข้อมูลแต่ละลีกด้วย `league_id`  
 **ไฟล์อ้างอิง:** [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md)
+
+## สถานะปัจจุบันและสิ่งที่ทำแล้ว
+
+### ฝั่ง Supabase project
+
+- สร้าง Supabase Project และตั้งค่า Project URL กับ publishable/anon key แล้ว
+- เปิด Google Auth provider แล้ว
+- ตั้ง Site URL และ Redirect URLs สำหรับ production/local แล้ว
+- รัน migration `0001` ถึง `0007` ใน Supabase SQL Editor แล้ว
+- เพิ่ม `thanakrit_kas@hotmail.com` เป็น Super Admin และกำหนดเป็นเจ้าของ `Alcohol League` กับ `Var38 League`
+- Import ข้อมูลจาก Firebase JSON สำเร็จแล้ว:
+  - Alcohol League: 24 matches, 10 teams
+  - Var38 League: 18 matches, 6 teams
+- เปิดใช้ owner-only access: ผู้ใช้เห็นเฉพาะลีกที่ตนเองเป็นเจ้าของ และยังไม่เปิด sharing
+- เปิดใช้ Overlay URL แบบ owner-issued read-only token ซึ่งหมดอายุได้
+- เพิ่ม Public Overlay แยกตามลีกผ่าน `leagues.is_public` และ RPC แบบ read-only โดย URL ไม่มีวันหมดอายุ
+- เปิด Realtime สำหรับ `user_access` และ `user_roles` เพื่อให้การเปลี่ยน Permission อัปเดตทันที
+
+### ฝั่ง application
+
+- ย้าย Google Login, session, logout, access status และ Super Admin check ไป Supabase Auth/RPC แล้ว
+- เพิ่ม `VITE_DATA_PROVIDER` เพื่อสลับ Firebase/Supabase ระหว่างช่วง transition
+- Controller โหลดลีกจาก Supabase และแสดงปุ่มบันทึก match ของแต่ละลีกแล้ว
+- Database Viewer รองรับ list/create/update/delete matches ผ่าน Supabase
+- เพิ่ม Supabase Realtime subscription สำหรับ matches และ teams
+- ย้ายการจัดการ teams, logo URL และ crop metadata ไป Supabase
+- ปรับ Auth lifecycle ให้ตรวจ Auth/Permission ตอน Initial Load, ไม่ตรวจ Permission ซ้ำเมื่อ `TOKEN_REFRESHED`, ตรวจเมื่อ Tab กลับมาและข้อมูลเก่า และมี fallback check ทุก 10 นาทีเฉพาะเมื่อจำเป็น
+- เพิ่ม Permission Realtime listener สำหรับ `user_access` และ `user_roles`
+- ย้าย Overlay, League Table, All Scores และ Combined Standalone ให้รองรับ Supabase snapshot ผ่าน token
+- ยังคง Cloudinary สำหรับอัปโหลดรูปภาพตาม scope เดิม
+- ตรวจสอบผ่านแล้ว: TypeScript, lint, tests 127 รายการ และ production build
+
+### สถานะสำคัญที่ต้องเข้าใจ
+
+ระบบยังเป็น transitional architecture: เมื่อ `VITE_DATA_PROVIDER=supabase` ฟีเจอร์หลักที่ย้ายแล้วจะใช้ Supabase แต่ Firebase SDK, Firebase parser และ Firebase fallback บางส่วนยังอยู่ใน source code เพื่อรองรับ rollback/legacy flow
+
+## งานถัดไปตามลำดับที่แนะนำ
+
+1. ทำ manual acceptance test กับทั้งสองลีก: login, สลับลีก, บันทึก/แก้ไข/ลบ match, logo/crop, Private Overlay และ Public Overlay
+2. ทดสอบ security/RLS ด้วย user อื่นว่าไม่เห็นลีก, teams หรือ matches ของ `thanakrit_kas@hotmail.com`
+3. ตั้งค่า Supabase environment variables ใน Vercel และทดสอบ production URL ใหม่
+4. ตรวจสอบและย้าย Firebase references ที่ยังเหลือใน runtime ได้แก่ Firebase fallback, `useScoreboardFirebase`, Firebase URL compatibility และ legacy standalone flow
+5. ทำ Firebase backup/freeze point และกำหนด cutover ให้ Supabase เป็น provider เดียว
+6. ถอน Firebase package, config, types, parser และ code ที่ไม่ใช้แล้ว จากนั้นรัน verification ให้ไม่พบ Firebase reference
+7. พิจารณาแยก Cloudinary ไป Supabase Storage เป็น phase ใหม่ภายหลัง ไม่รวมในรอบนี้
 
 ## 1. เป้าหมาย
 
@@ -250,7 +296,12 @@ VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 - [x] เพิ่ม `supabase/migrations/0001_initial_schema.sql`
 - [x] เพิ่ม `supabase/README.md` สำหรับการรัน migration และตั้งค่า Auth
 - [x] เพิ่ม `supabase/migrations/0002_auth_rpc.sql` และรันใน project จริง
-- [x] รัน migration ใน Supabase project จริง
+- [x] เพิ่ม `supabase/migrations/0003_private_league_ownership.sql` สำหรับ owner-only league access
+- [x] เพิ่ม `supabase/migrations/0004_legacy_match_identity.sql` สำหรับ import แบบ idempotent
+- [x] รัน `supabase/migrations/0005_overlay_access_tokens.sql` ใน Supabase project จริง
+- [x] เพิ่ม `supabase/migrations/0006_public_overlay.sql` สำหรับ Public Overlay แยกตามลีก
+- [x] เพิ่ม `supabase/migrations/0007_permission_realtime.sql` สำหรับ Permission Realtime
+- [x] รัน migration `0006` และ `0007` ใน Supabase project จริง
 - [x] เติมค่า Supabase environment variables ใน local `.env`
 - [ ] เติมค่า Supabase environment variables ใน Vercel
 - [x] เชื่อม Auth provider ของ application เข้ากับ Supabase
@@ -266,18 +317,31 @@ supabase/
 ├─ config.toml                 # ถ้าใช้ Supabase CLI/local development
 └─ migrations/
    ├─ 0001_initial_schema.sql
-   └─ 0002_auth_rpc.sql
+   ├─ 0002_auth_rpc.sql
+   ├─ 0003_private_league_ownership.sql
+   ├─ 0004_legacy_match_identity.sql
+   ├─ 0005_overlay_access_tokens.sql
+   ├─ 0006_public_overlay.sql
+   └─ 0007_permission_realtime.sql
 ```
 
-Migration แรกถูกรวมเป็นไฟล์เดียวใน repository ปัจจุบัน เพื่อให้สร้าง schema, trigger, function, RLS และ Realtime ได้เป็นชุดเดียว ส่วน `0002_auth_rpc.sql` เป็น follow-up สำหรับบันทึก login timestamp ผ่าน RPC โดยมีตาราง `league_memberships` เพิ่มเติมสำหรับจำกัดสิทธิ์ operator/viewer รายลีก
+Migration แรกถูกรวมเป็นไฟล์เดียวใน repository ปัจจุบัน เพื่อให้สร้าง schema, trigger, function, RLS และ Realtime ได้เป็นชุดเดียว ส่วน `0002_auth_rpc.sql` เป็น follow-up สำหรับบันทึก login timestamp ผ่าน RPC และ `0003_private_league_ownership.sql` เปลี่ยนเป็น private owner-only พร้อม seed สองลีกปัจจุบัน
+
+### Ownership requirement ปัจจุบัน
+
+- `owner_id` เป็นเจ้าของหลักของลีก
+- เจ้าของเห็น/แก้ไขได้เฉพาะลีกของตัวเอง
+- Super Admin เห็นและจัดการได้ทุกลีก
+- `league_memberships` ยังไม่ถูกใช้เพื่อแชร์ลีกในช่วงพัฒนา
+- anonymous ไม่สามารถอ่าน table ของลีก private โดยตรง; Overlay ใช้ RPC snapshot กับ owner-issued token แทน
 
 ### RLS policy ที่ต้องออกแบบ
 
 | ตาราง | Anonymous | Authenticated | Super Admin |
 |---|---|---|---|
-| `leagues` | อ่านเฉพาะ active | อ่านตามสิทธิ์ | จัดการทั้งหมด |
-| `matches` | อ่านเฉพาะ public league | อ่าน/เขียนตาม league membership | จัดการทั้งหมด |
-| `teams` | อ่าน logo public | แก้เฉพาะ league ที่มีสิทธิ์ | จัดการทั้งหมด |
+| `leagues` | ห้ามอ่านโดยตรง | อ่านเฉพาะ owner | จัดการทั้งหมด |
+| `matches` | ห้ามอ่านโดยตรง; อ่านผ่าน token RPC ได้เฉพาะ snapshot | อ่าน/เขียนเฉพาะ owner | จัดการทั้งหมด |
+| `teams` | ห้ามอ่านโดยตรง; อยู่ใน token snapshot ตามลีก | อ่าน/เขียนเฉพาะ owner | จัดการทั้งหมด |
 | `profiles` | ห้ามอ่าน | อ่านของตัวเอง | อ่านตาม policy |
 | `user_access` | ห้ามอ่าน | อ่านของตัวเอง | จัดการทั้งหมด |
 | `user_roles` | ห้ามอ่าน | อ่าน role ของตัวเอง | จัดการทั้งหมด |
@@ -292,7 +356,7 @@ Migration แรกถูกรวมเป็นไฟล์เดียวใ�
 
 ### เงื่อนไขผ่าน Phase 1
 
-- [ ] Migration รันใน staging ได้
+- [x] Migration `0001` ถึง `0007` รันใน Supabase project จริงได้
 - [ ] RLS ปิดการอ่าน `user_access` สำหรับ anonymous
 - [ ] ผู้ใช้ทั่วไปแก้สถานะของ user คนอื่นไม่ได้
 - [ ] ผู้ไม่มีสิทธิ์เขียน match ไม่สามารถ insert/update/delete ได้
@@ -308,8 +372,11 @@ Migration แรกถูกรวมเป็นไฟล์เดียวใ�
 - [x] Match repository: list/create/update/delete
 - [x] Team repository: list/upsert
 - [x] Postgres Changes subscription สำหรับ matches และ teams
-- [ ] ผูก repository เข้ากับ Controller ด้วย provider switch
-- [ ] สร้าง/นำเข้า league records จาก Firebase เดิม
+- [x] Permission Realtime subscription สำหรับ `user_access` และ `user_roles`
+- [x] ผูก repository เข้ากับ Controller ด้วย provider switch
+- [x] สร้าง/นำเข้า league records จาก Firebase เดิม
+
+การ import ลีกปัจจุบันเสร็จแล้ว: `Alcohol League` และ `Var38 League` มี owner เป็น `thanakrit_kas@hotmail.com` และข้อมูล matches/teams ถูกนำเข้าแล้ว
 
 ### ไฟล์ใหม่
 
@@ -381,14 +448,23 @@ interface LeagueRepository {
 
 ### เงื่อนไขผ่าน Phase 3
 
-- [ ] Google login สำเร็จ
-- [ ] refresh page แล้วยังมี session
-- [ ] logout สำเร็จ
-- [ ] Super Admin ถูกตรวจจาก `user_roles`
-- [ ] User access/trial แสดงผลถูกต้อง
-- [ ] ไม่มีการใช้ Firebase Auth ใน runtime
+- [x] Google login ผ่าน Supabase สำเร็จ
+- [x] session และ logout ใช้ Supabase Auth
+- [x] Super Admin ถูกตรวจจาก `user_roles`
+- [x] User access/trial/quota ใช้ Supabase access layer
+- [x] ไม่มีการใช้ Firebase Auth ใน runtime หลัก
 
 ## 11. Phase 4 — ย้าย Matches, Teams และ Quota
+
+### ความคืบหน้าปัจจุบัน
+
+- [x] Supabase provider โหลดรายการลีก owner-only
+- [x] Database Viewer อ่าน matches จาก Supabase
+- [x] Realtime subscription สำหรับ matches
+- [x] แก้ไข/ลบ matches ผ่าน Supabase
+- [x] บันทึก match ใหม่ผ่าน Supabase
+- [x] ย้าย teams/logo และ crop metadata
+- [x] เปลี่ยน main scoreboard team source/cache เป็น Supabase ตามลีกที่เลือก
 
 ### ไฟล์ที่ต้องแก้
 
@@ -434,16 +510,28 @@ league_id
 
 ### เงื่อนไขผ่าน Phase 4
 
-- [ ] สร้าง match ได้
-- [ ] อ่าน match ได้
-- [ ] แก้ match ได้
-- [ ] ลบ match ได้
-- [ ] แยกข้อมูลคนละลีกได้
-- [ ] อ่าน/บันทึก teams ได้
-- [ ] crop metadata ทำงาน
-- [ ] quota อ่านและเพิ่มแบบ atomic ได้
+- [x] สร้าง match ได้ผ่าน Supabase
+- [x] อ่าน match ได้ผ่าน Supabase
+- [x] แก้ match ได้ผ่าน Supabase
+- [x] ลบ match ได้ผ่าน Supabase
+- [x] แยกข้อมูลคนละลีกได้ด้วย owner และ `league_id`
+- [x] อ่าน/บันทึก teams ได้
+- [x] crop metadata อ่าน/เขียนได้
+- [x] quota อ่านและเพิ่มแบบ atomic ผ่าน RPC ได้
 
 ## 12. Phase 5 — Realtime
+
+### ความคืบหน้าปัจจุบัน
+
+- [x] matches ใช้ Supabase Postgres Changes subscription ใน Controller/Database Viewer
+- [x] teams ใช้ Supabase Postgres Changes subscription และ refresh logo cache
+- [x] Overlay ใช้ Supabase RPC snapshot polling ทุก 5 วินาที เพราะ OBS URL ใช้ anonymous read-only token
+- [x] subscription มี cleanup เมื่อเปลี่ยนลีกหรือ unmount
+- [x] Permission เปลี่ยนแล้วตรวจสิทธิ์ใหม่ทันทีผ่าน Realtime ของ `user_access` และ `user_roles`
+- [x] `TOKEN_REFRESHED` ไม่ทำให้ตรวจ Permission ซ้ำหรือถอด Protected UI
+- [x] Tab กลับมา Focus ตรวจเฉพาะเมื่อ Access Decision เก่ากว่า 5 นาที
+- [x] Fallback check ทุก 10 นาที เฉพาะเมื่อข้อมูลเก่าและหน้าอยู่ในสถานะ visible
+- [ ] ทดสอบการเปลี่ยนแปลงจาก client อื่นใน production จริง
 
 ### ระยะแรก: Postgres Changes
 
@@ -498,18 +586,18 @@ Supabase ระบุว่า Postgres Changes ตั้งค่าง่า�
 /overlay?fb=<base64-firebase-config>&view=ticker
 ```
 
-เป็น:
+เป็น (หลังรัน `0005_overlay_access_tokens.sql`):
 
 ```text
-/overlay?league=<league-id>&view=ticker
+/overlay?provider=supabase&league=<league-id>&token=<owner-issued-token>&view=ticker
 ```
 
 ตัวอย่าง:
 
 ```text
-/league-table?league=<league-id>
-/all-scores?league=<league-id>&date=today
-/all-score-combined?league=<league-id>
+/league-table?provider=supabase&league=<league-id>&token=<owner-issued-token>
+/all-scores?provider=supabase&league=<league-id>&token=<owner-issued-token>&date=today
+/all-score-combined?provider=supabase&league=<league-id>&token=<owner-issued-token>
 ```
 
 ### Public data policy
@@ -522,12 +610,14 @@ Overlay ที่เปิดใน OBS ไม่ควรอ่าน table ภ
 
 ### เงื่อนไขผ่าน Phase 6
 
-- [ ] ทุก overlay เปิดได้ด้วย `league_id`
-- [ ] ไม่มี Firebase config ใน URL ใหม่
-- [ ] ตารางลีกถูกต้อง
-- [ ] ticker/stadium/results ถูกต้อง
-- [ ] OBS Browser Source ไม่ต้อง login
-- [ ] anonymous อ่านข้อมูลที่จำเป็นได้เท่านั้น
+- [x] ทุก overlay รองรับ `league_id` และ owner-issued token ในโหมด Supabase
+- [x] ไม่มี Firebase config ใน Supabase URL ใหม่
+- [x] ตารางลีก/ผลการแข่งขันแสดงผ่าน Supabase Overlay URL ใหม่
+- [x] ticker/stadium/results ใช้ Supabase snapshot polling ในโหมด Supabase
+- [x] OBS Browser Source ไม่ต้อง login เพราะใช้ read-only token
+- [x] anonymous อ่านได้เฉพาะ snapshot ที่มี valid owner-issued token ผ่าน RPC
+- [x] Public Overlay อ่านได้เฉพาะลีกที่ owner เปิด `is_public` ผ่าน RPC
+- [ ] ทดสอบปิด `is_public` แล้ว Public URL เข้าถึงไม่ได้
 
 ## 14. Phase 7 — Logo strategy
 

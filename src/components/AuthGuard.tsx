@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import type { User } from '@supabase/supabase-js';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import {
-  getSupabaseCurrentUser,
   loginWithGoogleSupabase,
   logoutSupabaseUser,
   subscribeToSupabaseAuth,
+  subscribeToSupabasePermissionChanges,
   getSupabaseUserDisplayName,
   getSupabaseUserPhotoUrl,
 } from '../config/supabaseAuth';
@@ -20,6 +20,14 @@ interface AuthGuardProps {
   children: React.ReactNode;
 }
 
+interface AccessCheckOptions {
+  blockUi?: boolean;
+  recordLogin?: boolean;
+}
+
+const ACCESS_CHECK_TTL_MS = 5 * 60 * 1000;
+const FALLBACK_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+
 export default function AuthGuard({ children }: AuthGuardProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -27,32 +35,52 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [whitelistReason, setWhitelistReason] = useState<string | null>(null);
   const [accessDecision, setAccessDecision] = useState<AccessDecision | null>(null);
+  const accessCheckSequenceRef = useRef(0);
+  const accessCheckUserIdRef = useRef<string | null>(null);
+  const lastAccessCheckRef = useRef<{ userId: string; checkedAt: number } | null>(null);
 
-  const checkUserAccess = useCallback(async (currentUser: User | null) => {
+  const checkUserAccess = useCallback(async (
+    currentUser: User | null,
+    options: AccessCheckOptions = {},
+  ) => {
+    const { blockUi = true, recordLogin = false } = options;
+    const sequence = ++accessCheckSequenceRef.current;
+
     if (!currentUser) {
+      accessCheckUserIdRef.current = null;
       setUser(null);
       setIsAllowed(false);
       setAccessDecision(null);
       setLoading(false);
+      lastAccessCheckRef.current = null;
       return;
     }
 
-    setLoading(true);
+    accessCheckUserIdRef.current = currentUser.id;
     setUser(currentUser);
+    setAuthError(null);
+    if (blockUi) setLoading(true);
 
-    // Update the Supabase access record created by the auth.users trigger.
-    try {
-      await recordSupabaseLoginAttempt();
-    } catch (err: unknown) {
-      console.warn('[AuthGuard] Auto record login attempt failed:', err);
+    if (recordLogin) {
+      // Update the Supabase access record created by the auth.users trigger.
+      try {
+        await recordSupabaseLoginAttempt();
+      } catch (err: unknown) {
+        console.warn('[AuthGuard] Auto record login attempt failed:', err);
+      }
     }
 
     try {
       const result = await verifySupabaseUserAccess(currentUser);
+      if (sequence !== accessCheckSequenceRef.current) return;
+
       setIsAllowed(result.isAllowed);
       setWhitelistReason(result.reason || null);
       setAccessDecision(result);
+      lastAccessCheckRef.current = { userId: currentUser.id, checkedAt: Date.now() };
     } catch (err: unknown) {
+      if (sequence !== accessCheckSequenceRef.current) return;
+
       const message = err instanceof Error ? err.message : 'ไม่สามารถตรวจสอบสิทธิ์ได้';
       console.error('[AuthGuard] Supabase access check failed:', err);
       setAuthError(message);
@@ -60,28 +88,68 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       setWhitelistReason(message);
       setAccessDecision(null);
     } finally {
-      setLoading(false);
+      if (sequence === accessCheckSequenceRef.current) accessCheckUserIdRef.current = null;
+      if (sequence === accessCheckSequenceRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     let mounted = true;
     try {
-      const unsubscribe = subscribeToSupabaseAuth((_event, session) => {
-        if (mounted) void checkUserAccess(session?.user ?? null);
-      });
+      const handleAuthChange = (event: AuthChangeEvent, session: Session | null) => {
+        const currentUser = session?.user ?? null;
 
-      void getSupabaseCurrentUser()
-        .then((currentUser) => {
-          if (mounted) void checkUserAccess(currentUser);
-        })
-        .catch((err: unknown) => {
-          if (!mounted) return;
-          const message = err instanceof Error ? err.message : 'ไม่สามารถเริ่มต้น Supabase Auth ได้';
-          console.error('Supabase Auth Initialization Warning:', err);
-          setAuthError(message);
-          setLoading(false);
-        });
+        if (event === 'TOKEN_REFRESHED') {
+          // Token renewal is handled internally by Supabase. The current user
+          // and access decision remain valid, so the protected app stays mounted.
+          return;
+        }
+
+        if (event === 'SIGNED_OUT') {
+          void checkUserAccess(null, { blockUi: false });
+          return;
+        }
+
+        if (event === 'INITIAL_SESSION') {
+          void checkUserAccess(currentUser, { blockUi: true, recordLogin: Boolean(currentUser) });
+          return;
+        }
+
+        if (event === 'SIGNED_IN') {
+          if (currentUser && accessCheckUserIdRef.current === currentUser.id) return;
+
+          const lastCheck = lastAccessCheckRef.current;
+          const recentlyChecked = Boolean(
+            currentUser
+            && lastCheck?.userId === currentUser.id
+            && Date.now() - lastCheck.checkedAt < ACCESS_CHECK_TTL_MS,
+          );
+          const isNewUser = Boolean(currentUser && (!lastCheck || lastCheck.userId !== currentUser.id));
+
+          setUser(currentUser);
+          if (!recentlyChecked) {
+            void checkUserAccess(currentUser, {
+              blockUi: isNewUser,
+              recordLogin: isNewUser,
+            });
+          }
+          return;
+        }
+
+        if (event === 'USER_UPDATED') {
+          void checkUserAccess(currentUser, { blockUi: false });
+        }
+      };
+
+      const unsubscribe = subscribeToSupabaseAuth((event, session) => {
+        if (!mounted) return;
+
+        // Defer work outside Supabase's auth callback to avoid blocking its
+        // internal lock while access RPCs are running.
+        window.setTimeout(() => {
+          if (mounted) handleAuthChange(event, session);
+        }, 0);
+      });
 
       return () => {
         mounted = false;
@@ -92,6 +160,45 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       setLoading(false);
     }
   }, [checkUserAccess]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    const handleResume = () => {
+      if (document.visibilityState === 'hidden') return;
+
+      const lastCheck = lastAccessCheckRef.current;
+      const isStale = !lastCheck || Date.now() - lastCheck.checkedAt >= ACCESS_CHECK_TTL_MS;
+      const isAlreadyChecking = accessCheckUserIdRef.current === user.id;
+      if (!isStale || isAlreadyChecking) return;
+
+      void checkUserAccess(user, { blockUi: false, recordLogin: false });
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    const fallbackCheckId = window.setInterval(handleResume, FALLBACK_CHECK_INTERVAL_MS);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.clearInterval(fallbackCheckId);
+    };
+  }, [checkUserAccess, user]);
+
+  useEffect(() => {
+    if (!user || !accessDecision) return undefined;
+
+    return subscribeToSupabasePermissionChanges(
+      user.id,
+      () => {
+        void checkUserAccess(user, { blockUi: false, recordLogin: false });
+      },
+      (error: unknown) => {
+        console.warn('[AuthGuard] Permission Realtime warning:', error);
+      },
+    );
+  }, [accessDecision, checkUserAccess, user]);
 
   // Re-check exactly when the trial expires so the protected page is closed
   // without requiring a refresh or another login.
@@ -239,7 +346,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
   // Logged in & allowed: Render protected content and show trial status.
   return (
-    <AuthAccessProvider value={accessDecision}>
+    <AuthAccessProvider value={accessDecision} user={user}>
       {accessDecision?.accessType === 'trial' && (
         <div
           style={{

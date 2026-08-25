@@ -5,6 +5,9 @@ import { getDatabase, ref, onValue } from 'firebase/database';
 import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
+import { getDataProvider } from '../config/dataProvider';
+import { readSupabaseOverlaySnapshot, readSupabasePublicOverlaySnapshot } from '../services/supabaseLeagueService';
+import { replaceGlobalTeamsCacheFromSupabase } from '../utils/logoResolver';
 
 export default function LeagueTableStandalone() {
   useDisableZoom();
@@ -12,6 +15,7 @@ export default function LeagueTableStandalone() {
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const dataProvider = getDataProvider();
 
   const leagueId = searchParams.get('league') || 'excel';
   const title = searchParams.get('title') || 'League Table';
@@ -23,6 +27,40 @@ export default function LeagueTableStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
+    if (dataProvider === 'supabase') {
+      const isPublicOverlay = searchParams.get('public') === '1';
+      const accessToken = searchParams.get('token');
+      if ((!accessToken && !isPublicOverlay) || (isPublicOverlay && !searchParams.get('league'))) {
+        setErrorMsg(isPublicOverlay ? 'ไม่พบ league id สำหรับ Public Overlay' : 'ไม่พบ Supabase Overlay token');
+        setLoading(false);
+        return undefined;
+      }
+
+      let cancelled = false;
+      const loadSnapshot = async () => {
+        try {
+          const snapshot = isPublicOverlay
+            ? await readSupabasePublicOverlaySnapshot(searchParams.get('league') || '')
+            : await readSupabaseOverlaySnapshot(accessToken || '');
+          if (cancelled) return;
+          setMatches(snapshot.matches);
+          replaceGlobalTeamsCacheFromSupabase(snapshot.teams);
+          setLoading(false);
+          setErrorMsg('');
+        } catch (error: unknown) {
+          if (cancelled) return;
+          setErrorMsg(`โหลด Supabase Overlay ล้มเหลว: ${error instanceof Error ? error.message : 'Token ไม่ถูกต้องหรือหมดอายุ'}`);
+          setLoading(false);
+        }
+      };
+      void loadSnapshot();
+      const refreshTimer = window.setInterval(() => void loadSnapshot(), 5000);
+      return () => {
+        cancelled = true;
+        window.clearInterval(refreshTimer);
+      };
+    }
+
     if (!firebaseConfig) {
       setErrorMsg('ไม่พบ Firebase Config');
       setLoading(false);
@@ -61,7 +99,7 @@ export default function LeagueTableStandalone() {
       setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
       setLoading(false);
     }
-  }, [firebaseConfig, leagueId, searchParams]);
+  }, [dataProvider, firebaseConfig, leagueId, searchParams]);
 
   if (loading) {
     return (
