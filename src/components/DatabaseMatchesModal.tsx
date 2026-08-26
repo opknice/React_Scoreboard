@@ -11,6 +11,7 @@ interface DatabaseMatchesModalProps {
   onDateFilterChange: (value: string) => void;
   onRefresh: () => void;
   onEdit: (match: DatabaseMatch) => void;
+  onAdd: () => void;
   onDelete: (match: DatabaseMatch) => void;
   onCopyTableUrl: () => void;
   onCopyResultsUrl: () => void;
@@ -28,6 +29,7 @@ export default function DatabaseMatchesModal({
   onDateFilterChange,
   onRefresh,
   onEdit,
+  onAdd,
   onDelete,
   onCopyTableUrl,
   onCopyResultsUrl,
@@ -39,7 +41,7 @@ export default function DatabaseMatchesModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" style={{ maxWidth: '800px' }} onClick={(event) => event.stopPropagation()}>
-        <h3><i className="fas fa-database"></i> จัดการข้อมูลลีกและแมตช์ใน Realtime Database</h3>
+        <h3><i className="fas fa-database"></i> จัดการข้อมูลลีกและแมตช์ใน Supabase</h3>
 
         <div className="row space-between" style={{ marginBottom: '12px' }}>
           <input type="text" placeholder="ค้นหา (ชื่อทีม/รอบ)..." value={searchTerm} onChange={(event) => onSearchChange(event.target.value)} style={{ flex: 1, maxWidth: '300px' }} />
@@ -69,6 +71,7 @@ export default function DatabaseMatchesModal({
         </div>
 
         <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          <button className="btn-success" onClick={onAdd}><i className="fas fa-plus"></i> เพิ่มแมตช์</button>
           <button className="btn-primary" onClick={onCopyTableUrl}><i className="fas fa-copy"></i> คัดลอกตารางคะแนน Standalone URL</button>
           <button className="btn-success" onClick={onCopyResultsUrl}><i className="fas fa-copy"></i> คัดลอกผลการแข่ง Standalone URL</button>
           <button className="btn-secondary" onClick={onClose}>{closeLabel}</button>

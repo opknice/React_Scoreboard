@@ -133,7 +133,6 @@ export interface Database {
       matches: TableDefinition<
         {
           id: string;
-          legacy_firebase_id: string | null;
           league_id: string;
           match_date: string | null;
           team_a: string;
@@ -149,7 +148,6 @@ export interface Database {
         },
         {
           id?: string;
-          legacy_firebase_id?: string | null;
           league_id: string;
           match_date?: string | null;
           team_a: string;
@@ -164,7 +162,6 @@ export interface Database {
           updated_at?: string;
         },
         {
-          legacy_firebase_id?: string | null;
           league_id?: string;
           match_date?: string | null;
           team_a?: string;

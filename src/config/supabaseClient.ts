@@ -10,7 +10,7 @@ let client: SupabaseClient<Database> | null = null;
 
 /**
  * Reads the migration-target Supabase configuration without creating a client.
- * Firebase remains the active provider until the migration adapter is wired in.
+ * Supabase is the only application data provider.
  */
 export function getSupabaseConfig(): SupabaseConfig | null {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim() || '';

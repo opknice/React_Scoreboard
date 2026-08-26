@@ -7,12 +7,14 @@
 
 > รายงานนี้เป็นการวิเคราะห์จากโค้ดจริงใน repository ณ วันที่ตรวจสอบ ไม่ใช่เอกสารเชิงคาดเดา ไฟล์ binary เช่น `.xlsx`, `.png`, `.jpg`, `.otf`, `.exe` และ `.pyc` ถูกตรวจในระดับ inventory/การอ้างอิงจากโค้ด ไม่ได้ถอดเนื้อหาภายใน binary ทุกไฟล์
 
+> **หมายเหตุสถานะปัจจุบัน (25 สิงหาคม 2026):** รายงานนี้เป็น snapshot ก่อน Firebase cutover จึงมีคำว่า Firebase เพื่ออธิบายสถาปัตยกรรมเดิมและความเสี่ยงที่ตรวจพบ ไม่ใช่สถานะของ runtime ปัจจุบัน ปัจจุบัน application ใช้ Supabase-only และไฟล์ Firebase adapter/config ที่กล่าวถึงด้านล่างถูกถอนออกแล้ว ให้ดู [`SUPABASE_MIGRATION_PLAN.md`](SUPABASE_MIGRATION_PLAN.md) เป็น source of truth สำหรับสถานะล่าสุด
+
 ## 1. สรุปผู้บริหาร
 
 โปรเจกต์นี้เป็นแอป React 19 แบบ Single Page Application ที่ทำหน้าที่เป็นศูนย์กลางควบคุมการถ่ายทอดฟุตบอล โดยแบ่งความรับผิดชอบหลักออกเป็น 5 กลุ่ม:
 
 1. **Scoreboard Controller** — แก้ชื่อทีม, คะแนน, สี, โลโก้, timer, label และส่งข้อมูลไป OBS
-2. **Firebase/Excel League** — อ่านไฟล์ Excel หรือ Google Sheets, แปลง mapping, เชื่อม Firebase Realtime Database และบันทึกผลการแข่งขัน
+2. **Supabase/Excel League** — อ่านไฟล์ Excel หรือ Google Sheets, แปลง mapping, เชื่อม Supabase และบันทึกผลการแข่งขัน
 3. **OBS Integration** — เชื่อม `obs-websocket-js`, อัปเดต Text/Image/Color Sources, สร้าง Scene และ Browser Sources อัตโนมัติ
 4. **Broadcast Overlays** — ตารางลีก, ผลการแข่งขัน, ticker, stadium view, score/team-name/logo animation และ penalty dots สำหรับ OBS Browser Source
 5. **Replay/Automation** — Instant Replay, VAR Replay V2, macro automation, hotkeys และ cross-window communication ผ่าน `BroadcastChannel`
@@ -22,7 +24,7 @@
 | ด้าน | สถานะ | ข้อสังเกต |
 |---|---|---|
 | Build | ผ่าน | `tsc -b`, Vite build และสร้าง `404.html` สำเร็จ |
-| Tests | ผ่าน | 17 test files, 127 tests ผ่านทั้งหมด |
+| Tests | ผ่าน | 16 test files, 125 tests ผ่านทั้งหมด |
 | Lint | ผ่าน | `oxlint` จบด้วย exit code 0 |
 | Tailwind verification | ผ่าน | script ตรวจสอบครบทุกข้อ |
 | Type safety | ต้องปรับปรุงมาก | `tsconfig` ยังไม่เปิด `strict` และมี `any` หลายจุด |
@@ -695,17 +697,17 @@ Vite แจ้งเตือน chunk ใหญ่เกิน 500 KB โดย
 - [`src/hooks/useOBSWebSocket.ts`](src/hooks/useOBSWebSocket.ts)
 - [`src/hooks/useTimer.ts`](src/hooks/useTimer.ts)
 - [`src/hooks/useScoreboardChannels.ts`](src/hooks/useScoreboardChannels.ts)
-- [`src/hooks/useScoreboardFirebase.ts`](src/hooks/useScoreboardFirebase.ts)
+- [`src/hooks/useScoreboardDatabase.ts`](src/hooks/useScoreboardDatabase.ts)
 - [`src/services/obsSetupService.ts`](src/services/obsSetupService.ts)
 - [`src/config/obsSetupConfig.ts`](src/config/obsSetupConfig.ts)
 
-### ต้องอ่านเมื่อแก้ Firebase/สิทธิ์
+### ต้องอ่านเมื่อแก้ Supabase/สิทธิ์
 
-- [`src/config/firebaseAuth.ts`](src/config/firebaseAuth.ts)
+- [`src/config/supabaseAuth.ts`](src/config/supabaseAuth.ts)
 - [`src/components/AuthGuard.tsx`](src/components/AuthGuard.tsx)
 - [`src/components/AdminWhitelist.tsx`](src/components/AdminWhitelist.tsx)
 - [`src/hooks/useScoreboardDatabase.ts`](src/hooks/useScoreboardDatabase.ts)
-- [`src/utils/firebaseUrlConfig.ts`](src/utils/firebaseUrlConfig.ts)
+- [`src/services/supabaseLeagueService.ts`](src/services/supabaseLeagueService.ts)
 
 ### ต้องอ่านเมื่อแก้ overlay/logo
 

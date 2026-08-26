@@ -1,6 +1,6 @@
 # Supabase Setup สำหรับ OBS Scoreboard
 
-ไฟล์ migration ในโฟลเดอร์นี้เป็น foundation ระยะเริ่มต้นของการย้ายจาก Firebase ไป Supabase โดยในช่วงนี้ Firebase runtime เดิมยังทำงานอยู่ และยังไม่มีการย้ายข้อมูล production อัตโนมัติ
+ไฟล์ migration ในโฟลเดอร์นี้เป็น foundation ของระบบ Supabase ที่ใช้งานจริงแล้ว โดย Firebase runtime ถูกถอนออกจาก application เรียบร้อยแล้ว เหลือเฉพาะ migration history และ offline import script สำหรับอ้างอิงข้อมูลต้นทาง
 
 ## 1. รัน database migration
 
@@ -38,7 +38,6 @@ https://<project-ref>.supabase.co/auth/v1/callback
 ```env
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<publishable-key-or-anon-key>
-VITE_DATA_PROVIDER=firebase
 ```
 
 ใน repository มีเพียงตัวอย่างใน `.env.example` เท่านั้น ไม่ควร commit ค่าจริงลง Git
@@ -67,8 +66,8 @@ where user_id = (
 
 - เพิ่ม Supabase client และ Google OAuth adapter แล้ว
 - เพิ่ม typed league/match/team repository และ Realtime adapter แล้ว
-- เพิ่ม migration switch `VITE_DATA_PROVIDER` โดยค่าเริ่มต้นยังเป็น `firebase`
-- เชื่อม Database Viewer และ match CRUD กับ Supabase แล้วเมื่อใช้ `VITE_DATA_PROVIDER=supabase`
+- ล็อก application data provider เป็น `supabase`
+- เชื่อม Database Viewer และ match CRUD กับ Supabase แล้ว
 - เพิ่ม schema, indexes, triggers, RPC, RLS และ Realtime publication แล้ว
 - เพิ่ม `0002_auth_rpc.sql` สำหรับบันทึก login timestamp ผ่าน `SECURITY DEFINER RPC`
 - เพิ่ม `0003_private_league_ownership.sql` และกำหนด `thanakrit_kas@hotmail.com` เป็นเจ้าของ `Alcohol League` และ `Var38 League`
@@ -78,9 +77,9 @@ where user_id = (
 - เพิ่ม `0006_public_overlay.sql` สำหรับเปิด Public Overlay แยกตามลีก โดยใช้ `leagues.is_public`
 - เพิ่ม `0007_permission_realtime.sql` สำหรับรับการเปลี่ยนแปลง `user_access` และ `user_roles` แบบ Realtime
 - พบข้อมูลต้นทางจาก JSON: Alcohol มี 24 matches/10 teams และ Var38 มี 18 matches/6 teams
-- Firebase ยังเป็น provider ที่ application ใช้งานจริงอยู่
-- ยังไม่เริ่มตัด Firebase code และยังไม่ migrate ข้อมูลเดิม
-- ห้ามนำข้อมูล production เข้า Supabase จนกว่าจะมี backup และแผน freeze/cutover ที่ตรวจสอบแล้ว
+- Firebase ไม่ได้เป็น provider ของ application แล้ว
+- ข้อมูล Alcohol League และ Var38 League ถูก import เข้า Supabase และตรวจสอบผ่านแล้ว
+- ห้ามลบ Firebase project หรือข้อมูลต้นทางจนกว่าจะผ่านช่วงเฝ้าระวังหลัง cutover
 
 ## 6. เปิดใช้งาน Supabase Overlay
 
@@ -102,7 +101,7 @@ select public.revoke_overlay_access_tokens('<league-uuid>');
 
 Public URL ไม่มีวันหมดอายุ แต่จะอ่านได้เฉพาะเมื่อ `leagues.is_public = true` เท่านั้น การเปิด Public ไม่ทำให้ผู้ชมแก้ไขหรือลบ matches/teams ได้ และระบบยังไม่เปิดสิทธิ์ anonymous ให้ query ตารางฐานข้อมูลโดยตรง
 
-## 5. Import ข้อมูล 2 ลีกจาก Firebase JSON
+## 5. ประวัติการ Import ข้อมูล 2 ลีกจาก Firebase JSON
 
 ไฟล์ต้นทางที่ repository ตรวจสอบแล้ว:
 
@@ -113,18 +112,18 @@ League/VAR38.json
 
 สคริปต์จะตรวจ owner, จับคู่ลีกด้วย slug, เก็บ Firebase push ID ใน `legacy_firebase_id` และ import ซ้ำได้โดยไม่สร้าง match ซ้ำ
 
-ต้องใช้ service-role key เฉพาะใน terminal สำหรับงาน migration เท่านั้น ห้ามใส่ใน `.env`, `VITE_*`, source code หรือ commit ลง Git:
+การ import เสร็จแล้วและไม่ใช่ application runtime อีกต่อไป สคริปต์ offline ถูกเก็บไว้เป็นหลักฐาน/rollback reference เท่านั้น หากจำเป็นต้องตรวจซ้ำ ให้ใช้ service-role key เฉพาะใน terminal ห้ามใส่ใน `.env`, `VITE_*`, source code หรือ commit ลง Git:
 
 ```powershell
 $env:SUPABASE_URL = "https://<project-ref>.supabase.co"
 $env:SUPABASE_SERVICE_ROLE_KEY = "<service-role-key>"
-npm run migrate:firebase-json
+node scripts/import-firebase-json-to-supabase.mjs
 ```
 
 คำสั่งข้างต้นเป็น `dry-run` และไม่เขียนข้อมูล หากผลตรวจสอบถูกต้องจึงค่อยใช้:
 
 ```powershell
-npm run migrate:firebase-json -- --apply
+node scripts/import-firebase-json-to-supabase.mjs --apply
 ```
 
 ห้ามใช้ `--apply` จนกว่าจะตรวจสอบจำนวนข้อมูลและทำ Firebase backup แล้ว

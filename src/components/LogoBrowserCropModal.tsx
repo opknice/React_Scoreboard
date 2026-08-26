@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import type { Database } from 'firebase/database';
-import type { DataProvider } from '../config/dataProvider';
 import type { Json } from '../types/database';
 import {
   getCropMetadataFromLocalStorage,
   saveCropMetadataToLocalStorage,
-  saveCropMetadataToFirebase,
-  removeCropMetadata,
+  removeCropMetadataFromLocalStorage,
   type CropMetadata,
   isValidCropMetadata,
 } from '../utils/logoCropMetadata';
@@ -22,8 +19,6 @@ interface LogoBrowserCropModalProps {
   teamSide: 'A' | 'B';
   teamName: string;
   logoUrl: string;
-  db?: Database | null;
-  dataProvider?: DataProvider;
   supabaseLeagueId?: string;
   onToast?: (message: string, type?: string) => void;
 }
@@ -34,8 +29,6 @@ export default function LogoBrowserCropModal({
   teamSide,
   teamName,
   logoUrl,
-  db,
-  dataProvider = 'firebase',
   supabaseLeagueId = '',
   onToast,
 }: LogoBrowserCropModalProps) {
@@ -87,7 +80,7 @@ export default function LogoBrowserCropModal({
       setCustomSize(0);
     }
 
-    if (dataProvider === 'supabase' && supabaseLeagueId) {
+    if (supabaseLeagueId) {
       void findSupabaseTeam(supabaseLeagueId, teamKey)
         .then((team) => {
           if (!team) return;
@@ -110,7 +103,7 @@ export default function LogoBrowserCropModal({
           console.warn('[LogoBrowserCropModal] Supabase crop load warning:', error);
         });
     }
-  }, [dataProvider, isOpen, logoUrl, supabaseLeagueId, teamKey, teamName]);
+  }, [isOpen, logoUrl, supabaseLeagueId, teamKey, teamName]);
 
   const currentCrop: CropMetadata = {
     x: offsetX,
@@ -223,15 +216,7 @@ export default function LogoBrowserCropModal({
         }
       } catch { }
 
-      if (db) {
-        try {
-          await saveCropMetadataToFirebase(db, teamKey, targetUrl, currentCrop);
-        } catch (err) {
-          console.warn('[LogoBrowserCropModal] Firebase save warning:', err);
-        }
-      }
-
-      if (dataProvider === 'supabase' && supabaseLeagueId) {
+      if (supabaseLeagueId) {
         await upsertSupabaseTeam({
           leagueId: supabaseLeagueId,
           teamKey,
@@ -268,10 +253,10 @@ export default function LogoBrowserCropModal({
       if (backup.crop) {
         saveCropMetadataToLocalStorage(teamKey, backup.originalUrl, backup.crop);
       } else {
-        removeCropMetadata(db || null, teamKey);
+        removeCropMetadataFromLocalStorage(teamKey);
       }
     } else {
-      removeCropMetadata(db || null, teamKey);
+      removeCropMetadataFromLocalStorage(teamKey);
     }
 
     window.dispatchEvent(new Event('logoCropUpdated'));
@@ -290,8 +275,8 @@ export default function LogoBrowserCropModal({
 
   const handleReset = async () => {
     try {
-      await removeCropMetadata(db || null, teamKey);
-      if (dataProvider === 'supabase' && supabaseLeagueId) {
+      removeCropMetadataFromLocalStorage(teamKey);
+      if (supabaseLeagueId) {
         await updateSupabaseTeam(supabaseLeagueId, teamKey, { cropMetadata: null });
       }
       setZoom(1);

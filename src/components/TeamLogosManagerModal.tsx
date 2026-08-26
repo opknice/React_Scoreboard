@@ -1,11 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Database } from 'firebase/database';
-import type { DataProvider } from '../config/dataProvider';
 import {
   getLogoSrc,
   getTeamInitials,
-  saveTeamsToFirebase,
-  listenToFirebaseTeams,
   normalizeTeamKey,
   replaceGlobalTeamsCacheFromSupabase,
 } from '../utils/logoResolver';
@@ -17,8 +13,6 @@ interface TeamLogosManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   teamList: string[];
-  db: Database | null;
-  dataProvider?: DataProvider;
   supabaseLeagueId?: string;
   leagueName?: string;
   logoFolderPath: string;
@@ -30,8 +24,6 @@ export default function TeamLogosManagerModal({
   isOpen,
   onClose,
   teamList,
-  db,
-  dataProvider = 'firebase',
   supabaseLeagueId = '',
   leagueName,
   logoFolderPath,
@@ -110,7 +102,7 @@ export default function TeamLogosManagerModal({
     }
   };
 
-  // Initialize and load existing teams from Firebase DB when modal opens
+  // Initialize and load existing teams from Supabase when modal opens
   useEffect(() => {
     if (!isOpen) return;
 
@@ -133,60 +125,30 @@ export default function TeamLogosManagerModal({
 
     setTeamLogosMap(initialMap);
 
-    // 2. Load the owner-scoped Supabase teams for the selected league.
-    if (dataProvider === 'supabase') {
-      if (!supabaseLeagueId) return undefined;
+    if (!supabaseLeagueId) return undefined;
 
-      let cancelled = false;
-      void listSupabaseTeams(supabaseLeagueId)
-        .then((supabaseTeams) => {
-          if (cancelled) return;
-          setTeamLogosMap((prev) => {
-            const updated = { ...prev };
-            supabaseTeams.forEach((team) => {
-              const key = normalizeTeamKey(team.name);
-              updated[key] = { name: team.name, logo: team.logoUrl };
-            });
-            return updated;
-          });
-        })
-        .catch((error: unknown) => {
-          console.error('[TeamLogosManagerModal] Supabase teams load error:', error);
-          onToast?.(`❌ โหลดโลโก้ทีมจาก Supabase ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
-        });
-
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    // 3. Listen to Firebase Realtime DB `teams` node
-    if (db) {
-      const unsubscribe = listenToFirebaseTeams(db, (fbTeamsMap) => {
+    let cancelled = false;
+    void listSupabaseTeams(supabaseLeagueId)
+      .then((supabaseTeams) => {
+        if (cancelled) return;
         setTeamLogosMap((prev) => {
           const updated = { ...prev };
-          Object.keys(fbTeamsMap || {}).forEach((key) => {
-            const fbItem = fbTeamsMap[key];
-            if (!fbItem) return;
-            if (updated[key]) {
-              updated[key] = {
-                ...updated[key],
-                name: fbItem.name || updated[key].name || key,
-                logo: fbItem.logo || updated[key].logo || ''
-              };
-            } else {
-              updated[key] = {
-                name: fbItem.name || key,
-                logo: fbItem.logo || ''
-              };
-            }
+          supabaseTeams.forEach((team) => {
+            const key = normalizeTeamKey(team.name);
+            updated[key] = { name: team.name, logo: team.logoUrl };
           });
           return updated;
         });
+      })
+      .catch((error: unknown) => {
+        console.error('[TeamLogosManagerModal] Supabase teams load error:', error);
+        onToast?.(`❌ โหลดโลโก้ทีมจาก Supabase ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
       });
-      return () => unsubscribe();
-    }
-  }, [dataProvider, db, isOpen, onToast, supabaseLeagueId, teamList]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, onToast, supabaseLeagueId, teamList]);
 
   if (!isOpen) return null;
 
@@ -213,34 +175,26 @@ export default function TeamLogosManagerModal({
   };
 
   const handleSaveAll = async () => {
-    if (dataProvider === 'supabase' && !supabaseLeagueId) {
+    if (!supabaseLeagueId) {
       onToast?.('❌ กรุณาเลือกลีก Supabase ก่อนบันทึกโลโก้ทีม', 'error');
-      return;
-    }
-    if (dataProvider === 'firebase' && !db) {
-      onToast?.('❌ กรุณาเชื่อมต่อ Firebase Realtime Database ก่อนบันทึก', 'error');
       return;
     }
 
     setIsSaving(true);
     try {
-      if (dataProvider === 'supabase') {
-        const existingTeams = await listSupabaseTeams(supabaseLeagueId);
-        const existingByKey = new Map(existingTeams.map((team) => [normalizeTeamKey(team.name), team]));
-        await Promise.all(Object.values(teamLogosMap).map((team) => upsertSupabaseTeam({
-          leagueId: supabaseLeagueId,
-          teamKey: normalizeTeamKey(team.name),
-          name: team.name.trim(),
-          logoUrl: team.logo.trim(),
-          cropMetadata: existingByKey.get(normalizeTeamKey(team.name))?.cropMetadata ?? null,
-        })));
-        replaceGlobalTeamsCacheFromSupabase(Object.values(teamLogosMap).map((team) => ({
-          name: team.name,
-          logoUrl: team.logo,
-        })));
-      } else if (db) {
-        await saveTeamsToFirebase(db, teamLogosMap);
-      }
+      const existingTeams = await listSupabaseTeams(supabaseLeagueId);
+      const existingByKey = new Map(existingTeams.map((team) => [normalizeTeamKey(team.name), team]));
+      await Promise.all(Object.values(teamLogosMap).map((team) => upsertSupabaseTeam({
+        leagueId: supabaseLeagueId,
+        teamKey: normalizeTeamKey(team.name),
+        name: team.name.trim(),
+        logoUrl: team.logo.trim(),
+        cropMetadata: existingByKey.get(normalizeTeamKey(team.name))?.cropMetadata ?? null,
+      })));
+      replaceGlobalTeamsCacheFromSupabase(Object.values(teamLogosMap).map((team) => ({
+        name: team.name,
+        logoUrl: team.logo,
+      })));
 
       // Update local storage backup
       const localBackup: Record<string, string> = {};
@@ -251,7 +205,7 @@ export default function TeamLogosManagerModal({
       });
       localStorage.setItem('teamLogos', JSON.stringify(localBackup));
 
-      onToast?.(`✅ บันทึกโลโก้ทีม ${Object.keys(teamLogosMap).length} ทีมลง ${dataProvider === 'supabase' ? 'Supabase' : 'Firebase'} สำเร็จ!`, 'success');
+      onToast?.(`✅ บันทึกโลโก้ทีม ${Object.keys(teamLogosMap).length} ทีมลง Supabase สำเร็จ!`, 'success');
       onClose();
     } catch (err: unknown) {
       console.error('Save teams error:', err);
@@ -276,7 +230,7 @@ export default function TeamLogosManagerModal({
           </h2>
           <p style={{ margin: '6px 0 0 0', color: 'var(--text-muted-color)', fontSize: '13px' }}>
             {leagueName ? `สำหรับลีก: ${leagueName} | ` : ''}
-            อัปโหลดหรือใส่ URL โลโก้ของทุกทีม แล้วบันทึกลง {dataProvider === 'supabase' ? 'Supabase' : 'Firebase'}
+            อัปโหลดหรือใส่ URL โลโก้ของทุกทีม แล้วบันทึกลง Supabase
           </p>
         </div>
 
@@ -523,7 +477,7 @@ export default function TeamLogosManagerModal({
             onClick={handleSaveAll}
             disabled={isSaving}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึกโลโก้ทีมทั้งหมดลง ${dataProvider === 'supabase' ? 'Supabase' : 'Firebase Database'}`}
+            {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกโลโก้ทีมทั้งหมดลง Supabase'}
           </button>
         </div>
       </div>

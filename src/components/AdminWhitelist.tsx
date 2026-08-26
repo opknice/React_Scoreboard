@@ -239,12 +239,12 @@ export default function AdminWhitelist() {
 
             {message.type === 'error' && (
               <div style={{ marginTop: '12px', fontSize: '13px', color: '#fca5a5', borderTop: '1px solid rgba(239,68,68,0.2)', paddingTop: '10px' }}>
-                💡 <strong>วิธีตั้งค่า Realtime Database อย่างปลอดภัย:</strong>
+                💡 <strong>วิธีตรวจสอบสิทธิ์ใน Supabase อย่างปลอดภัย:</strong>
                 <ol style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: '1.6' }}>
                   <li>เข้าสู่ <strong>Supabase Dashboard</strong> ➔ ตรวจสอบรายการผู้ใช้และสิทธิ์</li>
-                  <li>ไปที่เมนู <strong>Build</strong> ➔ <strong>Realtime Database</strong> (กด <em>Create Database</em> หากยังไม่ได้สร้าง)</li>
-                  <li>เลือกแท็บ <strong>Rules</strong> แล้วนำเนื้อหาจากไฟล์ <strong>database.rules.json</strong> ในโปรเจกต์ไปใช้ จากนั้นกด <strong>Publish</strong></li>
-                  <li>ห้ามตั้งค่า <code>.read: true</code> หรือ <code>.write: true</code> ในระบบจริง เพราะจะทำให้ผู้ใช้แก้สิทธิ์และวันทดลองเองได้</li>
+                  <li>ไปที่ <strong>Supabase Dashboard</strong> ➔ <strong>Authentication</strong> เพื่อตรวจสอบผู้ใช้และสถานะการเข้าสู่ระบบ</li>
+                  <li>ไปที่ <strong>Table Editor</strong> ➔ ตรวจสอบ <strong>user_access</strong>, <strong>user_roles</strong> และ <strong>league_memberships</strong></li>
+                  <li>ตรวจสอบนโยบาย <strong>RLS</strong> ให้เปิดใช้งานอยู่เสมอ และไม่เปิดสิทธิ์อ่านหรือเขียนแบบสาธารณะโดยไม่จำเป็น</li>
                   <li>กลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Supabase"</strong></li>
                 </ol>
               </div>

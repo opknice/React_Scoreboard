@@ -20,30 +20,18 @@ export const EXCEL_FIELDS: ExcelField[] = [
   { key: 'label3', label: 'Label 3', aliases: ['label_3', 'label3', 'label 3', 'field', 'สนาม', 'ป้าย3'] },
 ];
 
-export interface FirebaseSaveTarget {
-  id: string;
-  index: number;
-  name: string;
-  firebaseConfig: Record<string, string>;
-}
-
 export interface TeamColorRow {
   rowNumber: number;
   team: string;
   color1: string;
   color2: string;
+  logoUrl?: string;
 }
 
 export const normalizeColumnName = (value: any): string => String(value || '')
   .trim()
   .toLowerCase()
   .replace(/[\s_\-.()[\]/\\]+/g, '');
-
-export const isFirebaseConfigSheetName = (sheetName: string): boolean => {
-  const normalized = normalizeColumnName(sheetName);
-  return normalized === normalizeColumnName('FirebaseRealtimeDatabase')
-    || (normalized.includes('firebase') && normalized.includes('database'));
-};
 
 export const inferExcelMapping = (headers: string[]): Record<string, string> => {
   const normalizedHeaders = headers.map(normalizeColumnName);

@@ -9,10 +9,16 @@ export type SupabaseAuthStateListener = (
 /** Starts Google OAuth and returns control to the configured application URL. */
 export async function loginWithGoogleSupabase(redirectTo?: string): Promise<void> {
   const client = getSupabaseClient();
-  const targetUrl = redirectTo || window.location.href;
+  const targetUrl = redirectTo || getCleanAuthRedirectUrl();
   const { error } = await client.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: targetUrl },
+    options: {
+      redirectTo: targetUrl,
+      queryParams: {
+        // Do not silently reuse the Google account from the previous login.
+        prompt: 'select_account',
+      },
+    },
   });
 
   if (error) throw error;
@@ -29,8 +35,25 @@ export function getSupabaseUserPhotoUrl(user: User): string {
 }
 
 export async function logoutSupabaseUser(): Promise<void> {
-  const { error } = await getSupabaseClient().auth.signOut();
+  // The controller's logout button is a local account switch, not a request
+  // to revoke the user's sessions on every device/browser.
+  const { error } = await getSupabaseClient().auth.signOut({ scope: 'local' });
   if (error) throw error;
+}
+
+function getCleanAuthRedirectUrl(): string {
+  const url = new URL(window.location.href);
+  const oauthParams = [
+    'code',
+    'error',
+    'error_code',
+    'error_description',
+    'error_uri',
+  ];
+
+  oauthParams.forEach((param) => url.searchParams.delete(param));
+  url.hash = '';
+  return url.toString();
 }
 
 export async function getSupabaseCurrentUser(): Promise<User | null> {

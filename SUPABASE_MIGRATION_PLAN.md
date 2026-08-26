@@ -1,7 +1,7 @@
 # แผนถอน Firebase และย้ายระบบไป Supabase
 
-**สถานะ:** อยู่ระหว่าง migration — Supabase Auth, owner-only leagues, matches, teams, crop metadata, Private/Public Overlay และ Permission Realtime ใช้งานได้แล้ว แต่ Firebase runtime/adapter ยังไม่ถูกถอนทั้งหมด
-**อัปเดตล่าสุด:** 24 สิงหาคม 2026
+**สถานะ:** Firebase runtime ถูกถอนออกจาก application แล้ว — Supabase Auth, owner-only leagues, matches, teams, crop metadata, Private/Public Overlay, Permission Realtime และ Supabase-first Scoreboard ใช้งานอยู่เป็นหลัก เหลือเพียง migration history/offline import assets ที่เก็บไว้เป็นหลักฐานและ rollback reference
+**อัปเดตล่าสุด:** 26 สิงหาคม 2026
 **ขอบเขต:** ย้าย Firebase ออกจากระบบทั้งหมด โดยยังคง OBS, Replay, IndexedDB, localStorage, Excel และ Cloudinary ไว้ก่อน  
 **สถาปัตยกรรมเป้าหมาย:** Supabase Project เดียว แยกข้อมูลแต่ละลีกด้วย `league_id`  
 **ไฟล์อ้างอิง:** [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md)
@@ -26,30 +26,111 @@
 ### ฝั่ง application
 
 - ย้าย Google Login, session, logout, access status และ Super Admin check ไป Supabase Auth/RPC แล้ว
-- เพิ่ม `VITE_DATA_PROVIDER` เพื่อสลับ Firebase/Supabase ระหว่างช่วง transition
+- ลบ provider switch หลัง cutover และให้ application ใช้ Supabase โดยตรง
 - Controller โหลดลีกจาก Supabase และแสดงปุ่มบันทึก match ของแต่ละลีกแล้ว
 - Database Viewer รองรับ list/create/update/delete matches ผ่าน Supabase
 - เพิ่ม Supabase Realtime subscription สำหรับ matches และ teams
 - ย้ายการจัดการ teams, logo URL และ crop metadata ไป Supabase
+- Scoreboard โหลด matches และ teams ตามลีกที่เลือกจาก Supabase เป็นหลักแล้ว
+- Match navigation (`matchIdInput` และปุ่มเลื่อน) เชื่อมกับ Supabase matches แล้ว
+- Team Select Modal แสดงทีมจาก Supabase ได้แม้ไม่มี Excel Team Sheet
+- Scoreboard ใช้ Supabase logo URL และ crop metadata ของลีกที่เลือก และป้องกันข้อมูลปะปนเมื่อสลับลีก
 - ปรับ Auth lifecycle ให้ตรวจ Auth/Permission ตอน Initial Load, ไม่ตรวจ Permission ซ้ำเมื่อ `TOKEN_REFRESHED`, ตรวจเมื่อ Tab กลับมาและข้อมูลเก่า และมี fallback check ทุก 10 นาทีเฉพาะเมื่อจำเป็น
 - เพิ่ม Permission Realtime listener สำหรับ `user_access` และ `user_roles`
 - ย้าย Overlay, League Table, All Scores และ Combined Standalone ให้รองรับ Supabase snapshot ผ่าน token
 - ยังคง Cloudinary สำหรับอัปโหลดรูปภาพตาม scope เดิม
-- ตรวจสอบผ่านแล้ว: TypeScript, lint, tests 127 รายการ และ production build
+- ตรวจสอบผ่านแล้ว: TypeScript, lint, tests 125 รายการ และ production build หลังถอน Firebase
 
 ### สถานะสำคัญที่ต้องเข้าใจ
 
-ระบบยังเป็น transitional architecture: เมื่อ `VITE_DATA_PROVIDER=supabase` ฟีเจอร์หลักที่ย้ายแล้วจะใช้ Supabase แต่ Firebase SDK, Firebase parser และ Firebase fallback บางส่วนยังอยู่ใน source code เพื่อรองรับ rollback/legacy flow
+ระบบ production เป็น Supabase-only แล้ว ส่วน Firebase ที่ยังปรากฏในเอกสาร migration, SQL history และสคริปต์ import offline เท่านั้น ไม่ถูก bundle หรือเรียกใช้โดย application runtime
 
-## งานถัดไปตามลำดับที่แนะนำ
+## ลำดับความสำคัญหลัก
 
-1. ทำ manual acceptance test กับทั้งสองลีก: login, สลับลีก, บันทึก/แก้ไข/ลบ match, logo/crop, Private Overlay และ Public Overlay
-2. ทดสอบ security/RLS ด้วย user อื่นว่าไม่เห็นลีก, teams หรือ matches ของ `thanakrit_kas@hotmail.com`
-3. ตั้งค่า Supabase environment variables ใน Vercel และทดสอบ production URL ใหม่
-4. ตรวจสอบและย้าย Firebase references ที่ยังเหลือใน runtime ได้แก่ Firebase fallback, `useScoreboardFirebase`, Firebase URL compatibility และ legacy standalone flow
-5. ทำ Firebase backup/freeze point และกำหนด cutover ให้ Supabase เป็น provider เดียว
-6. ถอน Firebase package, config, types, parser และ code ที่ไม่ใช้แล้ว จากนั้นรัน verification ให้ไม่พบ Firebase reference
-7. พิจารณาแยก Cloudinary ไป Supabase Storage เป็น phase ใหม่ภายหลัง ไม่รวมในรอบนี้
+ลำดับนี้เป็นกติกาหลักสำหรับการพัฒนาต่อ ทุกงานต้องทำตามลำดับ เว้นแต่มีการอนุมัติเปลี่ยนแผนโดยชัดเจน
+
+### P0 — ความปลอดภัยและความพร้อมของระบบปัจจุบัน **เสร็จแล้ว**
+
+ต้องทำก่อนเพิ่ม UX/UI ขนาดใหญ่:
+
+- [x] ทำ manual acceptance test กับ Alcohol League และ Var38 League ครบแล้ว
+- [x] ทดสอบสลับลีก, Match navigation, Team Select, logo/crop และ Realtime แล้ว
+- [x] ทดสอบ Private Overlay และ Public Overlay แล้ว
+- [x] ทดสอบ RLS ด้วย user อื่นว่าไม่เห็นลีก, teams หรือ matches ของ `thanakrit_kas@hotmail.com` แล้ว
+- [x] เติม Supabase environment variables ใน Vercel และทดสอบ production URL แล้ว
+
+### P1 — Supabase cutover และถอน Firebase runtime **เสร็จแล้วใน codebase**
+
+1. เก็บ JSON ต้นทางและข้อมูล Supabase ที่ import แล้วไว้เป็น rollback reference พร้อมกำหนด freeze point
+2. ตรวจ Firebase references ที่ยังเหลือใน runtime — ไม่พบแล้ว
+3. ยืนยัน Supabase เป็น provider หลักใน production จาก P0 และ source configuration
+4. ถอน Firebase package, config, adapter, URL parser และ parser จาก Excel ที่ไม่จำเป็นแล้ว
+5. รัน test, lint, build และตรวจ Firebase reference ให้ครบ — ผ่านแล้ว
+
+### P2 — ออกแบบและขยาย Schema สำหรับ Tournament Management
+
+ต้องทำก่อนสร้าง Tournament Dashboard หรือ Fixture Builder:
+
+1. เพิ่มข้อมูล Season, Description, Logo, Date และ Tournament Status ให้ `leagues`
+2. เพิ่ม Matchweek ที่เป็นโครงสร้างจริง ไม่ใช้ `round_label` เป็นข้อมูลหลักตลอดไป
+3. เพิ่ม Team ID ใน matches เพื่อรองรับการเปลี่ยนชื่อทีมและตรวจสอบคู่แข่งอย่างถูกต้อง
+4. เพิ่มเวลาแข่งขัน, Venue และ Match Status
+5. รักษา field เดิมและ `legacy_firebase_id` ไว้จนกว่าจะตรวจสอบข้อมูลเก่าครบ
+6. จัดทำ migration ใหม่ เช่น `0008_tournament_foundation.sql` แล้วทดสอบกับสองลีกปัจจุบัน
+
+### P3 — Tournament Core UX/UI
+
+1. Tournament List
+2. Tournament Dashboard
+3. Tournament Basic Information
+4. Teams management
+5. Tournament status และ summary
+
+### P4 — Fixture Management
+
+1. Fixture List
+2. Filter ตาม Matchweek, Date, Team และ Status
+3. Create Match
+4. Edit Match
+5. Reschedule
+6. Venue และ Match Status
+7. Cancelled/Archived แทนการลบข้อมูลสำคัญแบบถาวร
+
+### P5 — Fixture Builder
+
+1. Manual pairing
+2. Match slots
+3. Assign remaining teams
+4. Drag & Drop สำหรับ Desktop
+5. Select-based workflow สำหรับ Mobile
+
+### P6 — Smart Scheduling และ Standings
+
+1. Auto Generate
+2. Auto Generate Remaining โดยห้ามเขียนทับ Fixture เดิม
+3. Duplicate และ schedule conflict warnings
+4. BYE handling
+5. Match results และ standings
+
+### งานที่ยังไม่ควรเริ่ม
+
+- Drag & Drop ก่อนมี Manual Fixture workflow ที่เสถียร
+- Auto Generate ก่อนมี Matchweek, Team ID และข้อมูล Fixture ที่ชัดเจน
+- Standings ก่อนกำหนด rules และ tie-breaker อย่างเป็นทางการ
+- Cloudinary → Supabase Storage จนกว่า Firebase migration และ Tournament foundation จะนิ่ง
+
+## งานถัดไปที่ต้องทำจริง
+
+ขณะนี้ P0 และ P1 เสร็จแล้ว งานถัดไปคือ **P2 — Tournament Schema Foundation** โดยต้อง review และอนุมัติ schema ก่อนเริ่มสร้าง UX/UI ใหม่ และยังไม่เริ่ม Drag & Drop หรือ Auto Generate
+
+## บันทึกอัปเดตล่าสุด — 26 สิงหาคม 2026
+
+- P0 และ P1 ผ่านการตรวจสอบและถือว่าเสร็จแล้วในระดับ application/codebase
+- Application production ใช้ Supabase-only; ไม่พบ Firebase reference ใน runtime หรือ production build
+- การตรวจสอบล่าสุดผ่าน: `npm run build`, `npm run lint` และ `npm test` — 16 test files, 125 tests
+- `.env` local ยังต้องลบตัวแปรเก่า `VITE_FIREBASE_*`, `VITE_ALLOWED_EMAILS` และ `VITE_DATA_PROVIDER` ด้วยตนเอง โดยคงเฉพาะ Supabase variables
+- Firebase project, migration history และ offline import assets ยังไม่ถูกลบ เพื่อใช้เป็น rollback reference
+- งานถัดไปที่ได้รับอนุมัติตามลำดับคือ P2: ออกแบบและ review Tournament Schema Foundation ก่อนสร้าง UX/UI
 
 ## 1. เป้าหมาย
 
@@ -240,6 +321,71 @@ updated_at
 ```
 
 การเพิ่ม quota ควรใช้ SQL function/RPC แบบ atomic ป้องกันการนับผิดเมื่อเปิดหลาย tab
+
+### 5.8 Tournament Management foundation — แผนขยายหลัง migration
+
+ส่วนนี้ยังเป็นแผนออกแบบ ยังไม่มีการรัน migration เพิ่มใน Supabase จนกว่าจะทบทวนและอนุมัติ schema ร่วมกัน
+
+#### ขยาย `leagues` ให้เป็น Tournament container
+
+แนะนำ field เพิ่มเติม:
+
+| Column | Type | หมายเหตุ |
+|---|---|---|
+| `season` | `text` | เช่น `2026` หรือ `2026/27`, optional |
+| `description` | `text` | รายละเอียดรายการ |
+| `logo_url` | `text` | โลโก้ Tournament |
+| `start_date` | `date` | optional เพื่อรองรับรายการที่เริ่มไปแล้ว |
+| `end_date` | `date` | optional |
+| `status` | `text` | `draft`, `upcoming`, `live`, `finished`, `archived` |
+| `format_type` | `text` | `round_robin`, `knockout`, `group_stage`, `custom` |
+| `format_settings` | `jsonb` | rules และ settings ที่ยังเปลี่ยนแปลงได้ |
+
+ห้ามใช้ `is_public` เป็น Tournament status เพราะ field นี้เป็น publish switch ของ Public Overlay โดยเฉพาะ
+
+#### เพิ่ม `matchweeks`
+
+ควรมีตารางแยกเพื่อรองรับการจัด Fixture กลางทาง:
+
+```text
+id
+league_id
+number
+label
+scheduled_date
+status
+created_at
+updated_at
+```
+
+#### ขยาย `matches`
+
+แนะนำ field เพิ่มเติม:
+
+```text
+matchweek_id       -- nullable ระหว่าง migration
+team_a_id          -- nullable เพื่อรองรับข้อมูล legacy
+team_b_id          -- nullable เพื่อรองรับข้อมูล legacy
+scheduled_at       -- timestamptz หรือ date + time ที่กำหนด timezone ชัดเจน
+venue_id           -- nullable
+status             -- scheduled/live/half_time/finished/postponed/cancelled/tbd
+reschedule_reason  -- nullable
+```
+
+`team_a` และ `team_b` ต้องคงไว้ชั่วคราวเพื่อรองรับข้อมูลที่ import แล้ว และใช้เป็น fallback จนกว่าจะ backfill Team ID ครบ
+
+#### `venues` — optional ตามความต้องการจริง
+
+ถ้าต้องรองรับหลายสนาม ให้สร้างตาราง `venues` แยก ถ้ายังมีสนามเดียวสามารถเริ่มด้วย `venue_name` ใน `matches` ได้ เพื่อลดความซับซ้อนของ migration แรก
+
+#### หลักการสำคัญ
+
+- Start/End Date ต้อง optional เพื่อรองรับ Tournament ที่เริ่มไปแล้ว
+- เปลี่ยนชื่อทีมต้องไม่ทำให้ประวัติ Fixture เสีย
+- Fixture ที่มีผลการแข่งขันแล้วไม่ควรถูกลบถาวรโดยง่าย
+- Auto Generate ต้องรักษา Fixture ที่มีอยู่แล้วและสร้างเฉพาะส่วนที่ว่าง
+- Warning เช่น duplicate หรือ schedule conflict ไม่ควร block Admin โดยอัตโนมัติ
+- Standings จะทำหลังจาก Match Status, Result และ Format rules ชัดเจนแล้ว
 
 ## 6. Mapping จาก Firebase ไป Supabase
 
@@ -699,31 +845,31 @@ SupabaseRepository
 
 ## 17. Phase 10 — ถอน Firebase ออกจาก codebase
 
-### Package
+### Package — เสร็จแล้ว
 
-- [ ] ลบ `firebase` จาก `package.json`
-- [ ] เพิ่ม `@supabase/supabase-js`
-- [ ] อัปเดต `package-lock.json`
-- [ ] ลบ dependency ที่ไม่ใช้
+- [x] ลบ `firebase` จาก `package.json`
+- [x] ใช้ `@supabase/supabase-js`
+- [x] อัปเดต `package-lock.json`
+- [x] ลบ dependency ที่ไม่ใช้จาก Firebase
 
-### Source files ที่ต้องลบหรือเปลี่ยน
+### Source files ที่ลบหรือเปลี่ยนแล้ว
 
-- [ ] `src/config/firebaseAuth.ts`
-- [ ] `src/hooks/useScoreboardFirebase.ts`
-- [ ] `src/utils/firebaseUrlConfig.ts`
-- [ ] `src/utils/firebaseUrlConfig.test.ts`
-- [ ] Firebase imports ทุกไฟล์
-- [ ] `FirebaseSaveTarget` → `LeagueTarget`
-- [ ] `Database` types จาก Firebase → generated Supabase types
+- [x] `src/config/firebaseAuth.ts`
+- [x] `src/hooks/useScoreboardFirebase.ts`
+- [x] `src/utils/firebaseUrlConfig.ts`
+- [x] `src/utils/firebaseUrlConfig.test.ts`
+- [x] Firebase imports ทุกไฟล์
+- [x] `FirebaseSaveTarget` → `LeagueTarget`
+- [x] `Database` types จาก Firebase → generated Supabase types
 
-### Configuration/docs
+### Configuration/docs — runtime เสร็จแล้ว
 
-- [ ] ลบ `VITE_FIREBASE_*` จาก `.env.example`
-- [ ] ตรวจ `.env` และไม่ commit secrets
-- [ ] เปลี่ยนข้อความ Firebase ใน UI
-- [ ] แก้ `PROJECT_ANALYSIS.md`
-- [ ] แก้ docs/specs ที่ยังอ้าง Firebase
-- [ ] ลบ Firebase config parser ถ้าไม่มี backward compatibility แล้ว
+- [x] ลบ `VITE_FIREBASE_*` จาก `.env.example`
+- [ ] ลบตัวแปร Firebase และ `VITE_ALLOWED_EMAILS` ที่ obsolete ออกจาก `.env` local โดยคงไว้เฉพาะ Supabase variables
+- [x] เปลี่ยนข้อความ Firebase ใน UI
+- [x] ปรับ `PROJECT_ANALYSIS.md` ให้เป็นเอกสาร historical/current hybrid — ไม่กระทบ runtime
+- [x] ปรับ `supabase/README.md` ให้สะท้อน Supabase-only runtime
+- [x] ลบ Firebase config parser เพราะไม่มี backward compatibility ใน application แล้ว
 
 ### Verification command
 
@@ -732,9 +878,58 @@ rg -n -i "firebase|firestore|realtime database|VITE_FIREBASE" src package.json .
 npm list firebase
 ```
 
-ผลลัพธ์สุดท้ายควรไม่มี Firebase runtime reference
+ผลลัพธ์สุดท้ายไม่มี Firebase runtime reference; migration SQL และ offline import script ยังเก็บคำว่า Firebase ได้เพราะเป็นประวัติ/เครื่องมือย้ายข้อมูลที่ไม่ถูก bundle
 
-## 18. Testing plan
+## 18. Phase 11 — Tournament Management UX/UI
+
+Phase นี้เริ่มได้เมื่อ P0 ผ่าน และ Schema Foundation ใน P2 ได้รับการอนุมัติแล้วเท่านั้น
+
+### 18.1 Tournament Core
+
+- [ ] Tournament List พร้อมค้นหาและ status filter
+- [ ] Tournament Dashboard
+- [ ] แก้ไข Basic Information
+- [ ] จัดการ Teams ต่อ Tournament
+- [ ] แสดงจำนวนทีม, Fixture และ Matchweek
+
+### 18.2 Fixture Management
+
+- [ ] Fixture List
+- [ ] Filter ตาม Matchweek, Date, Team, Status และ Venue
+- [ ] Create Match
+- [ ] Edit Match
+- [ ] Reschedule Match
+- [ ] เปลี่ยน Status
+- [ ] ยกเลิกหรือ Archive Fixture โดยไม่ลบประวัติสำคัญ
+
+### 18.3 Fixture Builder
+
+- [ ] Manual pairing
+- [ ] Match slots
+- [ ] Assign remaining teams
+- [ ] Drag & Drop บน Desktop
+- [ ] Select-based workflow บน Mobile
+- [ ] Unsaved changes และ Undo/Discard
+
+### 18.4 Smart Scheduling และ Standings
+
+- [ ] Auto Generate แบบไม่เขียนทับ Fixture เดิม
+- [ ] Auto Generate เฉพาะคู่ที่ยังว่าง
+- [ ] Duplicate warning
+- [ ] Schedule conflict warning
+- [ ] BYE handling
+- [ ] Match results
+- [ ] Standings และ tie-breaker rules
+
+### 18.5 ขอบเขตที่ต้องรักษา
+
+- Quick Setup ยังคงเป็นหน้าควบคุมลีกและ Scoreboard
+- Tournament Dashboard เป็นหน้าจัดการข้อมูลการแข่งขัน
+- Database Viewer จะค่อย ๆ ถูกต่อยอดเป็น Fixture List ไม่สร้างระบบซ้ำซ้อน
+- Team Logos Manager จะค่อย ๆ ถูกต่อยอดเป็น Teams management
+- Overlay และ Standalone ต้องอ่านข้อมูลตามลีกเดิมและไม่รั่วข้ามลีก
+
+## 19. Testing plan
 
 ### Unit tests
 
@@ -771,7 +966,7 @@ npm list firebase
 - [ ] เปิด Replay/VAR ไม่ได้รับผลกระทบ
 - [ ] logout และ route protection
 
-## 19. Acceptance criteria
+## 20. Acceptance criteria
 
 ### Auth
 
@@ -812,7 +1007,7 @@ npm list firebase
 - [ ] ไม่มี Firebase config ใน URL ใหม่
 - [ ] test/lint/build ผ่าน
 
-## 20. Rollback plan
+## 21. Rollback plan
 
 หาก migration มีปัญหา:
 
@@ -827,7 +1022,7 @@ npm list firebase
 
 ห้ามลบ Firebase project หรือ Firebase backup จนกว่าจะผ่านช่วงเฝ้าระวังหลัง cutover
 
-## 21. ไฟล์ที่คาดว่าจะเปลี่ยนตามลำดับ
+## 22. ไฟล์ที่คาดว่าจะเปลี่ยนตามลำดับ
 
 ### เพิ่มก่อน
 
@@ -868,27 +1063,27 @@ src/utils/firebaseUrlConfig.ts
 src/utils/firebaseUrlConfig.test.ts
 ```
 
-## 22. ลำดับการลงมือจริงแบบสั้น
+## 23. ลำดับการลงมือจริงแบบสั้น
 
 ```text
-1. Backup Firebase
-2. สร้าง Supabase project
-3. สร้าง schema + RLS
-4. สร้าง Supabase client/adapters
-5. ย้าย Auth
-6. ย้าย user access/trial/quota
-7. ย้าย leagues/teams/matches
-8. ย้าย realtime
-9. เปลี่ยน overlay URL
-10. ทดสอบ staging
-11. migrate production data
-12. cutover ไป Supabase
-13. เฝ้าระวังและตรวจ rollback window
-14. ลบ Firebase package/source/config
-15. รัน test/lint/build และตรวจ Firebase reference เป็นศูนย์
+P0 1. ทดสอบ manual acceptance กับ Alcohol League และ Var38 League
+P0 2. ทดสอบ owner-only RLS ด้วย user อื่น
+P0 3. ตั้งค่า Supabase environment ใน Vercel และทดสอบ production
+P1 4. ทำ Firebase backup และกำหนด freeze point
+P1 5. ตรวจ Firebase runtime references และกำหนด rollback window
+P1 6. Cutover ไป Supabase เป็น provider หลัก
+P1 7. ถอน Firebase package/source/config หลังผ่าน rollback window
+P1 8. รัน test/lint/build และตรวจ Firebase reference เป็นศูนย์
+P2 9. ออกแบบและ review Tournament foundation schema
+P2 10. เพิ่ม migration foundation เช่น 0008 และ backfill ข้อมูลเดิม
+P2 11. ทดสอบ schema กับ Alcohol League และ Var38 League
+P3 12. พัฒนา Tournament List และ Dashboard
+P4 13. พัฒนา Fixture List, Create/Edit และ Reschedule
+P5 14. พัฒนา Manual Fixture Builder, Drag & Drop และ Mobile workflow
+P6 15. พัฒนา Auto Generate, conflict warnings, BYE และ Standings
 ```
 
-## 23. Definition of Done
+## 24. Definition of Done
 
 โปรเจกต์จะถือว่าย้ายสำเร็จเมื่อ:
 
@@ -905,7 +1100,7 @@ src/utils/firebaseUrlConfig.test.ts
 - `npm run build` ผ่าน
 - ทดสอบ manual flow ครบทุก route สำคัญ
 
-## 24. เอกสาร Supabase ที่ใช้เป็นแนวทาง
+## 25. เอกสาร Supabase ที่ใช้เป็นแนวทาง
 
 - [Supabase Auth](https://supabase.com/docs/guides/auth)
 - [Google Social Login](https://supabase.com/docs/guides/auth/social-login/auth-google)

@@ -13,7 +13,6 @@ export interface LeagueRecord {
 
 export interface MatchRecord {
   id: string;
-  legacyFirebaseId: string | null;
   leagueId: string;
   date: string;
   teamA: string;
@@ -28,7 +27,6 @@ export interface MatchRecord {
 
 export interface CreateMatchInput {
   leagueId: string;
-  legacyFirebaseId?: string | null;
   date?: string | null;
   teamA: string;
   teamB: string;
@@ -98,7 +96,6 @@ function mapLeague(row: {
 
 function mapMatch(row: {
   id: string;
-  legacy_firebase_id: string | null;
   league_id: string;
   match_date: string | null;
   team_a: string;
@@ -112,7 +109,6 @@ function mapMatch(row: {
 }): MatchRecord {
   return {
     id: row.id,
-    legacyFirebaseId: row.legacy_firebase_id,
     leagueId: row.league_id,
     date: row.match_date || '',
     teamA: row.team_a,
@@ -182,7 +178,6 @@ function parseOverlaySnapshot(value: Json | null): SupabaseOverlaySnapshot {
     if (!isJsonObject(item)) throw new Error('Supabase overlay returned an invalid match');
     return {
       id: jsonString(item.id, 'match id'),
-      legacyFirebaseId: jsonNullableString(item.legacyFirebaseId),
       leagueId: jsonString(item.leagueId, 'match league id'),
       date: jsonNullableString(item.date) || '',
       teamA: jsonString(item.teamA, 'team A'),
@@ -298,7 +293,7 @@ export async function createSupabaseLeague(name: string, slug: string): Promise<
 export async function listSupabaseMatches(leagueId: string): Promise<MatchRecord[]> {
   const { data, error } = await getSupabaseClient()
     .from('matches')
-    .select('id, legacy_firebase_id, league_id, match_date, team_a, team_b, score_a, score_b, round_label, match_url, logo_a, logo_b')
+    .select('id, league_id, match_date, team_a, team_b, score_a, score_b, round_label, match_url, logo_a, logo_b')
     .eq('league_id', leagueId)
     .order('match_date', { ascending: false });
 
@@ -310,7 +305,6 @@ export async function createSupabaseMatch(input: CreateMatchInput): Promise<Matc
     .from('matches')
     .insert({
       league_id: input.leagueId,
-      legacy_firebase_id: input.legacyFirebaseId ?? null,
       match_date: input.date ?? null,
       team_a: input.teamA,
       team_b: input.teamB,
@@ -321,7 +315,7 @@ export async function createSupabaseMatch(input: CreateMatchInput): Promise<Matc
       logo_a: input.logoA ?? '',
       logo_b: input.logoB ?? '',
     })
-    .select('id, legacy_firebase_id, league_id, match_date, team_a, team_b, score_a, score_b, round_label, match_url, logo_a, logo_b')
+    .select('id, league_id, match_date, team_a, team_b, score_a, score_b, round_label, match_url, logo_a, logo_b')
     .single();
 
   return mapMatch(requireData(data, error));
@@ -348,7 +342,7 @@ export async function updateSupabaseMatch(
     .update(update)
     .eq('id', matchId)
     .eq('league_id', leagueId)
-    .select('id, legacy_firebase_id, league_id, match_date, team_a, team_b, score_a, score_b, round_label, match_url, logo_a, logo_b')
+    .select('id, league_id, match_date, team_a, team_b, score_a, score_b, round_label, match_url, logo_a, logo_b')
     .single();
 
   return mapMatch(requireData(data, error));

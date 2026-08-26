@@ -49,7 +49,7 @@ describe('scoreboardEvent', () => {
     expect(isGoalScoredEvent({ type: 'ButtonClicked' })).toBe(false);
     expect(isGoalScoredEvent({ ...validGoalEvent, team: 'C' })).toBe(false);
     expect(isGoalScoredEvent({ ...validGoalEvent, scoreA: '1' })).toBe(false);
-    expect(isGoalScoredEvent({ ...validGoalEvent, source: 'firebase' })).toBe(false);
+    expect(isGoalScoredEvent({ ...validGoalEvent, source: 'legacy' })).toBe(false);
   });
 
   it('accepts a valid persistent scoreboard state', () => {
