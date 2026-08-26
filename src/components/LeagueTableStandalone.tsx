@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getLogoSrc, extractMatchLogo, replaceGlobalTeamsCacheFromSupabase } from '../utils/logoResolver';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getDatabase, ref, onValue } from 'firebase/database';
+import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
+import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
-import { readSupabaseOverlaySnapshot, readSupabasePublicOverlaySnapshot } from '../services/supabaseLeagueService';
 
 export default function LeagueTableStandalone() {
   useDisableZoom();
@@ -11,46 +13,55 @@ export default function LeagueTableStandalone() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
-  const leagueId = searchParams.get('league') || '';
+  const leagueId = searchParams.get('league') || 'excel';
   const title = searchParams.get('title') || 'League Table';
   const defaultLogo = searchParams.get('defaultLogo') || 'images/logo.png';
   const showHeader = searchParams.get('header') !== '0';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
 
+  const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
+
   useEffect(() => {
-    const isPublicOverlay = searchParams.get('public') === '1';
-    const accessToken = searchParams.get('token');
-    if ((!accessToken && !isPublicOverlay) || (isPublicOverlay && !leagueId)) {
-      setErrorMsg(isPublicOverlay ? 'ไม่พบ league id สำหรับ Public Overlay' : 'ไม่พบ Supabase Overlay token');
+    if (!firebaseConfig) {
+      setErrorMsg('ไม่พบ Firebase Config');
       setLoading(false);
-      return undefined;
+      return;
     }
 
-    let cancelled = false;
-    const loadSnapshot = async () => {
-      try {
-        const snapshot = isPublicOverlay
-          ? await readSupabasePublicOverlaySnapshot(leagueId)
-          : await readSupabaseOverlaySnapshot(accessToken || '');
-        if (cancelled) return;
-        setMatches(snapshot.matches);
-        replaceGlobalTeamsCacheFromSupabase(snapshot.teams);
-        setLoading(false);
-        setErrorMsg('');
-      } catch (error: unknown) {
-        if (cancelled) return;
-        setErrorMsg(`โหลด Supabase Overlay ล้มเหลว: ${error instanceof Error ? error.message : 'Token ไม่ถูกต้องหรือหมดอายุ'}`);
-        setLoading(false);
-      }
-    };
-    void loadSnapshot();
-    const refreshTimer = window.setInterval(() => void loadSnapshot(), 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(refreshTimer);
-    };
-  }, [leagueId, searchParams]);
+    try {
+      const appName = `standalone-table-${leagueId}-${Date.now()}`;
+      const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+      const db = getDatabase(app);
+      const matchesRef = ref(db, 'matches');
+
+      const unsubTeams = listenToFirebaseTeams(db);
+
+      const unsubscribe = onValue(
+        matchesRef,
+        (snapshot) => {
+          const items: any[] = [];
+          snapshot.forEach((child) => {
+            items.push({ id: child.key, ...child.val() });
+          });
+          setMatches(items);
+          setLoading(false);
+        },
+        (err) => {
+          setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
+          setLoading(false);
+        }
+      );
+
+      return () => {
+        unsubscribe();
+        unsubTeams();
+      };
+    } catch (err: any) {
+      setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
+      setLoading(false);
+    }
+  }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {
     return (

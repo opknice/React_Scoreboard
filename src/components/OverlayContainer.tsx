@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getLogoSrc, extractMatchLogo, replaceGlobalTeamsCacheFromSupabase } from '../utils/logoResolver';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
+import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
+import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
-import { readSupabaseOverlaySnapshot, readSupabasePublicOverlaySnapshot } from '../services/supabaseLeagueService';
 
 export default function OverlayContainer() {
   useDisableZoom();
@@ -13,50 +15,73 @@ export default function OverlayContainer() {
 
   // Extract search params
   const view = searchParams.get('view') || searchParams.get('type') || 'table';
-  const leagueId = searchParams.get('league') || '';
-  const title = searchParams.get('title') || 'Supabase League';
+  const leagueId = searchParams.get('league') || 'excel';
+  const title = searchParams.get('title') || 'Excel League';
   const dateParam = searchParams.get('date');
+  const limitParam = searchParams.get('limit');
   const showHeader = searchParams.get('header') !== '0';
   const defaultLogo = searchParams.get('defaultLogo') || 'images/logo.png';
   const speed = searchParams.get('speed') || '75';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
 
-  // Load the public or owner-issued Supabase snapshot.
+  // Decode Firebase configuration
+  const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
+
+  // Initialize and load data
   useEffect(() => {
-    const isPublicOverlay = searchParams.get('public') === '1';
-    const accessToken = searchParams.get('token');
-    if ((!accessToken && !isPublicOverlay) || (isPublicOverlay && !leagueId)) {
-      setErrorMsg(isPublicOverlay ? 'ไม่พบ league id สำหรับ Public Overlay' : 'ไม่พบ Supabase Overlay token (กรุณาสร้าง URL ใหม่จากหน้า Controller)');
+    if (!firebaseConfig) {
+      setErrorMsg('ไม่พบ Firebase Config (กรุณาใช้ URL ที่สร้างจาก Control Panel)');
       setLoading(false);
-      return undefined;
+      return;
     }
 
-    let cancelled = false;
-    const loadSnapshot = async () => {
-      try {
-        const snapshot = isPublicOverlay
-          ? await readSupabasePublicOverlaySnapshot(leagueId)
-          : await readSupabaseOverlaySnapshot(accessToken || '');
-        if (cancelled) return;
-        setMatches(snapshot.matches);
-        replaceGlobalTeamsCacheFromSupabase(snapshot.teams);
-        setLoading(false);
-        setErrorMsg('');
-      } catch (error: unknown) {
-        if (cancelled) return;
-        setErrorMsg(`โหลด Supabase Overlay ล้มเหลว: ${error instanceof Error ? error.message : 'Token ไม่ถูกต้องหรือหมดอายุ'}`);
-        setLoading(false);
-      }
-    };
+    try {
+      const appName = `overlay-${leagueId.replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}`;
+      const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+      const db = getDatabase(app);
+      const baseRef = ref(db, 'matches');
 
-    void loadSnapshot();
-    const refreshTimer = window.setInterval(() => void loadSnapshot(), 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(refreshTimer);
-    };
-  }, [leagueId, searchParams]);
+      // Build Query
+      const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+      let q: any = baseRef;
+
+      if (view === 'ticker' && selectedDate) {
+        q = query(baseRef, orderByChild('date'), equalTo(selectedDate));
+      } else if (view === 'results' && limitParam) {
+        const limitVal = parseInt(limitParam, 10);
+        if (Number.isFinite(limitVal) && limitVal > 0) {
+          q = query(baseRef, limitToLast(limitVal));
+        }
+      }
+
+      const unsubTeams = listenToFirebaseTeams(db);
+
+      const unsubscribe = onValue(
+        q,
+        (snapshot) => {
+          const items: any[] = [];
+          snapshot.forEach((child) => {
+            items.push({ id: child.key, ...child.val() });
+          });
+          setMatches(items);
+          setLoading(false);
+        },
+        (err) => {
+          setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
+          setLoading(false);
+        }
+      );
+
+      return () => {
+        unsubscribe();
+        unsubTeams();
+      };
+    } catch (err: any) {
+      setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${err.message}`);
+      setLoading(false);
+    }
+  }, [dateParam, firebaseConfig, leagueId, limitParam, searchParams, view]);
 
   if (loading) {
     return (

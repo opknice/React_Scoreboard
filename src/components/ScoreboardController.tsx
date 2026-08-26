@@ -1,14 +1,12 @@
 import React, { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
-import {
-  logoutSupabaseUser,
-  getSupabaseUserDisplayName,
-  getSupabaseUserPhotoUrl,
-} from '../config/supabaseAuth';
-import { useAuthUser } from '../hooks/useAuthUser';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { getFirebaseAuth, logoutUser, isSuperAdmin } from '../config/firebaseAuth';
 import { useTimer } from '../hooks/useTimer';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 import { useAutoMacros } from '../hooks/useAutoMacros';
+import { useScoreboardFirebase } from '../hooks/useScoreboardFirebase';
 import { useScoreboardObsConnection } from '../hooks/useScoreboardObsConnection';
 import {
   broadcastScoreboardButton,
@@ -21,19 +19,14 @@ import {
 import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
 import { useAutoObsSourceSync } from '../hooks/useAutoObsSourceSync';
 import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
-import { useSupabaseLeagues } from '../hooks/useSupabaseLeagues';
 import { translations } from '../constants/translations';
 import {
   normalizeColumnName,
+  isFirebaseConfigSheetName,
   inferExcelMapping,
 } from '../utils/excelParserCore';
-import type { TeamColorRow } from '../utils/excelParserCore';
-import type { LeagueTarget } from '../types/leagueTarget';
-import {
-  getLogoSrc as resolveLogoSrc,
-  normalizeTeamKey,
-  replaceGlobalTeamsCacheFromSupabase,
-} from '../utils/logoResolver';
+import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParserCore';
+import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
@@ -65,20 +58,6 @@ import {
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
 import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
-import LogoWithCrop from './LogoWithCrop';
-import { isValidCropMetadata, type CropMetadata } from '../utils/logoCropMetadata';
-import {
-  createSupabaseMatch,
-  createSupabaseOverlayAccessToken,
-  listSupabaseMatches,
-  listSupabaseTeams,
-  subscribeSupabaseMatches,
-  subscribeSupabaseTeams,
-  setSupabaseLeaguePublicOverlay,
-  upsertSupabaseTeam,
-  type MatchRecord,
-  type TeamRecord,
-} from '../services/supabaseLeagueService';
 
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
@@ -113,7 +92,6 @@ function renderTeamName(teamName: string) {
 export default function ScoreboardController() {
   const navigate = useNavigate();
   const authAccess = useAuthAccess();
-  const { leagues: supabaseLeagues, error: supabaseLeaguesError } = useSupabaseLeagues(true);
   const [, setTrialClock] = useState(Date.now());
   const timerHook = useTimer();
   // Stable ref so the OBS WebSocket event listener always calls the latest handleHotkeyAction
@@ -159,6 +137,7 @@ export default function ScoreboardController() {
     excelRequestRef.current += 1;
     excelFetchAbortRef.current?.abort();
   }, []);
+  const [firebaseTargets, setFirebaseTargets] = useState<FirebaseSaveTarget[]>([]);
   const [teamSheetData, setTeamSheetData] = useState<TeamColorRow[]>([]);
   const [teamColorsMemory, setTeamColorsMemory] = useState<Record<string, { color1: string; color2: string }>>(() => {
     const saved = localStorage.getItem('teamColors');
@@ -168,17 +147,25 @@ export default function ScoreboardController() {
     const saved = localStorage.getItem('teamLogos');
     return saved ? JSON.parse(saved) : {};
   });
-  const [supabaseTeams, setSupabaseTeams] = useState<TeamRecord[]>([]);
-  const [supabaseMatches, setSupabaseMatches] = useState<MatchRecord[]>([]);
-  const [supabaseMatchesLeagueId, setSupabaseMatchesLeagueId] = useState<string>('');
-  const autoAppliedSupabaseLeagueRef = useRef<string>('');
-  const currentUser = useAuthUser();
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   useEffect(() => {
     if (authAccess?.accessType !== 'trial') return undefined;
     const intervalId = window.setInterval(() => setTrialClock(Date.now()), 60 * 1000);
     return () => window.clearInterval(intervalId);
   }, [authAccess?.accessType]);
+
+  useEffect(() => {
+    try {
+      const auth = getFirebaseAuth();
+      const unsubscribe = onAuthStateChanged(auth, (usr) => {
+        setCurrentUser(usr);
+      });
+      return () => unsubscribe();
+    } catch {
+      // ignore if auth not initialized
+    }
+  }, []);
 
   const saveTeamLogo = (teamName: string, url: string) => {
     if (!teamName || !url) return;
@@ -188,33 +175,13 @@ export default function ScoreboardController() {
       localStorage.setItem('teamLogos', JSON.stringify(updated));
       return updated;
     });
-
-    if (selectedQuickLeagueId) {
-      const teamKey = normalizeTeamKey(teamName);
-      const existingTeam = supabaseTeams.find((team) => team.teamKey === teamKey);
-      void upsertSupabaseTeam({
-        leagueId: selectedQuickLeagueId,
-        teamKey,
-        name: teamName.trim(),
-        logoUrl: url.trim(),
-        cropMetadata: existingTeam?.cropMetadata ?? null,
-      }).catch((error: unknown) => {
-        console.error('[Scoreboard] Supabase team logo save error:', error);
-      });
-    }
   };
 
-  const getSupabaseTeam = useCallback((teamName: string) => (
-    supabaseTeams.find((team) => normalizeTeamKey(team.name) === normalizeTeamKey(teamName))
-  ), [supabaseTeams]);
-
-  const getTeamLogo = useCallback((teamName: string) => {
+  const getTeamLogo = (teamName: string) => {
     if (!teamName) return '';
-    const teamRecord = getSupabaseTeam(teamName);
-    if (teamRecord?.logoUrl) return teamRecord.logoUrl;
     const cleanKey = teamName.trim().toLowerCase();
     return teamLogosMemory[cleanKey] || '';
-  }, [getSupabaseTeam, teamLogosMemory]);
+  };
 
   const {
     nameA, setNameA,
@@ -303,29 +270,6 @@ export default function ScoreboardController() {
 
   // Database Viewer States
   const [selectedQuickLeagueId, setSelectedQuickLeagueId] = useState<string>('');
-  const [publicOverlayOverrides, setPublicOverlayOverrides] = useState<Record<string, boolean>>({});
-  const [isPublicOverlayBusy, setIsPublicOverlayBusy] = useState<boolean>(false);
-
-  const supabaseTargets = useMemo<LeagueTarget[]>(
-    () => supabaseLeagues.map((league, index) => ({
-      id: league.id,
-      index,
-      name: league.name,
-    })),
-    [supabaseLeagues],
-  );
-
-  const availableLeagueTargets = supabaseTargets;
-
-  useEffect(() => {
-    if (supabaseLeagues.length === 0) {
-      setSelectedQuickLeagueId('');
-      return;
-    }
-    if (!supabaseLeagues.some((league) => league.id === selectedQuickLeagueId)) {
-      setSelectedQuickLeagueId(supabaseLeagues[0].id);
-    }
-  }, [selectedQuickLeagueId, supabaseLeagues]);
 
   // Toast States
   const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
@@ -359,6 +303,12 @@ export default function ScoreboardController() {
 
   const trans = translations[currentLang] || translations.en;
 
+  const { activeDb, getOrCreateFirebaseApp } = useScoreboardFirebase({
+    targets: firebaseTargets,
+    selectedTargetId: selectedQuickLeagueId,
+    onTeamsUpdated: () => setTeamsCacheVersion((previous) => previous + 1),
+  });
+
   const getMappedValue = useCallback((row: any[], fieldKey: string, currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
     const columnName = currentMapping[fieldKey];
     if (!columnName) return '';
@@ -374,15 +324,6 @@ export default function ScoreboardController() {
 
   // Compute list of unique team names from Excel and Team Sheet safely
   const allUniqueTeams = useMemo(() => {
-    const databaseTeams = [
-      ...supabaseTeams.map((team) => team.name),
-      ...supabaseMatches.flatMap((match) => [match.teamA, match.teamB]),
-    ];
-    if (databaseTeams.length > 0) {
-      return Array.from(new Set(databaseTeams))
-        .map((name) => String(name || '').trim())
-        .filter((name) => name.length > 0);
-    }
     if (!excelData.length && !teamSheetData.length) return [];
     const headers = excelData[0] || [];
     const mapping = Object.keys(excelMapping).length ? excelMapping : inferExcelMapping(headers);
@@ -393,31 +334,11 @@ export default function ScoreboardController() {
     ]);
 
     const sheetTeams = teamSheetData.map((t) => t.team);
-    const supabaseTeamNames = supabaseTeams.map((team) => team.name);
 
-    return Array.from(new Set([...supabaseTeamNames, ...sheetTeams, ...matchTeams]))
+    return Array.from(new Set([...sheetTeams, ...matchTeams]))
       .map((name) => String(name || '').trim())
       .filter((name) => name.length > 0);
-  }, [excelData, excelMapping, getMappedValue, supabaseMatches, supabaseTeams, teamSheetData]);
-
-  const teamSelectRows = useMemo<TeamColorRow[]>(() => {
-    const sheetByName = new Map(
-      teamSheetData.map((row) => [normalizeColumnName(row.team), row]),
-    );
-
-    return allUniqueTeams.map((teamName, index) => {
-      const record = getSupabaseTeam(teamName);
-      const sheet = sheetByName.get(normalizeColumnName(teamName));
-
-      return {
-        rowNumber: index + 1,
-        team: teamName,
-        color1: sheet?.color1 || '#ffffff',
-        color2: sheet?.color2 || '#000000',
-        logoUrl: record?.logoUrl || getTeamLogo(teamName),
-      };
-    });
-  }, [allUniqueTeams, getSupabaseTeam, getTeamLogo, teamSheetData]);
+  }, [excelData, excelMapping, teamSheetData, getMappedValue]);
 
   // --- Toast Function ---
   const triggerToast = useCallback((message: string, type = 'info') => {
@@ -427,101 +348,6 @@ export default function ScoreboardController() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
   }, []);
-
-  useEffect(() => {
-    if (supabaseLeaguesError) {
-      triggerToast(`โหลดรายการลีกจาก Supabase ไม่สำเร็จ: ${supabaseLeaguesError}`, 'error');
-    }
-  }, [supabaseLeaguesError, triggerToast]);
-
-  useEffect(() => {
-    if (!selectedQuickLeagueId) {
-      setSupabaseTeams([]);
-      setSupabaseMatches([]);
-      setSupabaseMatchesLeagueId('');
-      autoAppliedSupabaseLeagueRef.current = '';
-      replaceGlobalTeamsCacheFromSupabase([]);
-      return undefined;
-    }
-
-    setSupabaseTeams([]);
-    replaceGlobalTeamsCacheFromSupabase([]);
-    setTeamLogosMemory({});
-    setTeamsCacheVersion((previous) => previous + 1);
-
-    let cancelled = false;
-    const applyTeams = (teams: TeamRecord[]) => {
-      if (cancelled) return;
-      setSupabaseTeams(teams);
-      replaceGlobalTeamsCacheFromSupabase(teams);
-      setTeamLogosMemory(() => {
-        const nextMemory: Record<string, string> = {};
-        teams.forEach((team) => {
-          if (team.logoUrl) nextMemory[team.name.trim().toLowerCase()] = team.logoUrl;
-        });
-        localStorage.setItem('teamLogos', JSON.stringify(nextMemory));
-        return nextMemory;
-      });
-      setTeamsCacheVersion((previous) => previous + 1);
-    };
-
-    void listSupabaseTeams(selectedQuickLeagueId)
-      .then(applyTeams)
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          triggerToast(`โหลดทีมจาก Supabase ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
-        }
-      });
-
-    const unsubscribe = subscribeSupabaseTeams(
-      selectedQuickLeagueId,
-      applyTeams,
-      (error: unknown) => {
-        if (!cancelled) console.error('[Scoreboard] Supabase teams realtime error:', error);
-      },
-    );
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [selectedQuickLeagueId, triggerToast]);
-
-  useEffect(() => {
-    if (!selectedQuickLeagueId) return undefined;
-
-    let cancelled = false;
-    autoAppliedSupabaseLeagueRef.current = '';
-    setSupabaseMatches([]);
-    setSupabaseMatchesLeagueId('');
-
-    const applyMatches = (matches: MatchRecord[]) => {
-      if (cancelled) return;
-      setSupabaseMatches(matches);
-      setSupabaseMatchesLeagueId(selectedQuickLeagueId);
-    };
-
-    void listSupabaseMatches(selectedQuickLeagueId)
-      .then(applyMatches)
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          triggerToast(`โหลดแมตช์จาก Supabase ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
-        }
-      });
-
-    const unsubscribe = subscribeSupabaseMatches(
-      selectedQuickLeagueId,
-      applyMatches,
-      (error: unknown) => {
-        if (!cancelled) console.error('[Scoreboard] Supabase matches realtime error:', error);
-      },
-    );
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [selectedQuickLeagueId, triggerToast]);
 
   const teamNameUrls = useMemo(() => ({
     A: buildTeamNameBrowserUrl(getOrigin(), 'A', teamNameSettings),
@@ -654,13 +480,15 @@ export default function ScoreboardController() {
   }, [obs, logoSettings, triggerToast]);
 
   const database = useScoreboardDatabase({
-    supabaseLeagueId: selectedQuickLeagueId,
+    activeDb,
+    targets: firebaseTargets,
+    selectedTargetId: selectedQuickLeagueId,
     notify: triggerToast,
   });
 
   // --- 2-Step Setup Onboarding Gate Checks ---
   const isStep1Complete = videoFolder.isConnected;
-  const isStep2Complete = excelData.length > 0 || availableLeagueTargets.length > 0;
+  const isStep2Complete = excelData.length > 0 || firebaseTargets.length > 0;
   const isSetupComplete = isStep1Complete && isStep2Complete;
 
   // --- Prevent spacebar default behavior (except inside inputs/textareas) ---
@@ -829,11 +657,11 @@ export default function ScoreboardController() {
     localStorage.setItem('teamColors', JSON.stringify(updated));
   };
 
-  const getTeamColors = useCallback((teamName: string) => {
+  const getTeamColors = (teamName: string) => {
     if (!teamName) return { color1: '#ffffff', color2: '#ffffff' };
     const encoded = encodeURIComponent(teamName);
     return teamColorsMemory[encoded] || { color1: '#ffffff', color2: '#ffffff' };
-  }, [teamColorsMemory]);
+  };
 
   const getTeamColorsFromSheet = (teamName: string) => {
     if (!teamSheetData.length || !teamName) return null;
@@ -882,31 +710,6 @@ export default function ScoreboardController() {
     return resolveLogoSrc(logoName, teamName, logoFolderPath);
   };
 
-  const renderScoreboardLogo = (logoIdentifier: string, teamName: string) => {
-    if (!logoIdentifier && !teamName) return null;
-
-    const source = getLogoSrc(logoIdentifier, teamName);
-    const teamRecord = getSupabaseTeam(teamName);
-    const crop = teamRecord && isValidCropMetadata(teamRecord.cropMetadata)
-      ? teamRecord.cropMetadata as CropMetadata
-      : null;
-
-    if (crop && source) {
-      return <LogoWithCrop key={`${source}-${teamName}-${teamsCacheVersion}`} url={source} crop={crop} alt="" />;
-    }
-
-    return (
-      <img
-        key={`${source}-${teamName}-${teamsCacheVersion}`}
-        src={source}
-        alt=""
-        onError={(event) => {
-          event.currentTarget.style.display = 'none';
-        }}
-      />
-    );
-  };
-
   // --- Excel Loading & Parsing Logic ---
   const processExcelBuffer = async (
     buffer: ArrayBuffer,
@@ -925,12 +728,14 @@ export default function ScoreboardController() {
       const preferredNames = ['matching', 'matches', 'match'];
       const sheetName =
         workbook.SheetNames.find((name) => preferredNames.includes(normalizeColumnName(name))) ||
+        workbook.SheetNames.find((name) => !isFirebaseConfigSheetName(name)) ||
         workbook.SheetNames[0];
 
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
       const headers = rows[0] || [];
       const mapping = inferExcelMapping(headers);
+      const targets = parser.parseFirebaseSaveTargets(workbook);
 
       const colors = await parser.loadTeamSheetWithColors(buffer);
       if (requestId !== excelRequestRef.current) return;
@@ -939,8 +744,12 @@ export default function ScoreboardController() {
       setExcelData(rows);
       setExcelMapping(mapping);
       setTeamSheetData(colors);
+      setFirebaseTargets(targets);
+      if (targets.length > 0) {
+        setSelectedQuickLeagueId(targets[0].id);
+      }
 
-      const lName = fileName.replace(/\.[^/.]+$/, '');
+      const lName = targets.length > 0 ? targets[0].name : fileName.replace(/\.[^/.]+$/, '');
       setLeagueName(lName);
       document.title = `${lName} - Scoreboard Controller`;
 
@@ -1071,94 +880,9 @@ export default function ScoreboardController() {
     handleExcelFromUrl(preset.url);
   };
 
-  const applySupabaseMatch = useCallback((matchNumber: number) => {
-    if (supabaseMatchesLeagueId !== selectedQuickLeagueId) {
-      triggerToast('กำลังโหลดแมตช์ของลีกที่เลือกจาก Supabase', 'info');
-      return;
-    }
-
-    const match = supabaseMatches[matchNumber - 1];
-    if (!match) {
-      triggerToast(`ไม่พบแมตช์ลำดับที่ ${matchNumber}`, 'error');
-      return;
-    }
-
-    const teamAName = match.teamA || trans.teamA;
-    const teamBName = match.teamB || trans.teamB;
-    const teamARecord = getSupabaseTeam(teamAName);
-    const teamBRecord = getSupabaseTeam(teamBName);
-    const logoAFile = match.logoA || teamARecord?.logoUrl || getTeamLogo(teamAName);
-    const logoBFile = match.logoB || teamBRecord?.logoUrl || getTeamLogo(teamBName);
-    const resolvedLogoA = logoAFile || teamAName;
-    const resolvedLogoB = logoBFile || teamBName;
-    const colorsA = getTeamColors(teamAName);
-    const colorsB = getTeamColors(teamBName);
-
-    setNameA(teamAName);
-    setNameB(teamBName);
-    setScoreA(0);
-    setScoreB(0);
-    setLogoA(resolvedLogoA);
-    setLogoB(resolvedLogoB);
-    setColorA1(colorsA.color1);
-    setColorA2(colorsA.color2);
-    setColorB1(colorsB.color1);
-    setColorB2(colorsB.color2);
-    setLabel1('');
-    setLabel2(match.roundLabel || '');
-    setLabel3('');
-    timerHook.resetToZero();
-
-    obs.setText('name_team_a', teamAName.replace(/\//g, '\n'));
-    obs.setText('name_team_b', teamBName.replace(/\//g, '\n'));
-    obs.setImage('logo_team_a', resolvedLogoA, logoFolderPath);
-    obs.setImage('logo_team_b', resolvedLogoB, logoFolderPath);
-    obs.setSourceColor('Color_Team_A', colorsA.color1);
-    obs.setSourceColor('Color_Team_A_2', colorsA.color2);
-    obs.setSourceColor('Color_Team_B', colorsB.color1);
-    obs.setSourceColor('Color_Team_B_2', colorsB.color2);
-    obs.setText('label_1', '');
-    obs.setText('label_2', match.roundLabel || '');
-    obs.setText('label_3', '');
-
-    triggerToast(`${trans.toastLoaded} ${matchNumber}`, 'success');
-  }, [
-    getSupabaseTeam,
-    getTeamColors,
-    getTeamLogo,
-    logoFolderPath,
-    obs,
-    selectedQuickLeagueId,
-    setColorA1,
-    setColorA2,
-    setColorB1,
-    setColorB2,
-    setLabel1,
-    setLabel2,
-    setLabel3,
-    setLogoA,
-    setLogoB,
-    setNameA,
-    setNameB,
-    setScoreA,
-    setScoreB,
-    supabaseMatches,
-    supabaseMatchesLeagueId,
-    timerHook,
-    trans.teamA,
-    trans.teamB,
-    trans.toastLoaded,
-    triggerToast,
-  ]);
-
   // --- Load match data by ID ---
   // freshTeamSheet: pass colors directly when calling right after Excel load (before state updates)
   const applyMatch = (matchId = matchIdInput, customRows = excelData, freshTeamSheet?: TeamColorRow[]) => {
-    if (supabaseMatchesLeagueId === selectedQuickLeagueId) {
-      applySupabaseMatch(matchId);
-      return;
-    }
-
     if (!customRows.length) {
       triggerToast(trans.toastLoadFileFirst, 'error');
       return;
@@ -1240,16 +964,6 @@ export default function ScoreboardController() {
     triggerToast(`${trans.toastLoaded} ${matchId}`, 'success');
   };
 
-  useEffect(() => {
-    if (!selectedQuickLeagueId) return;
-    if (supabaseMatchesLeagueId !== selectedQuickLeagueId || supabaseMatches.length === 0) return;
-    if (autoAppliedSupabaseLeagueRef.current === selectedQuickLeagueId) return;
-
-    autoAppliedSupabaseLeagueRef.current = selectedQuickLeagueId;
-    setMatchIdInput(1);
-    applySupabaseMatch(1);
-  }, [applySupabaseMatch, selectedQuickLeagueId, supabaseMatches.length, supabaseMatchesLeagueId]);
-
   // --- Swap Teams ---
   const swapTeams = () => {
     const tempNameA = nameA;
@@ -1289,29 +1003,37 @@ export default function ScoreboardController() {
     triggerToast(trans.toastScoreReset, 'info');
   };
 
-  // --- Save match results to Supabase ---
-  const handleSaveMatchToSupabase = async (target: LeagueTarget) => {
+  // --- Save match results to Firebase ---
+  const handleSaveMatchToFirebase = (target: FirebaseSaveTarget) => {
     const confirmSave = window.confirm(`${target.name} แน่นะ !! ??`);
     if (!confirmSave) return;
 
-    const matchData = {
-      teamA: nameA.replace(/<br\s*\/?>/gi, ' '),
-      teamB: nameB.replace(/<br\s*\/?>/gi, ' '),
-      logoA: logoA || '',
-      logoB: logoB || '',
-      scoreA: parseInt(String(scoreA), 10) || 0,
-      scoreB: parseInt(String(scoreB), 10) || 0,
-      roundLabel: label2,
-      date: new Date().toISOString().slice(0, 10),
-      url: '',
-    };
-
     try {
-      await createSupabaseMatch({ leagueId: target.id, ...matchData });
-      triggerToast(`บันทึกคะแนน ${target.name} ลง Supabase เรียบร้อยแล้ว`, 'success');
-    } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : String(error);
-      triggerToast(`บันทึกลง Supabase ไม่สำเร็จ: ${detail}`, 'error');
+      const app = getOrCreateFirebaseApp(target);
+      const db = getDatabase(app);
+      const matchesRef = ref(db, 'matches');
+
+      const matchData = {
+        teamA: nameA.replace(/<br\s*\/?>/gi, ' '),
+        teamB: nameB.replace(/<br\s*\/?>/gi, ' '),
+        logoA: logoA || '',
+        logoB: logoB || '',
+        scoreA: parseInt(String(scoreA), 10),
+        scoreB: parseInt(String(scoreB), 10),
+        roundLabel: label2,
+        date: new Date().toISOString().slice(0, 10),
+        url: ''
+      };
+
+      push(matchesRef, matchData)
+        .then(() => {
+          triggerToast(`บันทึกคะแนน ${target.name} เรียบร้อยแล้ว`, 'success');
+        })
+        .catch((err) => {
+          triggerToast('บันทึกไม่สำเร็จ: ' + err.message, 'error');
+        });
+    } catch (err: any) {
+      triggerToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
     }
   };
 
@@ -1355,50 +1077,40 @@ export default function ScoreboardController() {
   };
 
   // --- Copy URLs helper for overlays ---
-  const handleCopyOverlayUrl = async (viewType: string, standaloneFile = '') => {
-    const target = availableLeagueTargets.find((item) => item.id === selectedQuickLeagueId);
-    const selectedLeague = supabaseLeagues.find((league) => league.id === selectedQuickLeagueId);
-    const isPublicOverlay = publicOverlayOverrides[selectedQuickLeagueId] ?? selectedLeague?.isPublic ?? false;
+  const getOverlaySearchBase64 = (target: FirebaseSaveTarget) => {
+    const encoded = btoa(JSON.stringify(target.firebaseConfig))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+    return encoded;
+  };
+
+  const handleCopyOverlayUrl = (viewType: string, standaloneFile = '') => {
+    const target = firebaseTargets.find((t) => t.id === selectedQuickLeagueId);
     if (!target) {
-      triggerToast('กรุณาเลือกลีกก่อน', 'error');
+      triggerToast('กรุณาโหลดไฟล์ Excel ที่มี Firebase Config ก่อน', 'error');
       return;
     }
 
-    try {
-      const overlayParams = new URLSearchParams({ provider: 'supabase', league: target.id, title: target.name });
-      let expiryMessage = '';
-      if (isPublicOverlay) {
-        overlayParams.set('public', '1');
-      } else {
-        const { token, expiresAt } = await createSupabaseOverlayAccessToken(target.id);
-        overlayParams.set('token', token);
-        expiryMessage = ` (หมดอายุ ${new Date(expiresAt).toLocaleString('th-TH')})`;
+    const host = window.location.origin;
+    let urlString = '';
+    if (standaloneFile === 'league-table') {
+      urlString = `${host}/league-table?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+    } else if (standaloneFile === 'all-scores') {
+      urlString = `${host}/all-scores?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+    } else if (standaloneFile === 'all-score-combined') {
+      urlString = `${host}/all-score-combined?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+    } else {
+      urlString = `${host}/overlay?league=${target.id}&view=${viewType}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+      if (viewType === 'ticker') {
+        urlString += `&date=today&speed=${tickerSpeed}`;
       }
-      let urlString = `${getOrigin()}/${standaloneFile || 'overlay'}?${overlayParams.toString()}`;
-      if (!standaloneFile) {
-        overlayParams.set('view', viewType);
-        urlString = `${getOrigin()}/overlay?${overlayParams.toString()}`;
-        if (viewType === 'ticker') urlString += `&date=today&speed=${tickerSpeed}`;
-      }
-      await navigator.clipboard.writeText(urlString);
-      triggerToast(`คัดลอก ${isPublicOverlay ? 'Public' : 'Private'} Supabase Overlay URL แล้ว${expiryMessage}`, 'success');
-    } catch (error: unknown) {
-      triggerToast(`สร้าง Overlay URL ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
     }
-  };
 
-  const handlePublicOverlayChange = async (enabled: boolean) => {
-    if (!selectedQuickLeagueId) return;
-    setIsPublicOverlayBusy(true);
-    try {
-      await setSupabaseLeaguePublicOverlay(selectedQuickLeagueId, enabled);
-      setPublicOverlayOverrides((current) => ({ ...current, [selectedQuickLeagueId]: enabled }));
-      triggerToast(enabled ? 'เปิด Public Overlay สำหรับลีกนี้แล้ว' : 'ปิด Public Overlay สำหรับลีกนี้แล้ว', 'success');
-    } catch (error: unknown) {
-      triggerToast(`เปลี่ยนสถานะ Public Overlay ไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`, 'error');
-    } finally {
-      setIsPublicOverlayBusy(false);
-    }
+    navigator.clipboard
+      .writeText(urlString)
+      .then(() => triggerToast(trans.toastCopied, 'success'))
+      .catch(() => triggerToast(trans.toastCopyFailed, 'error'));
   };
 
   // --- OBS Setup Functions ---
@@ -1564,8 +1276,8 @@ export default function ScoreboardController() {
           </div>
           {currentUser && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-              {getSupabaseUserPhotoUrl(currentUser) && (
-                <img src={getSupabaseUserPhotoUrl(currentUser)} alt={getSupabaseUserDisplayName(currentUser)} style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
+              {currentUser.photoURL && (
+                <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
               )}
               <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
                 {currentUser.email}
@@ -1586,7 +1298,7 @@ export default function ScoreboardController() {
                   🎁 {formatTrialRemaining(authAccess.trialExpiresAt)}
                 </span>
               )}
-              {authAccess?.accessType === 'super-admin' && (
+              {isSuperAdmin(currentUser.email) && (
                 <button
                   onClick={() => navigate('/admin/whitelist')}
                   className="btn-primary"
@@ -1597,15 +1309,7 @@ export default function ScoreboardController() {
                 </button>
               )}
               <button
-                onClick={() => {
-                  void logoutSupabaseUser().catch((error: unknown) => {
-                    console.error('[Scoreboard] Logout failed:', error);
-                    triggerToast(
-                      `ออกจากระบบไม่สำเร็จ: ${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}`,
-                      'error',
-                    );
-                  });
-                }}
+                onClick={() => logoutUser()}
                 className="btn-secondary"
                 style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
                 title="ออกจากระบบ"
@@ -1765,7 +1469,7 @@ export default function ScoreboardController() {
                   className="btn-success btn-sm"
                   onClick={() => setShowTeamLogosManagerModal(true)}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Supabase ครั้งเดียว"
+                  title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Firebase Database ครั้งเดียว"
                 >
                   <i className="fas fa-shield-halved" style={{ fontSize: '0.9rem' }}></i>
                   <span>🛡️ จัดการโลโก้ประจำลีก</span>
@@ -1791,13 +1495,7 @@ export default function ScoreboardController() {
                   id="matchIDInput"
                   min="1"
                   value={matchIdInput}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10) || 1;
-                    const maxMatch = supabaseMatchesLeagueId === selectedQuickLeagueId
-                      ? supabaseMatches.length
-                      : Number.POSITIVE_INFINITY;
-                    setMatchIdInput(Math.max(1, Math.min(value, maxMatch)));
-                  }}
+                  onChange={(e) => setMatchIdInput(parseInt(e.target.value, 10) || 1)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       const val = parseInt((e.target as HTMLInputElement).value, 10) || 1;
@@ -1809,12 +1507,8 @@ export default function ScoreboardController() {
                 />
                 <button
                   onClick={() => {
-                    const maxMatch = supabaseMatchesLeagueId === selectedQuickLeagueId
-                      ? supabaseMatches.length
-                      : matchIdInput + 1;
-                    const nextValue = Math.min(matchIdInput + 1, maxMatch);
-                    setMatchIdInput(nextValue);
-                    applyMatch(nextValue);
+                    setMatchIdInput((prev) => prev + 1);
+                    applyMatch(matchIdInput + 1);
                   }}
                   style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
                   title="แมตช์ถัดไป"
@@ -1879,7 +1573,16 @@ export default function ScoreboardController() {
                 </div>
 
                 <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
-                  {renderScoreboardLogo(logoA, nameA)}
+                  {logoA || nameA ? (
+                    <img
+                      key={`${logoA}-${nameA}-${teamsCacheVersion}`}
+                      src={getLogoSrc(logoA, nameA)}
+                      alt=""
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : null}
                   <div className="logo-initials">{getTeamInitials(nameA)}</div>
                 </div>
 
@@ -1917,7 +1620,7 @@ export default function ScoreboardController() {
                         >
                           <i className="fas fa-pencil-alt"></i>
                         </button>
-                        {teamSelectRows.length > 0 && (
+                        {teamSheetData.length > 0 && (
                           <button
                             className="btn-primary"
                             style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
@@ -1994,7 +1697,16 @@ export default function ScoreboardController() {
                 </div>
 
                 <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
-                  {renderScoreboardLogo(logoB, nameB)}
+                  {logoB || nameB ? (
+                    <img
+                      key={`${logoB}-${nameB}-${teamsCacheVersion}`}
+                      src={getLogoSrc(logoB, nameB)}
+                      alt=""
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : null}
                   <div className="logo-initials">{getTeamInitials(nameB)}</div>
                 </div>
 
@@ -2032,7 +1744,7 @@ export default function ScoreboardController() {
                         >
                           <i className="fas fa-pencil-alt"></i>
                         </button>
-                        {teamSelectRows.length > 0 && (
+                        {teamSheetData.length > 0 && (
                           <button
                             className="btn-primary"
                             style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
@@ -2076,12 +1788,12 @@ export default function ScoreboardController() {
           />
 
           {/* Match save triggers dynamically */}
-          {availableLeagueTargets.length > 0 && (
+          {firebaseTargets.length > 0 && (
             <div className="card">
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', textAlign: 'center' }}>บันทึกข้อมูลคะแนนแมตช์การแข่งขันไปยัง Supabase:</h3>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', textAlign: 'center' }}>บันทึกข้อมูลคะแนนแมตช์การแข่งขันไปยัง Firebase:</h3>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                {availableLeagueTargets.map((target) => (
-                  <button key={target.id} className="btn-primary" onClick={() => void handleSaveMatchToSupabase(target)}>
+                {firebaseTargets.map((target) => (
+                  <button key={target.id} className="btn-primary" onClick={() => handleSaveMatchToFirebase(target)}>
                     <i className="fas fa-save"></i> บันทึกข้อมูลแมตช์ {target.name}
                   </button>
                 ))}
@@ -2161,7 +1873,7 @@ export default function ScoreboardController() {
                 <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
               </h3>
               <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>
-                {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Cloudinary หรือใส่ URL โลโก้ของทีม'}
+                {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Cloudinary / Firebase หรือใส่ URL โลโก้ของทีม مباشرة'}
               </p>
 
               {/* Direct URL Inputs for Team A and Team B */}
@@ -2321,7 +2033,7 @@ export default function ScoreboardController() {
           isOpen={showTeamLogosManagerModal}
           onClose={() => setShowTeamLogosManagerModal(false)}
           teamList={allUniqueTeams}
-          supabaseLeagueId={selectedQuickLeagueId}
+          db={activeDb}
           leagueName={leagueName}
           logoFolderPath={logoFolderPath}
           onLogoFolderPathChange={setLogoFolderPath}
@@ -2357,11 +2069,8 @@ export default function ScoreboardController() {
 
         {showQuickSetupModal && <QuickSetupModal
           isOpen={showQuickSetupModal}
-          targets={availableLeagueTargets}
+          targets={firebaseTargets}
           selectedTargetId={selectedQuickLeagueId}
-          supabaseLeagueId={selectedQuickLeagueId}
-          publicOverlayEnabled={publicOverlayOverrides[selectedQuickLeagueId] ?? supabaseLeagues.find((league) => league.id === selectedQuickLeagueId)?.isPublic ?? false}
-          publicOverlayBusy={isPublicOverlayBusy}
           tickerSpeed={tickerSpeed}
           closeLabel={trans.close}
           onTargetChange={setSelectedQuickLeagueId}
@@ -2397,7 +2106,6 @@ export default function ScoreboardController() {
             setShowOBSSetupModal(true);
           }}
           onCopyOverlay={handleCopyOverlayUrl}
-          onPublicOverlayChange={(enabled) => void handlePublicOverlayChange(enabled)}
           onOpenDatabase={() => {
             if (!selectedQuickLeagueId) {
               triggerToast('กรุณาเลือกลีกก่อน', 'error');
@@ -2427,7 +2135,6 @@ export default function ScoreboardController() {
           onDateFilterChange={database.setDateFilter}
           onRefresh={database.loadMatches}
           onEdit={database.openEdit}
-          onAdd={database.openCreate}
           onDelete={database.deleteMatch}
           onCopyTableUrl={() => handleCopyOverlayUrl('table', 'league-table')}
           onCopyResultsUrl={() => handleCopyOverlayUrl('results', 'all-scores')}
@@ -2455,7 +2162,7 @@ export default function ScoreboardController() {
           isOpen={showTeamSelectModal}
           target={teamSelectTarget}
           search={teamSelectSearch}
-          teams={teamSelectRows}
+          teams={teamSheetData}
           closeLabel={trans.close}
           onSearchChange={setTeamSelectSearch}
           onSelect={(teamName) => {

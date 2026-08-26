@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getSupabaseClient } from '../config/supabaseClient';
-import { getSupabaseUserAccess } from '../config/supabaseAccess';
+import { getDatabase, ref, get, update } from 'firebase/database';
+import { onAuthStateChanged } from 'firebase/auth';
+import { getFirebaseAuth, getFirebaseAuthApp, encodeEmailKey } from '../config/firebaseAuth';
 import { useAuthAccess } from './useAuthAccess';
-import { useAuthUser } from './useAuthUser';
 import { FREE_TRIAL_IMAGE_LIMIT } from '../constants/uploadConfig';
 
 export interface UseImageUploadQuotaResult {
@@ -17,16 +17,43 @@ export interface UseImageUploadQuotaResult {
 
 export function useImageUploadQuota(): UseImageUploadQuotaResult {
   const accessDecision = useAuthAccess();
-  const currentUser = useAuthUser();
+  const [userEmail, setUserEmail] = useState<string>(() => {
+    try {
+      const currentUser = getFirebaseAuth().currentUser;
+      return currentUser?.email || localStorage.getItem('last_user_email') || '';
+    } catch {
+      return '';
+    }
+  });
 
   const [uploadedCount, setUploadedCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Listen to auth state changes to ensure userEmail stays synced
+  useEffect(() => {
+    try {
+      const auth = getFirebaseAuth();
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser?.email) {
+          setUserEmail(currentUser.email);
+          localStorage.setItem('last_user_email', currentUser.email);
+        } else {
+          setUserEmail('');
+        }
+      });
+      return () => unsubscribe();
+    } catch {
+      // Fallback if auth app isn't ready yet
+      return undefined;
+    }
+  }, []);
+
   // Unlimited if super-admin or whitelist
   const isUnlimited = accessDecision?.accessType === 'super-admin' || accessDecision?.accessType === 'whitelist';
 
+  // Load upload count from Firebase / LocalStorage
   const loadQuota = useCallback(async () => {
-    if (!currentUser) {
+    if (!userEmail) {
       const localVal = parseInt(localStorage.getItem('guest_upload_count') || '0', 10);
       setUploadedCount(isNaN(localVal) ? 0 : localVal);
       setLoading(false);
@@ -34,47 +61,56 @@ export function useImageUploadQuota(): UseImageUploadQuotaResult {
     }
 
     try {
-      const access = await getSupabaseUserAccess(currentUser);
-      const count = access?.uploadedImageCount ?? 0;
-      setUploadedCount(count);
-      localStorage.setItem(`upload_count_${currentUser.id}`, String(count));
-    } catch (err: unknown) {
-      console.warn('[useImageUploadQuota] Failed to fetch upload count from Supabase:', err);
-      const key = currentUser.id;
+      const key = encodeEmailKey(userEmail);
+      const app = getFirebaseAuthApp();
+      const db = getDatabase(app);
+      const userRef = ref(db, `user_permissions/${key}`);
+      const snapshot = await get(userRef);
+
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        const count = typeof val.uploadedImageCount === 'number' ? val.uploadedImageCount : 0;
+        setUploadedCount(count);
+        localStorage.setItem(`upload_count_${key}`, String(count));
+      } else {
+        const localVal = parseInt(localStorage.getItem(`upload_count_${key}`) || '0', 10);
+        setUploadedCount(isNaN(localVal) ? 0 : localVal);
+      }
+    } catch (err) {
+      console.warn('[useImageUploadQuota] Failed to fetch upload count from Firebase:', err);
+      const key = encodeEmailKey(userEmail);
       const localVal = parseInt(localStorage.getItem(`upload_count_${key}`) || '0', 10);
       setUploadedCount(isNaN(localVal) ? 0 : localVal);
     } finally {
       setLoading(false);
     }
-  }, [currentUser]);
+  }, [userEmail]);
 
   useEffect(() => {
     void loadQuota();
   }, [loadQuota]);
 
   const incrementUploadCount = useCallback(async (): Promise<number> => {
-    if (currentUser) {
-      try {
-        const { data, error } = await getSupabaseClient().rpc('increment_image_upload_count', { amount: 1 });
-        if (error) throw error;
-        const nextCount = typeof data === 'number' ? data : uploadedCount + 1;
-        setUploadedCount(nextCount);
-        localStorage.setItem(`upload_count_${currentUser.id}`, String(nextCount));
-        return nextCount;
-      } catch (err: unknown) {
-        console.warn('[useImageUploadQuota] Failed to update count in Supabase:', err);
-        const fallbackCount = uploadedCount + 1;
-        setUploadedCount(fallbackCount);
-        localStorage.setItem(`upload_count_${currentUser.id}`, String(fallbackCount));
-        return fallbackCount;
-      }
-    }
-
     const nextCount = uploadedCount + 1;
     setUploadedCount(nextCount);
-    localStorage.setItem('guest_upload_count', String(nextCount));
+
+    if (userEmail) {
+      const key = encodeEmailKey(userEmail);
+      localStorage.setItem(`upload_count_${key}`, String(nextCount));
+      try {
+        const app = getFirebaseAuthApp();
+        const db = getDatabase(app);
+        const userRef = ref(db, `user_permissions/${key}`);
+        await update(userRef, { uploadedImageCount: nextCount });
+      } catch (err) {
+        console.warn('[useImageUploadQuota] Failed to update count in Firebase:', err);
+      }
+    } else {
+      localStorage.setItem('guest_upload_count', String(nextCount));
+    }
+
     return nextCount;
-  }, [currentUser, uploadedCount]);
+  }, [uploadedCount, userEmail]);
 
   const remainingQuota = isUnlimited
     ? 'unlimited'

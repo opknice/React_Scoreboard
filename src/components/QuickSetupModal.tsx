@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { LeagueTarget } from '../types/leagueTarget';
+import type { FirebaseSaveTarget } from '../utils/excelParser';
 import {
   TEAM_NAME_FONT_OPTIONS,
   TEAM_NAME_MAX_FONT_SIZE,
@@ -41,11 +41,8 @@ interface FontOption {
 
 interface QuickSetupModalProps {
   isOpen: boolean;
-  targets: LeagueTarget[];
+  targets: FirebaseSaveTarget[];
   selectedTargetId: string;
-  supabaseLeagueId?: string;
-  publicOverlayEnabled?: boolean;
-  publicOverlayBusy?: boolean;
   tickerSpeed: number;
   closeLabel: string;
   onTargetChange: (targetId: string) => void;
@@ -75,7 +72,6 @@ interface QuickSetupModalProps {
   onQuickAddTeamNames: () => void;
   onOpenObsSetup: () => void;
   onCopyOverlay: (viewType: string, standaloneFile?: string) => void;
-  onPublicOverlayChange?: (enabled: boolean) => void;
   onOpenDatabase: () => void;
   onClose: () => void;
 }
@@ -84,9 +80,6 @@ export default function QuickSetupModal({
   isOpen,
   targets,
   selectedTargetId,
-  supabaseLeagueId,
-  publicOverlayEnabled = false,
-  publicOverlayBusy = false,
   tickerSpeed,
   closeLabel,
   onTargetChange,
@@ -116,7 +109,6 @@ export default function QuickSetupModal({
   onQuickAddTeamNames,
   onOpenObsSetup,
   onCopyOverlay,
-  onPublicOverlayChange,
   onOpenDatabase,
   onClose,
 }: QuickSetupModalProps) {
@@ -597,7 +589,6 @@ export default function QuickSetupModal({
                 teamSide={cropModalTarget.teamSide}
                 teamName={cropModalTarget.teamName}
                 logoUrl={cropModalTarget.logoUrl}
-                supabaseLeagueId={supabaseLeagueId}
               />
             )}
           </div> : null}
@@ -720,24 +711,6 @@ export default function QuickSetupModal({
           <button className="btn-primary" onClick={() => onCopyOverlay('table')}><i className="fas fa-table"></i> Copy League Table URL</button>
           <button className="btn-success" onClick={() => onCopyOverlay('results')}><i className="fas fa-list"></i> Copy Match Results URL</button>
           <button className="btn-primary" style={{ background: '#0ea5e9', borderColor: '#0ea5e9', fontWeight: 'bold' }} onClick={() => onCopyOverlay('combined', 'all-score-combined')}><i className="fas fa-trophy"></i> Copy Combined All Score & Table URL</button>
-          {(
-            <div style={{ padding: '10px 12px', backgroundColor: publicOverlayEnabled ? '#052e16' : '#262626', borderRadius: '6px', border: publicOverlayEnabled ? '1px solid #22c55e' : '1px solid #64748b' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: publicOverlayEnabled ? '#86efac' : '#cbd5e1', fontSize: '12px', fontWeight: 600 }}>
-                <input
-                  type="checkbox"
-                  checked={publicOverlayEnabled}
-                  disabled={publicOverlayBusy || !supabaseLeagueId}
-                  onChange={(event) => onPublicOverlayChange?.(event.target.checked)}
-                />
-                {publicOverlayEnabled ? 'เปิด Public Overlay สำหรับลีกนี้' : 'ลีกนี้ยังเป็น Private Overlay'}
-              </label>
-              <div style={{ marginTop: '5px', fontSize: '11px', color: '#94a3b8' }}>
-                {publicOverlayEnabled
-                  ? 'ผู้ชมและนักแข่งเปิดตารางได้โดยไม่ต้อง Login และ URL ไม่มีวันหมดอายุ'
-                  : 'เมื่อเปิด ระบบจะสร้าง Public URL ตามลีกที่เลือกและยังคงป้องกันการแก้ไขข้อมูล'}
-              </div>
-            </div>
-          )}
           <div style={{ padding: '10px 12px', backgroundColor: '#262626', borderRadius: '6px', border: '1px solid #ffb74d' }}>
             <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#ffb74d', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}><i className="fas fa-gauge-high"></i> ตั้งค่าความเร็วการวิ่งของตัวหนังสือ (Live Ticker):</label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
@@ -748,7 +721,7 @@ export default function QuickSetupModal({
             </div>
             <button className="btn-warning" style={{ width: '100%', justifyContent: 'center' }} onClick={() => onCopyOverlay('ticker')}><i className="fas fa-tv"></i> Copy Live Ticker URL (ความเร็ว {tickerSpeed}s)</button>
           </div>
-          <button className="btn-secondary" style={{ background: '#8b5cf6', borderColor: '#8b5cf6' }} onClick={onOpenDatabase}><i className="fas fa-database"></i> จัดการฐานข้อมูล (Supabase)</button>
+          <button className="btn-secondary" style={{ background: '#8b5cf6', borderColor: '#8b5cf6' }} onClick={onOpenDatabase}><i className="fas fa-database"></i> จัดการฐานข้อมูล (Firebase)</button>
         </div>
         <div style={{ marginTop: '16px', textAlign: 'right' }}><button className="btn-secondary" onClick={onClose}>{closeLabel}</button></div>
       </div>
