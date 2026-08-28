@@ -151,6 +151,7 @@ export default function TeamNamesAnimation({ side }: TeamNamesAnimationProps) {
         const style = {
           '--team-name-x': display.team === 'A' ? '20.8333%' : '78.125%',
           '--team-name-font-family': presentation.fontFamily,
+          '--team-name-color': presentation.textColor,
           '--team-name-font-weight': presentation.fontWeight,
           '--team-name-font-size': presentation.fontMode === 'manual'
             ? `${presentation.fontSize}px`

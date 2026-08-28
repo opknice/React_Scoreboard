@@ -6,6 +6,7 @@ describe('teamNameBrowserUrl', () => {
   it('keeps legacy URLs in auto mode with safe defaults', () => {
     expect(getTeamNamePresentation('', 'A')).toEqual({
       fontFamily: 'Inter',
+      textColor: '#ffffff',
       fontWeight: 700,
       fontMode: 'auto',
       fontSize: 48,
@@ -14,12 +15,13 @@ describe('teamNameBrowserUrl', () => {
 
   it('reads manual font settings from the URL', () => {
     const presentation = getTeamNamePresentation('?font=Kanit&fontMode=manual&fontSize=72', 'B');
-    expect(presentation).toEqual({ fontFamily: 'Kanit', fontWeight: 700, fontMode: 'manual', fontSize: 72 });
+    expect(presentation).toEqual({ fontFamily: 'Kanit', textColor: '#ffffff', fontWeight: 700, fontMode: 'manual', fontSize: 72 });
   });
 
   it('clamps unsafe manual sizes and accepts a local font family', () => {
     expect(getTeamNamePresentation('?font=My%20Local%20Font&fontMode=manual&fontSize=999', 'A')).toEqual({
       fontFamily: 'My Local Font',
+      textColor: '#ffffff',
       fontWeight: 700,
       fontMode: 'manual',
       fontSize: 120,
@@ -29,6 +31,7 @@ describe('teamNameBrowserUrl', () => {
   it('falls back when a font family contains unsafe CSS characters', () => {
     expect(getTeamNamePresentation('?font=Bad%3Bfont&fontMode=manual&fontSize=48', 'A')).toEqual({
       fontFamily: 'Inter',
+      textColor: '#ffffff',
       fontWeight: 700,
       fontMode: 'manual',
       fontSize: 48,
@@ -39,6 +42,7 @@ describe('teamNameBrowserUrl', () => {
     const url = buildTeamNameBrowserUrl('http://localhost:5173/React_Scoreboard', 'B', {
       ...DEFAULT_TEAM_NAME_BROWSER_SETTINGS,
       fontFamily: 'Montserrat',
+      textColorB: '#22c55e',
       fontModeB: 'manual',
       fontSizeB: 64,
     });
@@ -49,5 +53,11 @@ describe('teamNameBrowserUrl', () => {
     expect(url).toContain('fontMode=manual');
     expect(url).toContain('fontSize=64');
     expect(url).toContain('fontWeight=700');
+    expect(url).toContain('color=%2322c55e');
+  });
+
+  it('reads and validates the team name text color', () => {
+    expect(getTeamNamePresentation('?color=%23f97316', 'A').textColor).toBe('#f97316');
+    expect(getTeamNamePresentation('?color=red', 'A').textColor).toBe('#ffffff');
   });
 });

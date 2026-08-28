@@ -4,6 +4,8 @@ export type FontWeight = 300 | 400 | 500 | 600 | 700 | 800 | 900;
 
 export interface TeamNameBrowserSettings {
   fontFamily: TeamNameFontFamily;
+  textColorA: string;
+  textColorB: string;
   fontWeightA: FontWeight;
   fontWeightB: FontWeight;
   fontModeA: TeamNameFontMode;
@@ -16,6 +18,7 @@ export const TEAM_NAME_SETTINGS_STORAGE_KEY = 'teamNameBrowserSettings';
 export const TEAM_NAME_MIN_FONT_SIZE = 16;
 export const TEAM_NAME_MAX_FONT_SIZE = 120;
 export const TEAM_NAME_DEFAULT_FONT_SIZE = 48;
+export const DEFAULT_TEAM_NAME_TEXT_COLOR = '#ffffff';
 export const DEFAULT_FONT_WEIGHT: FontWeight = 700;
 export const FONT_WEIGHT_OPTIONS: { value: FontWeight; label: string }[] = [
   { value: 300, label: 'บาง (Light)' },
@@ -39,6 +42,8 @@ export const TEAM_NAME_FONT_OPTIONS: { value: TeamNameFontFamily; label: string 
 
 export const DEFAULT_TEAM_NAME_BROWSER_SETTINGS: TeamNameBrowserSettings = {
   fontFamily: 'Inter',
+  textColorA: DEFAULT_TEAM_NAME_TEXT_COLOR,
+  textColorB: DEFAULT_TEAM_NAME_TEXT_COLOR,
   fontWeightA: DEFAULT_FONT_WEIGHT,
   fontWeightB: DEFAULT_FONT_WEIGHT,
   fontModeA: 'auto',
@@ -46,6 +51,12 @@ export const DEFAULT_TEAM_NAME_BROWSER_SETTINGS: TeamNameBrowserSettings = {
   fontSizeA: TEAM_NAME_DEFAULT_FONT_SIZE,
   fontSizeB: TEAM_NAME_DEFAULT_FONT_SIZE,
 };
+
+export function normalizeTeamNameTextColor(value: unknown, fallback = DEFAULT_TEAM_NAME_TEXT_COLOR): string {
+  if (typeof value !== 'string') return fallback;
+  const color = value.trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : fallback;
+}
 
 export function normalizeTeamNameFontSize(value: unknown, fallback = TEAM_NAME_DEFAULT_FONT_SIZE): number {
   if (value === null || value === undefined || value === '') return fallback;
@@ -79,6 +90,8 @@ export function normalizeTeamNameBrowserSettings(value: unknown): TeamNameBrowse
   const candidate = value && typeof value === 'object' ? value as Partial<TeamNameBrowserSettings> : {};
   return {
     fontFamily: normalizeTeamNameFontFamily(candidate.fontFamily),
+    textColorA: normalizeTeamNameTextColor(candidate.textColorA),
+    textColorB: normalizeTeamNameTextColor(candidate.textColorB),
     fontWeightA: normalizeFontWeight(candidate.fontWeightA),
     fontWeightB: normalizeFontWeight(candidate.fontWeightB),
     fontModeA: normalizeTeamNameFontMode(candidate.fontModeA),

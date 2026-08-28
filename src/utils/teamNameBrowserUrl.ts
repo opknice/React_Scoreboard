@@ -4,6 +4,7 @@ import {
   normalizeTeamNameFontFamily,
   normalizeTeamNameFontMode,
   normalizeTeamNameFontSize,
+  normalizeTeamNameTextColor,
   type FontWeight,
   type TeamNameBrowserSettings,
   type TeamNameFontFamily,
@@ -12,6 +13,7 @@ import {
 
 export interface TeamNamePresentation {
   fontFamily: TeamNameFontFamily;
+  textColor: string;
   fontWeight: FontWeight;
   fontMode: TeamNameFontMode;
   fontSize: number;
@@ -27,6 +29,7 @@ export function getTeamNamePresentation(
 ): TeamNamePresentation {
   return {
     fontFamily: normalizeTeamNameFontFamily(getParamValue(search, 'font')),
+    textColor: normalizeTeamNameTextColor(getParamValue(search, 'color')),
     fontWeight: normalizeFontWeight(getParamValue(search, 'fontWeight')),
     fontMode: normalizeTeamNameFontMode(getParamValue(search, 'fontMode')),
     fontSize: normalizeTeamNameFontSize(
@@ -45,6 +48,7 @@ export function buildTeamNameBrowserUrl(
     template: 'team-names',
     side,
     font: settings.fontFamily,
+    color: side === 'A' ? settings.textColorA : settings.textColorB,
     fontWeight: String(side === 'A' ? settings.fontWeightA : settings.fontWeightB),
     fontMode: side === 'A' ? settings.fontModeA : settings.fontModeB,
     fontSize: String(side === 'A' ? settings.fontSizeA : settings.fontSizeB),

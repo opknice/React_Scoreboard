@@ -44,7 +44,7 @@
 
 .team-name-value {
   overflow: hidden;
-  color: #ffffff;
+  color: var(--team-name-color, #ffffff);
   font-size: var(--team-name-font-size, clamp(1.5rem, 2.5vw, 3rem));
   font-weight: var(--team-name-font-weight, 700);
   line-height: 1.2;

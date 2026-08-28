@@ -52,6 +52,31 @@
   animation: quick-setup-panel-open 180ms ease-out both;
 }
 
+.quick-setup-team-name-settings-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.quick-setup-team-name-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.quick-setup-team-name-color-input {
+  display: block;
+  width: 48px;
+  height: 28px;
+  padding: 2px;
+  cursor: pointer;
+}
+
 .quick-setup-local-font-row {
   display: flex;
   align-items: center;
@@ -70,5 +95,11 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 520px) {
+  .quick-setup-team-name-settings-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

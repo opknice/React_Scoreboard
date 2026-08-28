@@ -238,11 +238,12 @@ export default function QuickSetupModal({
               const modeKey = side === 'A' ? 'fontModeA' : 'fontModeB';
               const sizeKey = side === 'A' ? 'fontSizeA' : 'fontSizeB';
               const weightKey = side === 'A' ? 'fontWeightA' : 'fontWeightB';
+              const colorKey = side === 'A' ? 'textColorA' : 'textColorB';
               const mode = teamNameSettings[modeKey];
               return (
-                <div key={side} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
-                  <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
-                    Team {side} ขนาดตัวอักษร
+                <div key={side} className="quick-setup-team-name-settings-row">
+                  <label className="quick-setup-team-name-field" style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                    Team {side}
                     <select
                       style={{ width: '100%', marginTop: '4px' }}
                       value={mode}
@@ -252,7 +253,7 @@ export default function QuickSetupModal({
                       <option value="manual">กำหนดเอง</option>
                     </select>
                   </label>
-                  <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                  <label className="quick-setup-team-name-field" style={{ fontSize: '12px', color: '#cbd5e1' }}>
                     ขนาด px
                     <input
                       type="number"
@@ -264,7 +265,7 @@ export default function QuickSetupModal({
                       onChange={(event) => onTeamNameSettingsChange({ [sizeKey]: Number(event.target.value) } as Partial<TeamNameBrowserSettings>)}
                     />
                   </label>
-                  <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                  <label className="quick-setup-team-name-field" style={{ fontSize: '12px', color: '#cbd5e1' }}>
                     น้ำหนัก Font
                     <select
                       style={{ width: '100%', marginTop: '4px' }}
@@ -274,16 +275,27 @@ export default function QuickSetupModal({
                       {FONT_WEIGHT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
+                  <label className="quick-setup-team-name-field" style={{ fontSize: '12px', color: '#cbd5e1' }}>
+                    สีข้อความ
+                    <input
+                      className="quick-setup-team-name-color-input"
+                      type="color"
+                      value={teamNameSettings[colorKey]}
+                      aria-label={`สีข้อความ Team ${side}`}
+                      onChange={(event) => onTeamNameSettingsChange({ [colorKey]: event.target.value } as Partial<TeamNameBrowserSettings>)}
+                      style={{ marginTop: '4px' }}
+                    />
+                  </label>
                 </div>
               );
             })}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
-              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: teamNameSettings.fontFamily }}>
+              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: teamNameSettings.fontFamily, color: teamNameSettings.textColorA }}>
                 <small style={{ display: 'block', color: '#94a3b8' }}>Preview A</small>
                 <span style={{ fontSize: teamNameSettings.fontModeA === 'manual' ? `${teamNameSettings.fontSizeA}px` : 'clamp(1.5rem, 2vw, 2.5rem)', fontWeight: teamNameSettings.fontWeightA }}>Team A</span>
               </div>
-              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: teamNameSettings.fontFamily }}>
+              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: teamNameSettings.fontFamily, color: teamNameSettings.textColorB }}>
                 <small style={{ display: 'block', color: '#94a3b8' }}>Preview B</small>
                 <span style={{ fontSize: teamNameSettings.fontModeB === 'manual' ? `${teamNameSettings.fontSizeB}px` : 'clamp(1.5rem, 2vw, 2.5rem)', fontWeight: teamNameSettings.fontWeightB }}>Team B</span>
               </div>
