@@ -49,7 +49,7 @@ export default function AllScoreCombinedStandalone() {
               logoB: teamBObj?.logo_url || '',
               round: m.label1 || '',
               week: m.label2 || '',
-              date: m.match_date ? new Date(m.match_date).toISOString().slice(0, 10) : '',
+              date: m.match_date ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '') : '',
             };
           });
           setMatches(formatted);

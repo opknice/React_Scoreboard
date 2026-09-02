@@ -670,11 +670,25 @@ export default function ScoreboardController() {
     return resolveLogoSrc(logoName, teamName, logoFolderPath);
   }, [supabaseLeague.teams, logoFolderPath]);
 
+  // --- Helper: Check if match is finished / has recorded results ---
+  const isMatchFinished = useCallback((m: SupabaseMatch) => {
+    return m.status === 'finished' || (typeof m.score_a === 'number' && typeof m.score_b === 'number' && (m.score_a > 0 || m.score_b > 0));
+  }, []);
+
+  // --- Pending (Unplayed) matches in active league ---
+  const pendingMatches = useMemo(() => {
+    return supabaseLeague.matches.filter((m) => !isMatchFinished(m));
+  }, [supabaseLeague.matches, isMatchFinished]);
+
   // --- Load match data by ID from Supabase ---
   const applyMatch = (matchId = matchIdInput) => {
     if (supabaseLeague.matches.length > 0) {
       const sbMatch = supabaseLeague.matches.find((m) => m.match_number === matchId);
       if (sbMatch) {
+        if (isMatchFinished(sbMatch)) {
+          triggerToast(`⚠️ แมตช์ #${matchId} (${sbMatch.team_a_name} vs ${sbMatch.team_b_name}) มีการบันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
+          return;
+        }
         applyMatchFromSupabase(sbMatch);
         return;
       }
@@ -684,6 +698,11 @@ export default function ScoreboardController() {
 
   // --- Load match from Supabase into scoreboard ---
   const applyMatchFromSupabase = useCallback((match: SupabaseMatch, customTeams?: SupabaseTeam[]) => {
+    if (isMatchFinished(match)) {
+      triggerToast(`⚠️ แมตช์ #${match.match_number} (${match.team_a_name} vs ${match.team_b_name}) บันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
+      return;
+    }
+
     setIsMatchLoaded(true);
     localStorage.setItem('isMatchLoaded', 'true');
 
@@ -750,6 +769,7 @@ export default function ScoreboardController() {
     triggerToast(`โหลดแมตช์ #${match.match_number} (${teamAName} vs ${teamBName}) จาก Supabase สำเร็จ`, 'success');
   }, [
     supabaseLeague.teams,
+    isMatchFinished,
     setColorA1,
     setColorA2,
     setColorB1,
@@ -771,30 +791,30 @@ export default function ScoreboardController() {
     triggerToast,
   ]);
 
-  // --- Navigate matches by index (prev / next) ---
+  // --- Navigate matches by index (prev / next) through pending matches only ---
   const handleNavigateMatch = useCallback((direction: 'prev' | 'next') => {
-    const matchesList = supabaseLeague.matches;
-    if (!matchesList.length) {
-      triggerToast('ยังไม่มีแมตช์ในลีกนี้', 'error');
+    const unplayedMatches = supabaseLeague.matches.filter((m) => !isMatchFinished(m));
+    if (!unplayedMatches.length) {
+      triggerToast('ไม่มีคู่แข่งขันที่รอแข่งในลีกนี้ (บันทึกผลครบแล้ว)', 'warning');
       return;
     }
 
-    const currentIndex = matchesList.findIndex((m) => m.match_number === matchIdInput);
+    const currentIndex = unplayedMatches.findIndex((m) => m.match_number === matchIdInput);
     let targetIndex = 0;
 
     if (currentIndex === -1) {
-      targetIndex = direction === 'next' ? 0 : matchesList.length - 1;
+      targetIndex = direction === 'next' ? 0 : unplayedMatches.length - 1;
     } else if (direction === 'prev') {
       targetIndex = currentIndex > 0 ? currentIndex - 1 : 0;
     } else {
-      targetIndex = currentIndex < matchesList.length - 1 ? currentIndex + 1 : matchesList.length - 1;
+      targetIndex = currentIndex < unplayedMatches.length - 1 ? currentIndex + 1 : unplayedMatches.length - 1;
     }
 
-    const targetMatch = matchesList[targetIndex];
+    const targetMatch = unplayedMatches[targetIndex];
     if (targetMatch) {
       applyMatchFromSupabase(targetMatch);
     }
-  }, [supabaseLeague.matches, matchIdInput, applyMatchFromSupabase, triggerToast]);
+  }, [supabaseLeague.matches, matchIdInput, applyMatchFromSupabase, isMatchFinished, triggerToast]);
 
   const handleLoadLeague = useCallback(async () => {
     const targetId = selectedLeagueIdToLoad || supabaseLeague.activeLeagueId;
@@ -810,16 +830,19 @@ export default function ScoreboardController() {
         LeagueService.getTeamsByLeague(targetId),
         LeagueService.getMatchesByLeague(targetId),
       ]);
-      if (matchesData.length > 0) {
-        applyMatchFromSupabase(matchesData[0], teamsData);
-        triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว (พบ ${matchesData.length} แมตช์)`, 'success');
+      const unplayedMatches = matchesData.filter((m) => !isMatchFinished(m));
+      if (unplayedMatches.length > 0) {
+        applyMatchFromSupabase(unplayedMatches[0], teamsData);
+        triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว (พบ ${unplayedMatches.length} คู่ที่รอแข่ง)`, 'success');
+      } else if (matchesData.length > 0) {
+        triggerToast(`ลีก "${targetLeague?.name || ''}" บันทึกผลครบทุกคู่แล้ว`, 'info');
       } else {
         triggerToast(`เลือกลีก "${targetLeague?.name || ''}" แล้ว (ยังไม่มีแมตช์ในลีก)`, 'info');
       }
     } catch {
       triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว`, 'success');
     }
-  }, [selectedLeagueIdToLoad, supabaseLeague, applyMatchFromSupabase, triggerToast]);
+  }, [selectedLeagueIdToLoad, supabaseLeague, applyMatchFromSupabase, isMatchFinished, triggerToast]);
 
   // --- Swap Teams ---
   const swapTeams = () => {
@@ -1504,38 +1527,56 @@ export default function ScoreboardController() {
                   <span>{supabaseLeague.loading ? 'กำลังโหลด...' : 'Load'}</span>
                 </button>
 
-                {/* Matches Dropdown (shown when matches exist) */}
+                {/* Matches Dropdown (shown when matches exist in active league) */}
                 {supabaseLeague.matches.length > 0 && (
-                  <select
-                    style={{
-                      padding: '5px 8px',
-                      fontSize: '0.82rem',
-                      background: '#1e293b',
-                      color: '#f8fafc',
-                      border: '1px solid #475569',
-                      borderRadius: '4px',
-                      maxWidth: '280px'
-                    }}
-                    value={matchIdInput}
-                    onChange={(e) => {
-                      const num = parseInt(e.target.value, 10);
-                      if (num) {
-                        setMatchIdInput(num);
-                        const matchObj = supabaseLeague.matches.find((m) => m.match_number === num);
-                        if (matchObj) applyMatchFromSupabase(matchObj);
-                      }
-                    }}
-                    title="เลือกคู่แข่งขัน"
-                  >
-                    {supabaseLeague.matches.map((m) => {
-                      const isFinished = m.status === 'finished' || (typeof m.score_a === 'number' && typeof m.score_b === 'number' && (m.score_a > 0 || m.score_b > 0));
-                      return (
+                  pendingMatches.length > 0 ? (
+                    <select
+                      style={{
+                        padding: '5px 8px',
+                        fontSize: '0.82rem',
+                        background: '#1e293b',
+                        color: '#f8fafc',
+                        border: '1px solid #475569',
+                        borderRadius: '4px',
+                        maxWidth: '280px'
+                      }}
+                      value={pendingMatches.some((m) => m.match_number === matchIdInput) ? matchIdInput : ''}
+                      onChange={(e) => {
+                        const num = parseInt(e.target.value, 10);
+                        if (num) {
+                          setMatchIdInput(num);
+                          const matchObj = pendingMatches.find((m) => m.match_number === num);
+                          if (matchObj) applyMatchFromSupabase(matchObj);
+                        }
+                      }}
+                      title="เลือกคู่แข่งขัน (เฉพาะคู่ที่ยังไม่ได้บันทึกผล)"
+                    >
+                      <option value="" disabled>-- เลือกคู่แข่งขัน (รอแข่ง) --</option>
+                      {pendingMatches.map((m) => (
                         <option key={m.id} value={m.match_number}>
-                          #{m.match_number}: {m.team_a_name} vs {m.team_b_name} {isFinished ? `(${m.score_a ?? 0} - ${m.score_b ?? 0})` : ''}
+                          #{m.match_number}: {m.team_a_name} vs {m.team_b_name}
                         </option>
-                      );
-                    })}
-                  </select>
+                      ))}
+                    </select>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: '0.8rem',
+                        color: '#4ade80',
+                        fontWeight: 600,
+                        padding: '4px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        background: 'rgba(74, 222, 128, 0.1)',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(74, 222, 128, 0.2)'
+                      }}
+                      title="แมตช์ทั้งหมดในลีกนี้ได้รับการบันทึกผลคะแนนเรียบร้อยแล้ว"
+                    >
+                      <i className="fas fa-check-circle"></i> บันทึกผลครบทุกคู่แล้ว
+                    </span>
+                  )
                 )}
               </div>
 

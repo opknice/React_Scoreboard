@@ -43,10 +43,8 @@ export default function OverlayContainer() {
             const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
             const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
             const dateStr = m.match_date
-              ? new Date(m.match_date).toISOString().slice(0, 10)
-              : m.created_at
-              ? new Date(m.created_at).toISOString().slice(0, 10)
-              : new Date().toISOString().slice(0, 10);
+              ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '')
+              : '';
             return {
               id: m.id,
               teamA: m.team_a_name,

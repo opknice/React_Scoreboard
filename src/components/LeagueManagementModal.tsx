@@ -245,9 +245,43 @@ export default function LeagueManagementModal({
     setTeamLogoUrl('');
   };
 
+// Helper to safely format dates into YYYY-MM-DD for HTML5 date input without timezone shift
+const formatToDateInput = (val?: string | null): string => {
+  if (!val) return '';
+  const trimmed = val.trim();
+  const matched = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (matched) return matched[1];
+  try {
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return '';
+  }
+};
+
   // ==========================================
   // HANDLERS: MATCHES
   // ==========================================
+  const resetMatchForm = () => {
+    setEditingMatchId(null);
+    setShowMatchForm(false);
+    const nextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
+    setMatchNumber(nextNum);
+    setMatchTeamAId('');
+    setMatchTeamBId('');
+    setMatchLabel1('รอบแรก');
+    setMatchLabel2('สัปดาห์ที่ 1');
+    setMatchLabel3('สนาม 1');
+    setMatchDate('');
+    setMatchStatus('scheduled');
+    setMatchScoreA(0);
+    setMatchScoreB(0);
+  };
+
   const handleSaveMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeLeagueId) return;
@@ -264,6 +298,7 @@ export default function LeagueManagementModal({
     const teamBName = teamB ? teamB.name : 'Team B';
 
     const defaultNextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
+    const finalDate = matchDate.trim() ? matchDate.trim() : null;
 
     if (editingMatchId) {
       await updateMatch(editingMatchId, {
@@ -275,13 +310,12 @@ export default function LeagueManagementModal({
         label1: matchLabel1,
         label2: matchLabel2,
         label3: matchLabel3,
-        match_date: matchDate || null,
+        match_date: finalDate,
         status: matchStatus,
         score_a: matchScoreA,
         score_b: matchScoreB,
       });
-      setEditingMatchId(null);
-      setShowMatchForm(false);
+      resetMatchForm();
     } else {
       await createMatch({
         league_id: activeLeagueId,
@@ -293,13 +327,12 @@ export default function LeagueManagementModal({
         label1: matchLabel1,
         label2: matchLabel2,
         label3: matchLabel3,
-        match_date: matchDate || null,
+        match_date: finalDate,
         status: matchStatus,
         score_a: matchScoreA,
         score_b: matchScoreB,
       });
-      setMatchNumber(defaultNextNum + 1);
-      setShowMatchForm(false);
+      resetMatchForm();
     }
   };
 
@@ -312,17 +345,14 @@ export default function LeagueManagementModal({
     setMatchLabel1(match.label1 || '');
     setMatchLabel2(match.label2 || '');
     setMatchLabel3(match.label3 || '');
-    setMatchDate(match.match_date || '');
+    setMatchDate(formatToDateInput(match.match_date));
     setMatchStatus((match.status as 'scheduled' | 'in_progress' | 'finished' | 'postponed') || 'scheduled');
     setMatchScoreA(match.score_a || 0);
     setMatchScoreB(match.score_b || 0);
   };
 
   const handleCancelEditMatch = () => {
-    setEditingMatchId(null);
-    setShowMatchForm(false);
-    const nextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
-    setMatchNumber(nextNum);
+    resetMatchForm();
   };
 
   // Round-Robin Fixture Generator
@@ -1023,7 +1053,12 @@ export default function LeagueManagementModal({
                               )}
                             </td>
                             <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                              {[m.label1, m.label2, m.label3].filter(Boolean).join(' • ') || '-'}
+                              <div>{[m.label1, m.label2, m.label3].filter(Boolean).join(' • ') || '-'}</div>
+                              {m.match_date && (
+                                <div style={{ color: '#38bdf8', fontSize: '0.75rem', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <i className="fas fa-calendar-alt"></i> {formatToDateInput(m.match_date)}
+                                </div>
+                              )}
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               <span className={`status-badge ${m.status}`}>
@@ -1031,7 +1066,7 @@ export default function LeagueManagementModal({
                               </span>
                             </td>
                             <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                              {onSelectMatchToScoreboard && (
+                              {onSelectMatchToScoreboard && !(m.status === 'finished' || (typeof m.score_a === 'number' && typeof m.score_b === 'number' && (m.score_a > 0 || m.score_b > 0))) && (
                                 <button
                                   type="button"
                                   className="league-btn-primary"
