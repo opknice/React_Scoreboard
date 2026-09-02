@@ -232,6 +232,7 @@ export default function ScoreboardController() {
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
   const [showLeagueManagementModal, setShowLeagueManagementModal] = useState<boolean>(false);
+  const [leagueModalInitialTab, setLeagueModalInitialTab] = useState<'league' | 'teams' | 'matches'>('matches');
   const [isMatchLoaded, setIsMatchLoaded] = useState<boolean>(() => localStorage.getItem('isMatchLoaded') === 'true');
 
   // Custom Preset Time Input
@@ -697,10 +698,13 @@ export default function ScoreboardController() {
       (t) => t.id === match.team_b_id || t.name.toLowerCase() === teamBName.toLowerCase()
     );
 
+    const initialScoreA = typeof match.score_a === 'number' ? match.score_a : 0;
+    const initialScoreB = typeof match.score_b === 'number' ? match.score_b : 0;
+
     setNameA(teamAName);
     setNameB(teamBName);
-    setScoreA(0);
-    setScoreB(0);
+    setScoreA(initialScoreA);
+    setScoreB(initialScoreB);
     timerHook.resetToZero();
     setMatchIdInput(match.match_number);
 
@@ -767,18 +771,44 @@ export default function ScoreboardController() {
     triggerToast,
   ]);
 
+  // --- Navigate matches by index (prev / next) ---
+  const handleNavigateMatch = useCallback((direction: 'prev' | 'next') => {
+    const matchesList = supabaseLeague.matches;
+    if (!matchesList.length) {
+      triggerToast('ยังไม่มีแมตช์ในลีกนี้', 'error');
+      return;
+    }
+
+    const currentIndex = matchesList.findIndex((m) => m.match_number === matchIdInput);
+    let targetIndex = 0;
+
+    if (currentIndex === -1) {
+      targetIndex = direction === 'next' ? 0 : matchesList.length - 1;
+    } else if (direction === 'prev') {
+      targetIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+    } else {
+      targetIndex = currentIndex < matchesList.length - 1 ? currentIndex + 1 : matchesList.length - 1;
+    }
+
+    const targetMatch = matchesList[targetIndex];
+    if (targetMatch) {
+      applyMatchFromSupabase(targetMatch);
+    }
+  }, [supabaseLeague.matches, matchIdInput, applyMatchFromSupabase, triggerToast]);
+
   const handleLoadLeague = useCallback(async () => {
-    if (!selectedLeagueIdToLoad) {
+    const targetId = selectedLeagueIdToLoad || supabaseLeague.activeLeagueId;
+    if (!targetId) {
       triggerToast('กรุณาเลือกลีกก่อนกดโหลด', 'error');
       return;
     }
-    supabaseLeague.selectLeague(selectedLeagueIdToLoad);
-    const targetLeague = supabaseLeague.leagues.find((l) => l.id === selectedLeagueIdToLoad);
+    supabaseLeague.selectLeague(targetId);
+    const targetLeague = supabaseLeague.leagues.find((l) => l.id === targetId);
     try {
       const { LeagueService } = await import('../services/leagueService');
       const [teamsData, matchesData] = await Promise.all([
-        LeagueService.getTeamsByLeague(selectedLeagueIdToLoad),
-        LeagueService.getMatchesByLeague(selectedLeagueIdToLoad),
+        LeagueService.getTeamsByLeague(targetId),
+        LeagueService.getMatchesByLeague(targetId),
       ]);
       if (matchesData.length > 0) {
         applyMatchFromSupabase(matchesData[0], teamsData);
@@ -1302,19 +1332,103 @@ export default function ScoreboardController() {
                     {isStep2Complete ? '🟢 พร้อมใช้งาน' : '🔴 ยังไม่เลือกลีก'}
                   </span>
                 </div>
-                <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: 0, lineHeight: 1.4 }}>
-                  {supabaseLeague.activeLeague ? `ลีกปัจจุบัน: ${supabaseLeague.activeLeague.name}` : 'เลือกหรือสร้างลีก รายชื่อทีม และตารางการแข่งขันผ่านระบบ Supabase'}
-                </p>
               </div>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => setShowLeagueManagementModal(true)}
-                style={{ width: '100%', padding: '10px 14px', fontSize: '0.88rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', cursor: 'pointer' }}
-              >
-                <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
-                <span>{supabaseLeague.activeLeague ? '🏆 จัดการลีก / สลับคู่แข่งขัน' : '🏆 จัดการลีก & ตารางแข่ง (Supabase)'}</span>
-              </button>
+
+              {supabaseLeague.leagues.length > 0 ? (
+                <>
+                  {/* มีลีกอยู่แล้ว: แสดง Dropdown เลือกลีก */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 600 }}>เลือกลีกของคุณ:</label>
+                    <select
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        fontSize: '0.88rem',
+                        background: '#0f172a',
+                        color: '#38bdf8',
+                        border: '1px solid #334155',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                      value={supabaseLeague.activeLeagueId || ''}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        if (newId) {
+                          supabaseLeague.selectLeague(newId);
+                          setSelectedLeagueIdToLoad(newId);
+                        }
+                      }}
+                    >
+                      <option value="">-- โปรดเลือกลีก --</option>
+                      {supabaseLeague.leagues.map((league) => (
+                        <option key={league.id} value={league.id}>
+                          🏆 {league.name} {league.season ? `(${league.season})` : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    {supabaseLeague.activeLeague && (
+                      <p style={{ fontSize: '0.8rem', color: '#6ee7b7', margin: 0, lineHeight: 1.4 }}>
+                        ✅ ลีกปัจจุบัน: <strong>{supabaseLeague.activeLeague.name}</strong>
+                        {supabaseLeague.teams.length > 0 && ` (${supabaseLeague.teams.length} ทีม, ${supabaseLeague.matches.length} แมตช์)`}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ปุ่ม 2 ปุ่ม */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        setLeagueModalInitialTab('matches');
+                        setShowLeagueManagementModal(true);
+                      }}
+                      style={{ flex: 1, minWidth: '160px', padding: '10px 14px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', cursor: 'pointer' }}
+                    >
+                      <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
+                      <span>🏆 จัดการลีก / สลับคู่แข่งขัน</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => {
+                        setLeagueModalInitialTab('league');
+                        setShowLeagueManagementModal(true);
+                      }}
+                      style={{ minWidth: '140px', padding: '10px 14px', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none', cursor: 'pointer' }}
+                    >
+                      <i className="fas fa-plus-circle"></i>
+                      <span>➕ สร้างลีกใหม่</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* ยังไม่มีลีก: แสดงข้อความแนะนำ + ปุ่มสร้างลีก */}
+                  <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', padding: '12px 16px', textAlign: 'center' }}>
+                    <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: '0 0 4px 0' }}>
+                      📋 ยังไม่มีข้อมูลลีกการแข่งขันสำหรับบัญชีนี้
+                    </p>
+                    <p style={{ fontSize: '0.78rem', color: '#64748b', margin: 0 }}>
+                      สร้างลีกแรกของคุณเพื่อเริ่มจัดการตารางแข่งขันและทีมผ่าน Supabase
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => {
+                      setLeagueModalInitialTab('league');
+                      setShowLeagueManagementModal(true);
+                    }}
+                    style={{ width: '100%', padding: '12px 14px', fontSize: '0.9rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none', cursor: 'pointer' }}
+                  >
+                    <i className="fas fa-plus-circle"></i>
+                    <span>➕ สร้างลีกการแข่งขันใหม่ (Supabase)</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1351,14 +1465,20 @@ export default function ScoreboardController() {
                     maxWidth: '220px',
                     fontWeight: 600
                   }}
-                  value={selectedLeagueIdToLoad}
-                  onChange={(e) => setSelectedLeagueIdToLoad(e.target.value)}
+                  value={supabaseLeague.activeLeagueId || selectedLeagueIdToLoad}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedLeagueIdToLoad(newId);
+                    if (newId) {
+                      supabaseLeague.selectLeague(newId);
+                    }
+                  }}
                   title="เลือกลีกจากฐานข้อมูล Supabase"
                 >
                   <option value="">-- โปรดเลือกลีก --</option>
                   {supabaseLeague.leagues.map((league) => (
                     <option key={league.id} value={league.id}>
-                      {league.name}
+                      {league.name} {league.season ? `(${league.season})` : ''}
                     </option>
                   ))}
                 </select>
@@ -1368,7 +1488,7 @@ export default function ScoreboardController() {
                   type="button"
                   className="btn-primary btn-sm"
                   onClick={() => void handleLoadLeague()}
-                  disabled={!selectedLeagueIdToLoad || supabaseLeague.loading}
+                  disabled={(!selectedLeagueIdToLoad && !supabaseLeague.activeLeagueId) || supabaseLeague.loading}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1376,7 +1496,7 @@ export default function ScoreboardController() {
                     background: '#059669',
                     borderColor: '#059669',
                     fontWeight: 600,
-                    cursor: selectedLeagueIdToLoad ? 'pointer' : 'not-allowed'
+                    cursor: (selectedLeagueIdToLoad || supabaseLeague.activeLeagueId) ? 'pointer' : 'not-allowed'
                   }}
                   title="โหลดข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
                 >
@@ -1394,7 +1514,7 @@ export default function ScoreboardController() {
                       color: '#f8fafc',
                       border: '1px solid #475569',
                       borderRadius: '4px',
-                      maxWidth: '250px'
+                      maxWidth: '280px'
                     }}
                     value={matchIdInput}
                     onChange={(e) => {
@@ -1407,11 +1527,14 @@ export default function ScoreboardController() {
                     }}
                     title="เลือกคู่แข่งขัน"
                   >
-                    {supabaseLeague.matches.map((m) => (
-                      <option key={m.id} value={m.match_number}>
-                        #{m.match_number}: {m.team_a_name} vs {m.team_b_name}
-                      </option>
-                    ))}
+                    {supabaseLeague.matches.map((m) => {
+                      const isFinished = m.status === 'finished' || (typeof m.score_a === 'number' && typeof m.score_b === 'number' && (m.score_a > 0 || m.score_b > 0));
+                      return (
+                        <option key={m.id} value={m.match_number}>
+                          #{m.match_number}: {m.team_a_name} vs {m.team_b_name} {isFinished ? `(${m.score_a ?? 0} - ${m.score_b ?? 0})` : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                 )}
               </div>
@@ -1419,12 +1542,7 @@ export default function ScoreboardController() {
               <div className="row" style={{ marginBottom: 0, gap: '4px' }}>
                 <label htmlFor="matchIDInput" style={{ fontWeight: 600, fontSize: '0.85rem' }}>{trans.matchId}</label>
                 <button
-                  onClick={() => {
-                    if (matchIdInput > 1) {
-                      setMatchIdInput((prev) => prev - 1);
-                      applyMatch(matchIdInput - 1);
-                    }
-                  }}
+                  onClick={() => handleNavigateMatch('prev')}
                   style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
                   title="แมตช์ก่อนหน้า"
                 >
@@ -1446,10 +1564,7 @@ export default function ScoreboardController() {
                   title="พิมพ์หมายเลขแมตช์แล้วกด Enter เพื่อโหลด"
                 />
                 <button
-                  onClick={() => {
-                    setMatchIdInput((prev) => prev + 1);
-                    applyMatch(matchIdInput + 1);
-                  }}
+                  onClick={() => handleNavigateMatch('next')}
                   style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
                   title="แมตช์ถัดไป"
                 >
@@ -2167,6 +2282,7 @@ export default function ScoreboardController() {
           onClose={() => setShowLeagueManagementModal(false)}
           onSelectMatchToScoreboard={applyMatchFromSupabase}
           currentUserEmail={activeUserEmail}
+          initialTab={leagueModalInitialTab}
         />}
       </Suspense>
     </div>

@@ -23,11 +23,13 @@ export default function LeagueTableStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
+    let supabaseChannel: any = null;
+
     // 1. Try Supabase first if configured and leagueId looks like a Supabase ID / not 'excel'
     const loadFromSupabase = async () => {
       try {
         const { LeagueService } = await import('../services/leagueService');
-        const { isSupabaseConfigured } = await import('../config/supabaseClient');
+        const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
         if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
           const [supabaseMatches, supabaseTeams] = await Promise.all([
             LeagueService.getMatchesByLeague(leagueId),
@@ -43,12 +45,35 @@ export default function LeagueTableStandalone() {
               teamB: m.team_b_name,
               scoreA: m.score_a,
               scoreB: m.score_b,
+              status: m.status,
               logoA: teamAObj?.logo_url || '',
               logoB: teamBObj?.logo_url || '',
             };
           });
           setMatches(formatted);
           setLoading(false);
+
+          // Setup Realtime subscription for automatic updates on OBS
+          if (!supabaseChannel && supabase) {
+            supabaseChannel = supabase
+              .channel(`public:league_table_${leagueId}`)
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
+                () => {
+                  void loadFromSupabase();
+                }
+              )
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
+                () => {
+                  void loadFromSupabase();
+                }
+              )
+              .subscribe();
+          }
+
           return true;
         }
       } catch (err: any) {
@@ -99,6 +124,16 @@ export default function LeagueTableStandalone() {
         setLoading(false);
       }
     });
+
+    return () => {
+      if (supabaseChannel) {
+        import('../config/supabaseClient').then(({ supabase }) => {
+          if (supabase && supabaseChannel) {
+            void supabase.removeChannel(supabaseChannel);
+          }
+        });
+      }
+    };
   }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {
@@ -131,6 +166,11 @@ export default function LeagueTableStandalone() {
       const scoreA = Number(match.scoreA);
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
+
+      // Skip scheduled matches that have not been played yet (0-0)
+      if (match.status === 'scheduled' && scoreA === 0 && scoreB === 0) {
+        return;
+      }
 
       const logoA = extractMatchLogo(match, 'A');
       const logoB = extractMatchLogo(match, 'B');

@@ -38,7 +38,7 @@ export class LeagueService {
       console.error('Error fetching leagues:', error);
       throw error;
     }
-    return data || [];
+    return (data as unknown as League[]) || [];
   }
 
   static async getLeagueById(id: string): Promise<League | null> {
@@ -53,7 +53,7 @@ export class LeagueService {
       console.error(`Error fetching league ${id}:`, error);
       return null;
     }
-    return data;
+    return (data as unknown as League);
   }
 
   static async createLeague(payload: Omit<League, 'id' | 'created_at' | 'updated_at'>): Promise<League> {
@@ -75,7 +75,7 @@ export class LeagueService {
       console.error('Error creating league:', error);
       throw error;
     }
-    return data;
+    return (data as unknown as League);
   }
 
   static async updateLeague(id: string, updates: Partial<League>): Promise<League> {
@@ -93,7 +93,7 @@ export class LeagueService {
       console.error(`Error updating league ${id}:`, error);
       throw error;
     }
-    return data;
+    return (data as unknown as League);
   }
 
   static async deleteLeague(id: string): Promise<void> {
@@ -127,7 +127,7 @@ export class LeagueService {
       console.error(`Error fetching teams for league ${leagueId}:`, error);
       throw error;
     }
-    return data || [];
+    return (data as unknown as Team[]) || [];
   }
 
   static async createTeam(payload: Omit<Team, 'id' | 'created_at' | 'updated_at'>): Promise<Team> {
@@ -144,7 +144,7 @@ export class LeagueService {
       console.error('Error creating team:', error);
       throw error;
     }
-    return data;
+    return (data as unknown as Team);
   }
 
   static async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
@@ -162,7 +162,7 @@ export class LeagueService {
       console.error(`Error updating team ${id}:`, error);
       throw error;
     }
-    return data;
+    return (data as unknown as Team);
   }
 
   static async deleteTeam(id: string): Promise<void> {
@@ -188,9 +188,31 @@ export class LeagueService {
       throw new Error('Supabase is not configured.');
     }
 
-    const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    // Extract and validate file extension
+    const dotIndex = fileName.lastIndexOf('.');
+    let ext = dotIndex !== -1 ? fileName.slice(dotIndex).toLowerCase() : '';
+    if (!ext || ext.length > 6 || !/^\.[a-z0-9]+$/i.test(ext)) {
+      if (file.type === 'image/jpeg') ext = '.jpg';
+      else if (file.type === 'image/webp') ext = '.webp';
+      else if (file.type === 'image/svg+xml') ext = '.svg';
+      else if (file.type === 'image/gif') ext = '.gif';
+      else ext = '.png';
+    }
+
+    // Clean ASCII-only base name (Supabase/S3 requires safe ASCII keys; non-ASCII/Thai letters cause 'Invalid key' error)
+    const baseName = dotIndex !== -1 ? fileName.slice(0, dotIndex) : fileName;
+    const cleanAsciiBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
+
+    const randomSuffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).substring(2, 10);
+
     const timestamp = Date.now();
-    const filePath = `logos/${timestamp}_${cleanName}`;
+    const finalFileName = cleanAsciiBase
+      ? `${cleanAsciiBase}_${timestamp}_${randomSuffix}${ext}`
+      : `logo_${timestamp}_${randomSuffix}${ext}`;
+
+    const filePath = `logos/${finalFileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('team-logos')
@@ -228,7 +250,7 @@ export class LeagueService {
       console.error(`Error fetching matches for league ${leagueId}:`, error);
       throw error;
     }
-    return data || [];
+    return (data as Match[]) || [];
   }
 
   static async createMatch(payload: Omit<Match, 'id' | 'created_at' | 'updated_at'>): Promise<Match> {
@@ -237,7 +259,13 @@ export class LeagueService {
     }
     const { data, error } = await supabase
       .from('matches')
-      .insert([{ ...payload, updated_at: new Date().toISOString() }])
+      .insert([{
+        ...payload,
+        label1: payload.label1 || '',
+        label2: payload.label2 || '',
+        label3: payload.label3 || '',
+        updated_at: new Date().toISOString(),
+      }])
       .select()
       .single();
 
@@ -245,7 +273,7 @@ export class LeagueService {
       console.error('Error creating match:', error);
       throw error;
     }
-    return data;
+    return data as Match;
   }
 
   static async createMatchesBatch(matches: Omit<Match, 'id' | 'created_at' | 'updated_at'>[]): Promise<Match[]> {
@@ -256,6 +284,9 @@ export class LeagueService {
 
     const payload = matches.map((m) => ({
       ...m,
+      label1: m.label1 || '',
+      label2: m.label2 || '',
+      label3: m.label3 || '',
       updated_at: new Date().toISOString(),
     }));
 
@@ -268,16 +299,24 @@ export class LeagueService {
       console.error('Error batch creating matches:', error);
       throw error;
     }
-    return data || [];
+    return (data as Match[]) || [];
   }
 
   static async updateMatch(id: string, updates: Partial<Match>): Promise<Match> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
+    const cleanUpdates: Record<string, any> = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.label1 !== undefined) cleanUpdates.label1 = updates.label1 || '';
+    if (updates.label2 !== undefined) cleanUpdates.label2 = updates.label2 || '';
+    if (updates.label3 !== undefined) cleanUpdates.label3 = updates.label3 || '';
+
     const { data, error } = await supabase
       .from('matches')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(cleanUpdates as any)
       .eq('id', id)
       .select()
       .single();
@@ -286,7 +325,7 @@ export class LeagueService {
       console.error(`Error updating match ${id}:`, error);
       throw error;
     }
-    return data;
+    return data as unknown as Match;
   }
 
   static async deleteMatch(id: string): Promise<void> {

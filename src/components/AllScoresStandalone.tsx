@@ -24,10 +24,12 @@ export default function AllScoresStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
+    let supabaseChannel: any = null;
+
     const loadFromSupabase = async () => {
       try {
         const { LeagueService } = await import('../services/leagueService');
-        const { isSupabaseConfigured } = await import('../config/supabaseClient');
+        const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
         if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
           const [supabaseMatches, supabaseTeams] = await Promise.all([
             LeagueService.getMatchesByLeague(leagueId),
@@ -42,6 +44,7 @@ export default function AllScoresStandalone() {
               teamB: m.team_b_name,
               scoreA: m.score_a,
               scoreB: m.score_b,
+              status: m.status,
               logoA: teamAObj?.logo_url || '',
               logoB: teamBObj?.logo_url || '',
               round: m.label1 || '',
@@ -51,6 +54,28 @@ export default function AllScoresStandalone() {
           });
           setMatches(formatted);
           setLoading(false);
+
+          // Setup Realtime subscription for automatic updates on OBS
+          if (!supabaseChannel && supabase) {
+            supabaseChannel = supabase
+              .channel(`public:all_scores_${leagueId}`)
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
+                () => {
+                  void loadFromSupabase();
+                }
+              )
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
+                () => {
+                  void loadFromSupabase();
+                }
+              )
+              .subscribe();
+          }
+
           return true;
         }
       } catch (err: any) {
@@ -101,6 +126,16 @@ export default function AllScoresStandalone() {
         setLoading(false);
       }
     });
+
+    return () => {
+      if (supabaseChannel) {
+        import('../config/supabaseClient').then(({ supabase }) => {
+          if (supabase && supabaseChannel) {
+            void supabase.removeChannel(supabaseChannel);
+          }
+        });
+      }
+    };
   }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {

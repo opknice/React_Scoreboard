@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { League, Team, Match } from '../config/supabaseClient';
-import { isSupabaseConfigured } from '../config/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../config/supabaseClient';
 import { LeagueService, type StandingsRow } from '../services/leagueService';
 
 const ACTIVE_LEAGUE_STORAGE_KEY = 'supabase_active_league_id';
@@ -94,7 +94,7 @@ export function useSupabaseLeague(
     fetchLeagues();
   }, [userEmail, fetchLeagues, getStorageKey]);
 
-  // Initial load & Cross-instance sync
+  // Initial load & Cross-instance sync (Syncs both leagues list AND current league matches/teams)
   useEffect(() => {
     const handleSync = () => {
       const key = getStorageKey(userEmailRef.current);
@@ -102,7 +102,11 @@ export function useSupabaseLeague(
       if (saved !== activeLeagueIdRef.current) {
         setActiveLeagueId(saved);
       }
-      fetchLeagues();
+      void fetchLeagues();
+      const currentId = saved || activeLeagueIdRef.current;
+      if (currentId) {
+        void fetchLeagueDetails(currentId);
+      }
     };
 
     window.addEventListener('storage', handleSync);
@@ -112,7 +116,54 @@ export function useSupabaseLeague(
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('supabase_league_changed', handleSync);
     };
-  }, [fetchLeagues, getStorageKey]);
+  }, [fetchLeagues, fetchLeagueDetails, getStorageKey]);
+
+  // Supabase Realtime Subscription: Automatically sync leagues, teams, and matches live
+  useEffect(() => {
+    if (!isConfigured || !supabase) return;
+
+    const channelId = `realtime_hook_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leagues' },
+        () => {
+          void fetchLeagues();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'teams' },
+        (payload) => {
+          const currentId = activeLeagueIdRef.current;
+          const newRecord = payload.new as { league_id?: string } | undefined;
+          const oldRecord = payload.old as { league_id?: string } | undefined;
+          if (!currentId || newRecord?.league_id === currentId || oldRecord?.league_id === currentId) {
+            if (currentId) void fetchLeagueDetails(currentId);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'matches' },
+        (payload) => {
+          const currentId = activeLeagueIdRef.current;
+          const newRecord = payload.new as { league_id?: string } | undefined;
+          const oldRecord = payload.old as { league_id?: string } | undefined;
+          if (!currentId || newRecord?.league_id === currentId || oldRecord?.league_id === currentId) {
+            if (currentId) void fetchLeagueDetails(currentId);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (supabase && channel) {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, [isConfigured, fetchLeagues, fetchLeagueDetails]);
 
   // Load teams & matches whenever activeLeagueId changes
   useEffect(() => {
@@ -159,6 +210,7 @@ export function useSupabaseLeague(
     try {
       const updated = await LeagueService.updateLeague(id, updates);
       setLeagues((prev) => prev.map((l) => (l.id === id ? updated : l)));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`อัปเดตข้อมูลลีกสำเร็จ`, 'success');
       return updated;
     } catch (err: any) {
@@ -177,6 +229,7 @@ export function useSupabaseLeague(
         selectLeague(nextId);
       }
       notify?.(`ลบลีกเรียบร้อยแล้ว`, 'info');
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
     } catch (err: any) {
       notify?.(`ลบลีกไม่สำเร็จ: ${err.message}`, 'error');
       throw err;
@@ -188,6 +241,7 @@ export function useSupabaseLeague(
     try {
       const created = await LeagueService.createTeam(payload);
       setTeams((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'th')));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`เพิ่มทีม "${created.name}" สำเร็จ`, 'success');
       return created;
     } catch (err: any) {
@@ -200,6 +254,7 @@ export function useSupabaseLeague(
     try {
       const updated = await LeagueService.updateTeam(id, updates);
       setTeams((prev) => prev.map((t) => (t.id === id ? updated : t)).sort((a, b) => a.name.localeCompare(b.name, 'th')));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`อัปเดตทีม "${updated.name}" สำเร็จ`, 'success');
       return updated;
     } catch (err: any) {
@@ -212,6 +267,7 @@ export function useSupabaseLeague(
     try {
       await LeagueService.deleteTeam(id);
       setTeams((prev) => prev.filter((t) => t.id !== id));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`ลบทีมเรียบร้อยแล้ว`, 'info');
     } catch (err: any) {
       notify?.(`ลบทีมไม่สำเร็จ: ${err.message}`, 'error');
@@ -233,6 +289,7 @@ export function useSupabaseLeague(
     try {
       const created = await LeagueService.createMatch(payload);
       setMatches((prev) => [...prev, created].sort((a, b) => a.match_number - b.match_number));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`เพิ่มแมตช์ที่ ${created.match_number} เรียบร้อยแล้ว`, 'success');
       return created;
     } catch (err: any) {
@@ -245,6 +302,7 @@ export function useSupabaseLeague(
     try {
       const created = await LeagueService.createMatchesBatch(batch);
       setMatches((prev) => [...prev, ...created].sort((a, b) => a.match_number - b.match_number));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`เพิ่มตารางแข่ง ${created.length} แมตช์เรียบร้อยแล้ว`, 'success');
       return created;
     } catch (err: any) {
@@ -257,6 +315,7 @@ export function useSupabaseLeague(
     try {
       const updated = await LeagueService.updateMatch(id, updates);
       setMatches((prev) => prev.map((m) => (m.id === id ? updated : m)).sort((a, b) => a.match_number - b.match_number));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`อัปเดตแมตช์ที่ ${updated.match_number} สำเร็จ`, 'success');
       return updated;
     } catch (err: any) {
@@ -269,6 +328,7 @@ export function useSupabaseLeague(
     try {
       await LeagueService.deleteMatch(id);
       setMatches((prev) => prev.filter((m) => m.id !== id));
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`ลบแมตช์เรียบร้อยแล้ว`, 'info');
     } catch (err: any) {
       notify?.(`ลบแมตช์ไม่สำเร็จ: ${err.message}`, 'error');
@@ -281,6 +341,7 @@ export function useSupabaseLeague(
     try {
       await LeagueService.deleteMatchesByLeague(activeLeagueId);
       setMatches([]);
+      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
       notify?.(`ล้างตารางการแข่งขันทั้งหมดแล้ว`, 'info');
     } catch (err: any) {
       notify?.(`ล้างตารางแข่งไม่สำเร็จ: ${err.message}`, 'error');

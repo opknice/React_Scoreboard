@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { Database, Json } from '../types/supabase';
 
-export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+export type JsonValue = Json;
 
 export type UserAccessStatus = 'allowed' | 'denied' | 'pending';
 
@@ -25,7 +26,7 @@ export interface League {
   description?: string | null;
   is_active: boolean;
   created_by?: string | null;
-  settings?: Record<string, JsonValue> | null;
+  settings?: Json;
   created_at?: string;
   updated_at?: string;
 }
@@ -38,11 +39,7 @@ export interface Team {
   logo_url?: string | null;
   color_primary: string;
   color_secondary: string;
-  crop_metadata?: {
-    zoom: number;
-    crop: { x: number; y: number };
-    croppedAreaPixels?: { x: number; y: number; width: number; height: number };
-  } | null;
+  crop_metadata?: Json;
   created_at?: string;
   updated_at?: string;
 }
@@ -57,10 +54,10 @@ export interface Match {
   team_b_name: string;
   score_a: number;
   score_b: number;
-  status: 'scheduled' | 'in_progress' | 'finished' | 'postponed';
-  label1?: string | null;
-  label2?: string | null;
-  label3?: string | null;
+  status: 'scheduled' | 'in_progress' | 'finished' | 'postponed' | string;
+  label1?: string;
+  label2?: string;
+  label3?: string;
   match_date?: string | null;
   created_at?: string;
   updated_at?: string;
@@ -78,11 +75,11 @@ export const isSupabaseConfigured = (): boolean => {
   );
 };
 
-export const supabase: SupabaseClient | null = isSupabaseConfigured()
-  ? createClient(supabaseUrl, supabaseAnonKey)
+export const supabase: SupabaseClient<Database> | null = isSupabaseConfigured()
+  ? createClient<Database>(supabaseUrl, supabaseAnonKey)
   : null;
 
-export const getSupabaseClient = (): SupabaseClient => {
+export const getSupabaseClient = (): SupabaseClient<Database> => {
   if (!supabase) {
     throw new Error('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
   }

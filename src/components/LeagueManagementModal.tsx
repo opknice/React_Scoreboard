@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
@@ -10,6 +11,7 @@ interface LeagueManagementModalProps {
   onClose: () => void;
   onSelectMatchToScoreboard?: (match: Match) => void;
   currentUserEmail?: string;
+  initialTab?: 'league' | 'teams' | 'matches';
 }
 
 export default function LeagueManagementModal({
@@ -17,6 +19,7 @@ export default function LeagueManagementModal({
   onClose,
   onSelectMatchToScoreboard,
   currentUserEmail,
+  initialTab = 'matches',
 }: LeagueManagementModalProps) {
   const authAccess = useAuthAccess();
   const effectiveEmail = currentUserEmail || authAccess?.email || '';
@@ -29,7 +32,6 @@ export default function LeagueManagementModal({
     activeLeague,
     teams,
     matches,
-    standings,
     loading,
     selectLeague,
     createLeague,
@@ -46,7 +48,57 @@ export default function LeagueManagementModal({
     clearMatches,
   } = useSupabaseLeague(undefined, effectiveEmail);
 
-  const [activeTab, setActiveTab] = useState<'league' | 'teams' | 'matches' | 'standings'>('matches');
+  const [activeTab, setActiveTab] = useState<'league' | 'teams' | 'matches'>(() => {
+    return initialTab || (leagues.length === 0 ? 'league' : 'matches');
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      } else if (leagues.length === 0) {
+        setActiveTab('league');
+      }
+    }
+  }, [isOpen, initialTab, leagues.length]);
+
+  // Handle ESC key and prevent body scroll when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  // Robust Click-Outside handling (prevents text-drag outside from accidentally closing modal)
+  const overlayMouseDownRef = useRef(false);
+
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      overlayMouseDownRef.current = true;
+    } else {
+      overlayMouseDownRef.current = false;
+    }
+  }, []);
+
+  const handleOverlayMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (overlayMouseDownRef.current && e.target === e.currentTarget) {
+      onClose();
+    }
+    overlayMouseDownRef.current = false;
+  }, [onClose]);
 
   // --- League Form State ---
   const [isEditingLeague, setIsEditingLeague] = useState(false);
@@ -65,6 +117,7 @@ export default function LeagueManagementModal({
   const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Match Form State ---
+  const [showMatchForm, setShowMatchForm] = useState<boolean>(false);
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [matchNumber, setMatchNumber] = useState<number>(matches.length + 1);
   const [matchTeamAId, setMatchTeamAId] = useState<string>('');
@@ -76,8 +129,6 @@ export default function LeagueManagementModal({
   const [matchStatus, setMatchStatus] = useState<'scheduled' | 'in_progress' | 'finished' | 'postponed'>('scheduled');
   const [matchScoreA, setMatchScoreA] = useState<number>(0);
   const [matchScoreB, setMatchScoreB] = useState<number>(0);
-
-  if (!isOpen) return null;
 
   // ==========================================
   // HANDLERS: LEAGUE
@@ -230,6 +281,7 @@ export default function LeagueManagementModal({
         score_b: matchScoreB,
       });
       setEditingMatchId(null);
+      setShowMatchForm(false);
     } else {
       await createMatch({
         league_id: activeLeagueId,
@@ -247,11 +299,13 @@ export default function LeagueManagementModal({
         score_b: matchScoreB,
       });
       setMatchNumber(defaultNextNum + 1);
+      setShowMatchForm(false);
     }
   };
 
   const handleStartEditMatch = (match: Match) => {
     setEditingMatchId(match.id);
+    setShowMatchForm(true);
     setMatchNumber(match.match_number);
     setMatchTeamAId(match.team_a_id || '');
     setMatchTeamBId(match.team_b_id || '');
@@ -259,13 +313,14 @@ export default function LeagueManagementModal({
     setMatchLabel2(match.label2 || '');
     setMatchLabel3(match.label3 || '');
     setMatchDate(match.match_date || '');
-    setMatchStatus(match.status);
+    setMatchStatus((match.status as 'scheduled' | 'in_progress' | 'finished' | 'postponed') || 'scheduled');
     setMatchScoreA(match.score_a || 0);
     setMatchScoreB(match.score_b || 0);
   };
 
   const handleCancelEditMatch = () => {
     setEditingMatchId(null);
+    setShowMatchForm(false);
     const nextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
     setMatchNumber(nextNum);
   };
@@ -306,12 +361,21 @@ export default function LeagueManagementModal({
     await createMatchesBatch(newMatches);
   };
 
-  return (
-    <div className="league-modal-overlay" onClick={onClose}>
-      <div className="league-modal-container" onClick={(e) => e.stopPropagation()}>
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div
+      className="league-modal-overlay"
+      onMouseDown={handleOverlayMouseDown}
+      onMouseUp={handleOverlayMouseUp}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="league-modal-title"
+    >
+      <div className="league-modal-container">
         {/* Header */}
         <div className="league-modal-header">
-          <h2 className="league-modal-title">
+          <h2 id="league-modal-title" className="league-modal-title">
             <i className="fas fa-trophy"></i>
             <span>จัดการข้อมูลลีก & ตารางการแข่งขัน (Supabase)</span>
             {effectiveEmail && (
@@ -363,12 +427,6 @@ export default function LeagueManagementModal({
             onClick={() => setActiveTab('teams')}
           >
             <i className="fas fa-users"></i> ทีม ({teams.length})
-          </button>
-          <button
-            className={`league-tab-btn ${activeTab === 'standings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('standings')}
-          >
-            <i className="fas fa-list-ol"></i> ตารางคะแนน
           </button>
           <button
             className={`league-tab-btn ${activeTab === 'league' ? 'active' : ''}`}
@@ -704,169 +762,202 @@ export default function LeagueManagementModal({
              ========================================== */}
           {activeTab === 'matches' && (
             <div>
-              <div className="league-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                  <h3 className="league-card-title" style={{ margin: 0 }}>
-                    <i className="fas fa-futbol" style={{ color: '#38bdf8' }}></i>
-                    <span>{editingMatchId ? 'แก้ไขแมตช์การแข่งขัน' : 'เพิ่มคู่การแข่งขันใหม่'}</span>
-                  </h3>
-                  <button
-                    type="button"
-                    className="league-btn-secondary"
-                    onClick={handleGenerateRoundRobin}
-                    style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                    title="สร้างตารางแข่งขันแบบพบกันหมดให้อัตโนมัติ"
-                  >
-                    <i className="fas fa-magic" style={{ color: '#f59e0b' }}></i>
-                    <span>สร้างตารางพบกันหมดอัตโนมัติ</span>
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveMatch}>
-                  <div className="league-form-grid">
-                    <div className="league-form-group">
-                      <label>ลำดับแมตช์ (Match No.) *</label>
-                      <input
-                        type="number"
-                        className="league-form-input"
-                        value={matchNumber}
-                        onChange={(e) => setMatchNumber(parseInt(e.target.value, 10) || 1)}
-                        required
-                      />
-                    </div>
-                    <div className="league-form-group">
-                      <label>ทีม A (เหย้า) *</label>
-                      <select
-                        className="league-form-select"
-                        value={matchTeamAId}
-                        onChange={(e) => setMatchTeamAId(e.target.value)}
-                        required
-                      >
-                        <option value="">-- เลือกทีม A --</option>
-                        {teams.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="league-form-group">
-                      <label>ทีม B (เยือน) *</label>
-                      <select
-                        className="league-form-select"
-                        value={matchTeamBId}
-                        onChange={(e) => setMatchTeamBId(e.target.value)}
-                        required
-                      >
-                        <option value="">-- เลือกทีม B --</option>
-                        {teams.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="league-form-group">
-                      <label>สถานะแมตช์</label>
-                      <select
-                        className="league-form-select"
-                        value={matchStatus}
-                        onChange={(e) => setMatchStatus(e.target.value as any)}
-                      >
-                        <option value="scheduled">รอแข่งขัน (Scheduled)</option>
-                        <option value="in_progress">กำลังแข่งขัน (Live)</option>
-                        <option value="finished">จบการแข่งขัน (Finished)</option>
-                      </select>
-                    </div>
+              {/* Form for Adding / Editing Match (Collapsible) */}
+              {(showMatchForm || editingMatchId) && (
+                <div
+                  className="league-card league-form-slide-down"
+                  style={{ border: '1px solid rgba(56, 189, 248, 0.3)', background: 'rgba(15, 23, 42, 0.85)', marginBottom: '20px' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h3 className="league-card-title" style={{ margin: 0 }}>
+                      <i className="fas fa-futbol" style={{ color: '#38bdf8' }}></i>
+                      <span>{editingMatchId ? 'แก้ไขแมตช์การแข่งขัน' : 'เพิ่มคู่การแข่งขันใหม่'}</span>
+                    </h3>
+                    <button
+                      type="button"
+                      className="league-btn-secondary"
+                      onClick={handleCancelEditMatch}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                    >
+                      <i className="fas fa-times"></i> ปิดฟอร์ม
+                    </button>
                   </div>
 
-                  <div className="league-form-grid">
-                    <div className="league-form-group">
-                      <label>ป้าย 1: รอบการแข่งขัน (Round)</label>
-                      <input
-                        type="text"
-                        className="league-form-input"
-                        placeholder="เช่น รอบแรก, รอบ 8 ทีม, ชิงชนะเลิศ"
-                        value={matchLabel1}
-                        onChange={(e) => setMatchLabel1(e.target.value)}
-                      />
-                    </div>
-                    <div className="league-form-group">
-                      <label>ป้าย 2: สัปดาห์ / วันแข่ง (Week/Day)</label>
-                      <input
-                        type="text"
-                        className="league-form-input"
-                        placeholder="เช่น Matchweek 1, Day 1"
-                        value={matchLabel2}
-                        onChange={(e) => setMatchLabel2(e.target.value)}
-                      />
-                    </div>
-                    <div className="league-form-group">
-                      <label>ป้าย 3: สนามแข่งขัน (Field / Pitch)</label>
-                      <input
-                        type="text"
-                        className="league-form-input"
-                        placeholder="เช่น สนาม 1, Main Stadium"
-                        value={matchLabel3}
-                        onChange={(e) => setMatchLabel3(e.target.value)}
-                      />
-                    </div>
-                    <div className="league-form-group">
-                      <label>ผลสกอร์ปัจจุบัน (Score A - Score B)</label>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <form onSubmit={handleSaveMatch}>
+                    <div className="league-form-grid">
+                      <div className="league-form-group">
+                        <label>ลำดับแมตช์ (Match No.) *</label>
                         <input
                           type="number"
                           className="league-form-input"
-                          value={matchScoreA}
-                          onChange={(e) => setMatchScoreA(parseInt(e.target.value, 10) || 0)}
-                          style={{ textAlign: 'center' }}
-                        />
-                        <span style={{ fontWeight: 700 }}>-</span>
-                        <input
-                          type="number"
-                          className="league-form-input"
-                          value={matchScoreB}
-                          onChange={(e) => setMatchScoreB(parseInt(e.target.value, 10) || 0)}
-                          style={{ textAlign: 'center' }}
+                          value={matchNumber}
+                          onChange={(e) => setMatchNumber(parseInt(e.target.value, 10) || 1)}
+                          required
                         />
                       </div>
+                      <div className="league-form-group">
+                        <label>ทีม A (เหย้า) *</label>
+                        <select
+                          className="league-form-select"
+                          value={matchTeamAId}
+                          onChange={(e) => setMatchTeamAId(e.target.value)}
+                          required
+                        >
+                          <option value="">-- เลือกทีม A --</option>
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="league-form-group">
+                        <label>ทีม B (เยือน) *</label>
+                        <select
+                          className="league-form-select"
+                          value={matchTeamBId}
+                          onChange={(e) => setMatchTeamBId(e.target.value)}
+                          required
+                        >
+                          <option value="">-- เลือกทีม B --</option>
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id} disabled={t.id === matchTeamAId}>
+                              {t.name} {t.id === matchTeamAId ? '(เลือกเป็นทีมเหย้าแล้ว)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="league-form-group">
+                        <label>สถานะแมตช์</label>
+                        <select
+                          className="league-form-select"
+                          value={matchStatus}
+                          onChange={(e) => setMatchStatus(e.target.value as 'scheduled' | 'in_progress' | 'finished' | 'postponed')}
+                        >
+                          <option value="scheduled">รอแข่งขัน (Scheduled)</option>
+                          <option value="in_progress">กำลังแข่งขัน (Live)</option>
+                          <option value="finished">จบการแข่งขัน (Finished)</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <button type="submit" className="league-btn-primary" disabled={loading}>
-                      <i className="fas fa-save"></i>
-                      <span>{editingMatchId ? 'บันทึกการแก้ไขแมตช์' : 'เพิ่มแมตช์'}</span>
-                    </button>
-                    {editingMatchId && (
+                    <div className="league-form-grid">
+                      <div className="league-form-group">
+                        <label>ป้าย 1: รอบการแข่งขัน (Round)</label>
+                        <input
+                          type="text"
+                          className="league-form-input"
+                          placeholder="เช่น รอบแรก, รอบ 8 ทีม, ชิงชนะเลิศ"
+                          value={matchLabel1}
+                          onChange={(e) => setMatchLabel1(e.target.value)}
+                        />
+                      </div>
+                      <div className="league-form-group">
+                        <label>ป้าย 2: สัปดาห์ / วันแข่ง (Week/Day)</label>
+                        <input
+                          type="text"
+                          className="league-form-input"
+                          placeholder="เช่น Matchweek 1, Day 1"
+                          value={matchLabel2}
+                          onChange={(e) => setMatchLabel2(e.target.value)}
+                        />
+                      </div>
+                      <div className="league-form-group">
+                        <label>ป้าย 3: สนามแข่งขัน (Field / Pitch)</label>
+                        <input
+                          type="text"
+                          className="league-form-input"
+                          placeholder="เช่น สนาม 1, Main Stadium"
+                          value={matchLabel3}
+                          onChange={(e) => setMatchLabel3(e.target.value)}
+                        />
+                      </div>
+                      <div className="league-form-group">
+                        <label>ผลสกอร์ปัจจุบัน (Score A - Score B)</label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            className="league-form-input"
+                            value={matchScoreA}
+                            onChange={(e) => setMatchScoreA(parseInt(e.target.value, 10) || 0)}
+                            style={{ textAlign: 'center' }}
+                          />
+                          <span style={{ fontWeight: 700 }}>-</span>
+                          <input
+                            type="number"
+                            className="league-form-input"
+                            value={matchScoreB}
+                            onChange={(e) => setMatchScoreB(parseInt(e.target.value, 10) || 0)}
+                            style={{ textAlign: 'center' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <button type="submit" className="league-btn-primary" disabled={loading}>
+                        <i className="fas fa-save"></i>
+                        <span>{editingMatchId ? 'บันทึกการแก้ไขแมตช์' : 'เพิ่มแมตช์'}</span>
+                      </button>
                       <button type="button" className="league-btn-secondary" onClick={handleCancelEditMatch}>
                         ยกเลิก
                       </button>
-                    )}
-                  </div>
-                </form>
-              </div>
+                    </div>
+                  </form>
+                </div>
+              )}
 
               {/* Match Table List */}
               <div className="league-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                   <h3 className="league-card-title" style={{ margin: 0 }}>
                     <i className="fas fa-list" style={{ color: '#f59e0b' }}></i>
                     <span>ตารางการแข่งขันทั้งหมด ({matches.length} แมตช์)</span>
                   </h3>
-                  {matches.length > 0 && (
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <button
                       type="button"
-                      className="league-btn-danger"
+                      className="league-btn-primary"
                       onClick={() => {
-                        if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการล้างตารางการแข่งขันทั้งหมดในลีกนี้?')) {
-                          clearMatches();
+                        if (showMatchForm && !editingMatchId) {
+                          handleCancelEditMatch();
+                        } else {
+                          setShowMatchForm(true);
+                          setEditingMatchId(null);
                         }
                       }}
+                      style={{ padding: '6px 12px', fontSize: '0.82rem' }}
                     >
-                      <i className="fas fa-trash-alt"></i> ล้างตารางแข่งทั้งหมด
+                      <i className={`fas ${showMatchForm && !editingMatchId ? 'fa-times' : 'fa-plus'}`}></i>
+                      <span>{showMatchForm && !editingMatchId ? 'ปิดฟอร์ม' : '➕ เพิ่มคู่การแข่งขัน'}</span>
                     </button>
-                  )}
+
+                    <button
+                      type="button"
+                      className="league-btn-secondary"
+                      onClick={handleGenerateRoundRobin}
+                      style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                      title="สร้างตารางแข่งขันแบบพบกันหมดให้อัตโนมัติ"
+                    >
+                      <i className="fas fa-magic" style={{ color: '#f59e0b' }}></i>
+                      <span>สร้างตารางพบกันหมด</span>
+                    </button>
+
+                    {matches.length > 0 && (
+                      <button
+                        type="button"
+                        className="league-btn-danger"
+                        onClick={() => {
+                          if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการล้างตารางการแข่งขันทั้งหมดในลีกนี้?')) {
+                            clearMatches();
+                          }
+                        }}
+                      >
+                        <i className="fas fa-trash-alt"></i> ล้างตารางแข่ง
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="league-table-responsive">
@@ -884,8 +975,19 @@ export default function LeagueManagementModal({
                     <tbody>
                       {matches.length === 0 ? (
                         <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
-                            ยังไม่มีตารางแข่งขัน เพิ่มคู่แรกของคุณหรือกดสร้างตารางพบกันหมดอัตโนมัติด้านบน
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
+                            <div>ยังไม่มีตารางแข่งขันในลีกนี้</div>
+                            <button
+                              type="button"
+                              className="league-btn-primary"
+                              style={{ marginTop: '12px', padding: '6px 14px', fontSize: '0.82rem' }}
+                              onClick={() => {
+                                setShowMatchForm(true);
+                                setEditingMatchId(null);
+                              }}
+                            >
+                              <i className="fas fa-plus"></i> เพิ่มคู่การแข่งขันแรก
+                            </button>
                           </td>
                         </tr>
                       ) : (
@@ -959,92 +1061,6 @@ export default function LeagueManagementModal({
               </div>
             </div>
           )}
-
-          {/* ==========================================
-              TAB 4: STANDINGS PREVIEW
-             ========================================== */}
-          {activeTab === 'standings' && (
-            <div>
-              <div className="league-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                  <h3 className="league-card-title" style={{ margin: 0 }}>
-                    <i className="fas fa-table" style={{ color: '#38bdf8' }}></i>
-                    <span>ตารางคะแนนล่าสุด (คำนวณจากผลการแข่งขันใน Supabase)</span>
-                  </h3>
-                  <button
-                    type="button"
-                    className="league-btn-secondary"
-                    onClick={() => {
-                      const url = `${window.location.origin}/league-table?league=${activeLeagueId}&title=${encodeURIComponent(activeLeague?.name || 'League Table')}`;
-                      navigator.clipboard.writeText(url);
-                      alert('คัดลอก URL ตารางคะแนน Standalone สำหรับใส่ใน OBS เรียบร้อยแล้ว!');
-                    }}
-                  >
-                    <i className="fas fa-link"></i> คัดลอก Standalone Table URL
-                  </button>
-                </div>
-
-                <div className="league-table-responsive">
-                  <table className="league-data-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: '50px', textAlign: 'center' }}>อันดับ</th>
-                        <th>ทีม</th>
-                        <th style={{ textAlign: 'center' }}>แข่ง (P)</th>
-                        <th style={{ textAlign: 'center' }}>ชนะ (W)</th>
-                        <th style={{ textAlign: 'center' }}>เสมอ (D)</th>
-                        <th style={{ textAlign: 'center' }}>แพ้ (L)</th>
-                        <th style={{ textAlign: 'center' }}>ได้ (GF)</th>
-                        <th style={{ textAlign: 'center' }}>เสีย (GA)</th>
-                        <th style={{ textAlign: 'center' }}>ผลต่าง (GD)</th>
-                        <th style={{ textAlign: 'center', color: '#38bdf8' }}>คะแนน (Pts)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {standings.length === 0 ? (
-                        <tr>
-                          <td colSpan={10} style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
-                            ยังไม่มีข้อมูลการแข่งขันหรือคะแนนในระบบ
-                          </td>
-                        </tr>
-                      ) : (
-                        standings.map((row, idx) => (
-                          <tr key={row.teamName}>
-                            <td style={{ textAlign: 'center', fontWeight: 700, color: idx < 3 ? '#f59e0b' : '#94a3b8' }}>
-                              {idx + 1}
-                            </td>
-                            <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {row.logoUrl && (
-                                <img
-                                  src={row.logoUrl}
-                                  alt=""
-                                  style={{ width: '22px', height: '22px', objectFit: 'contain' }}
-                                  onError={(e) => ((e.target as HTMLElement).style.display = 'none')}
-                                />
-                              )}
-                              {row.teamName}
-                            </td>
-                            <td style={{ textAlign: 'center' }}>{row.P}</td>
-                            <td style={{ textAlign: 'center', color: '#4ade80' }}>{row.W}</td>
-                            <td style={{ textAlign: 'center', color: '#fbbf24' }}>{row.D}</td>
-                            <td style={{ textAlign: 'center', color: '#f87171' }}>{row.L}</td>
-                            <td style={{ textAlign: 'center' }}>{row.GF}</td>
-                            <td style={{ textAlign: 'center' }}>{row.GA}</td>
-                            <td style={{ textAlign: 'center', fontWeight: 600, color: row.GD > 0 ? '#4ade80' : row.GD < 0 ? '#f87171' : '#cbd5e1' }}>
-                              {row.GD > 0 ? `+${row.GD}` : row.GD}
-                            </td>
-                            <td style={{ textAlign: 'center', fontWeight: 700, fontSize: '1rem', color: '#38bdf8' }}>
-                              {row.Pts}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
@@ -1057,6 +1073,7 @@ export default function LeagueManagementModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
