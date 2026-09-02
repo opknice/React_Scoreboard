@@ -132,11 +132,15 @@ export function useSupabaseLeague(
   }, [getStorageKey]);
 
   // Supabase Realtime Subscription: Automatically sync leagues, teams, and matches live
+  // Use a stable unique channel name per hook instance to avoid conflicts when
+  // multiple components (ScoreboardController + LeagueManagementModal) both mount this hook.
+  const realtimeChannelIdRef = useRef(`realtime_league_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+
   useEffect(() => {
     if (!isConfigured || !supabase) return;
 
     const channel = supabase
-      .channel('realtime_public_league_sync')
+      .channel(realtimeChannelIdRef.current)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'leagues' },
