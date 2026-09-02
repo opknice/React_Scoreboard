@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { User } from '@supabase/supabase-js';
 import {
   loginWithGoogle,
@@ -24,8 +24,18 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [whitelistReason, setWhitelistReason] = useState<string | null>(null);
   const [accessDecision, setAccessDecision] = useState<AccessDecision | null>(null);
-  const checkUserAccess = useCallback(async (currentUser: User | null) => {
+  // Supabase can emit SIGNED_IN again when a background tab becomes active.
+  // Keep the last completed/in-flight user id so that this session sync does
+  // not unmount and mount the protected application again.
+  const lastCheckedUserIdRef = useRef<string | null>(null);
+  const checkingUserIdRef = useRef<string | null>(null);
+  const checkRequestIdRef = useRef(0);
+
+  const checkUserAccess = useCallback(async (currentUser: User | null, force = false) => {
     if (!currentUser) {
+      checkRequestIdRef.current += 1;
+      lastCheckedUserIdRef.current = null;
+      checkingUserIdRef.current = null;
       setUser(null);
       setIsAllowed(false);
       setAccessDecision(null);
@@ -33,6 +43,19 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       return;
     }
 
+    if (!force && lastCheckedUserIdRef.current === currentUser.id) {
+      // Update profile metadata (for example, the latest Google photo) without
+      // restarting the protected page.
+      setUser(currentUser);
+      return;
+    }
+
+    if (checkingUserIdRef.current === currentUser.id) {
+      return;
+    }
+
+    const requestId = ++checkRequestIdRef.current;
+    checkingUserIdRef.current = currentUser.id;
     setLoading(true);
     setUser(currentUser);
 
@@ -45,17 +68,26 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
     try {
       const result = await verifyUserWhitelist(currentUser.email);
+      if (requestId !== checkRequestIdRef.current) return;
+
+      lastCheckedUserIdRef.current = currentUser.id;
       setIsAllowed(result.isAllowed);
       setWhitelistReason(result.reason || null);
       setAccessDecision(result);
       setAuthError(null);
     } catch (error) {
+      if (requestId !== checkRequestIdRef.current) return;
+
+      lastCheckedUserIdRef.current = null;
       console.error('[AuthGuard] Supabase access check failed:', error);
       setIsAllowed(false);
       setAccessDecision(null);
       setAuthError(error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบสิทธิ์กับ Supabase ได้');
     } finally {
-      setLoading(false);
+      if (requestId === checkRequestIdRef.current) {
+        checkingUserIdRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -65,6 +97,14 @@ export default function AuthGuard({ children }: AuthGuardProps) {
         if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
           return;
         }
+
+        // USER_UPDATED only changes the displayed profile. Rechecking access
+        // here would briefly hide the whole controller unnecessarily.
+        if (event === 'USER_UPDATED') {
+          setUser(session?.user ?? null);
+          return;
+        }
+
         // Run database checks outside Supabase's auth event callback.
         window.setTimeout(() => {
           void checkUserAccess(session?.user ?? null);
@@ -86,7 +126,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
     const delay = Math.max(1000, accessDecision.trialExpiresAt - Date.now() + 100);
     const timeoutId = window.setTimeout(() => {
-      void checkUserAccess(user);
+      void checkUserAccess(user, true);
     }, delay);
 
     return () => window.clearTimeout(timeoutId);
