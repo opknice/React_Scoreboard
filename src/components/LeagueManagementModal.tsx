@@ -873,6 +873,18 @@ export default function LeagueManagementModal({
                         />
                       </div>
                       <div className="league-form-group">
+                        <label>📅 วันที่แข่งขัน (Match Date)</label>
+                        <input
+                          type="date"
+                          className="league-form-input"
+                          value={matchDate}
+                          onChange={(e) => setMatchDate(e.target.value)}
+                        />
+                        <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                          ใช้จัดกลุ่มแมตช์ตามวันที่ในหน้า Overlay / OBS
+                        </span>
+                      </div>
+                      <div className="league-form-group">
                         <label>ผลสกอร์ปัจจุบัน (Score A - Score B)</label>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <input

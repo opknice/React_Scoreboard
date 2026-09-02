@@ -171,7 +171,7 @@ export default function AllScoresStandalone() {
   // Group by date & week
   const groups: Record<string, any[]> = {};
   filtered.forEach((match) => {
-    const date = match.date || 'ไม่ระบุวันที่';
+    const date = match.date || '';
     let week = match.week || match.matchday || match.round || '1';
 
     if (!match.week && !match.matchday && !match.round && match.date) {
@@ -186,6 +186,31 @@ export default function AllScoresStandalone() {
     groups[key] ||= [];
     groups[key].push(match);
   });
+
+  const formatGroupTitle = (date: string, weekNum: string, sampleMatch?: any) => {
+    const hasDate = date && date !== 'ไม่ระบุวันที่' && date.trim() !== '';
+    const roundLabel = sampleMatch?.round || '';
+    const weekLabel = sampleMatch?.week || (weekNum ? `สัปดาห์ที่ ${weekNum}` : '');
+
+    if (hasDate) {
+      const subInfo = [roundLabel, weekLabel].filter(Boolean).join(' • ');
+      return `📅 วันที่ ${date} ${subInfo ? `(${subInfo})` : `(WEEK #${weekNum})`}`;
+    }
+
+    if (roundLabel && weekLabel) {
+      return `🏆 ${roundLabel} • ${weekLabel}`;
+    }
+
+    if (roundLabel) {
+      return `🏆 ${roundLabel} (WEEK #${weekNum})`;
+    }
+
+    if (weekLabel) {
+      return `🏆 ${weekLabel}`;
+    }
+
+    return `🏆 ตารางการแข่งขัน (WEEK #${weekNum || '1'})`;
+  };
 
   const renderLogo = (logoIdentifier: string | undefined, teamName: string) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
@@ -246,10 +271,11 @@ export default function AllScoresStandalone() {
             })
             .map((key) => {
               const [date, weekNum] = key.split('|||');
+              const sampleMatch = groups[key][0];
               return (
                 <div key={key} className="overlay-date-group">
                   <div className="overlay-date-title">
-                    วันที่ {date} (WEEK #{weekNum})
+                    {formatGroupTitle(date, weekNum, sampleMatch)}
                   </div>
 
                   {groups[key].map((m) => {
