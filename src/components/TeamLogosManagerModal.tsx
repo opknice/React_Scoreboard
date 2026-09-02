@@ -44,15 +44,10 @@ export default function TeamLogosManagerModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const targetUploadTeamRef = useRef<string | null>(null);
 
-  const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage, loading: quotaLoading } = useImageUploadQuota();
+  const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage } = useImageUploadQuota();
 
   const handleDirectFileUpload = async (teamName: string, selectedFile: File) => {
     if (!selectedFile) return;
-
-    if (quotaLoading) {
-      onToast?.('⏳ กำลังตรวจสอบโควต้า กรุณารอสักครู่', 'info');
-      return;
-    }
 
     if (isQuotaExceeded) {
       onToast?.('❌ คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว (กรุณาสมัครสมาชิกเพื่ออัปโหลดแบบไม่จำกัด)', 'error');
@@ -227,7 +222,7 @@ export default function TeamLogosManagerModal({
           </h2>
           <p style={{ margin: '6px 0 0 0', color: 'var(--text-muted-color)', fontSize: '13px' }}>
             {leagueName ? `สำหรับลีก: ${leagueName} | ` : ''}
-            อัปโหลดหรือใส่ URL โลโก้ของทุกทีมในลีก แล้วบันทึกลงระบบ Database
+            อัปโหลดหรือใส่ URL โลโก้ของทุกทีมที่ดึงจาก Excel แล้วบันทึกลง Firebase ครั้งแรกเพียงครั้งเดียว
           </p>
         </div>
 
@@ -320,7 +315,7 @@ export default function TeamLogosManagerModal({
           {filteredKeys.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
               <i className="fas fa-search" style={{ fontSize: '24px', marginBottom: '8px', display: 'block' }}></i>
-              ไม่พบรายชื่อทีมในระบบ (กรุณาเลือกหรือสร้างลีกในระบบก่อน)
+              ไม่พบรายชื่อทีมในระบบ (กรุณานำเข้าไฟล์ Excel ก่อน)
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -421,7 +416,7 @@ export default function TeamLogosManagerModal({
                     {/* Upload Button - Directly triggers native file browser */}
                     <button
                       className="btn-primary"
-                      disabled={uploadingTeam === item.name || isQuotaExceeded || quotaLoading}
+                      disabled={uploadingTeam === item.name || isQuotaExceeded}
                       title={isQuotaExceeded ? 'โควต้าการอัปโหลดรูปภาพเต็ม 10/10 รูปแล้ว' : 'อัปโหลดรูปภาพ'}
                       style={{
                         padding: '6px 12px',

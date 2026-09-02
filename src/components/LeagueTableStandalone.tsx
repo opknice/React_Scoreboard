@@ -23,117 +23,44 @@ export default function LeagueTableStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
-    let supabaseChannel: any = null;
+    if (!firebaseConfig) {
+      setErrorMsg('ไม่พบ Firebase Config');
+      setLoading(false);
+      return;
+    }
 
-    // 1. Try Supabase first if configured and leagueId looks like a Supabase ID / not 'excel'
-    const loadFromSupabase = async () => {
-      try {
-        const { LeagueService } = await import('../services/leagueService');
-        const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
-        if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
-          const [supabaseMatches, supabaseTeams] = await Promise.all([
-            LeagueService.getMatchesByLeague(leagueId),
-            LeagueService.getTeamsByLeague(leagueId),
-          ]);
-          // Map to match structure expected by calculateStandings
-          const formatted = supabaseMatches.map((m) => {
-            const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
-            const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
-            return {
-              id: m.id,
-              teamA: m.team_a_name,
-              teamB: m.team_b_name,
-              scoreA: m.score_a,
-              scoreB: m.score_b,
-              status: m.status,
-              logoA: teamAObj?.logo_url || '',
-              logoB: teamBObj?.logo_url || '',
-            };
+    try {
+      const appName = `standalone-table-${leagueId}-${Date.now()}`;
+      const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+      const db = getDatabase(app);
+      const matchesRef = ref(db, 'matches');
+
+      const unsubTeams = listenToFirebaseTeams(db);
+
+      const unsubscribe = onValue(
+        matchesRef,
+        (snapshot) => {
+          const items: any[] = [];
+          snapshot.forEach((child) => {
+            items.push({ id: child.key, ...child.val() });
           });
-          setMatches(formatted);
+          setMatches(items);
           setLoading(false);
-
-          // Setup Realtime subscription for automatic updates on OBS
-          if (!supabaseChannel && supabase) {
-            supabaseChannel = supabase
-              .channel(`public:league_table_${leagueId}`)
-              .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
-                () => {
-                  void loadFromSupabase();
-                }
-              )
-              .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
-                () => {
-                  void loadFromSupabase();
-                }
-              )
-              .subscribe();
-          }
-
-          return true;
+        },
+        (err) => {
+          setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
+          setLoading(false);
         }
-      } catch (err: any) {
-        console.warn('Supabase fetch failed in LeagueTableStandalone, trying Firebase fallback:', err);
-      }
-      return false;
-    };
+      );
 
-    loadFromSupabase().then((loaded) => {
-      if (loaded) return;
-
-      if (!firebaseConfig) {
-        setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const appName = `standalone-table-${leagueId}-${Date.now()}`;
-        const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
-        const db = getDatabase(app);
-        const matchesRef = ref(db, 'matches');
-
-        const unsubTeams = listenToFirebaseTeams(db);
-
-        const unsubscribe = onValue(
-          matchesRef,
-          (snapshot) => {
-            const items: any[] = [];
-            snapshot.forEach((child) => {
-              items.push({ id: child.key, ...child.val() });
-            });
-            setMatches(items);
-            setLoading(false);
-          },
-          (err) => {
-            setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
-            setLoading(false);
-          }
-        );
-
-        return () => {
-          unsubscribe();
-          unsubTeams();
-        };
-      } catch (err: any) {
-        setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
-        setLoading(false);
-      }
-    });
-
-    return () => {
-      if (supabaseChannel) {
-        import('../config/supabaseClient').then(({ supabase }) => {
-          if (supabase && supabaseChannel) {
-            void supabase.removeChannel(supabaseChannel);
-          }
-        });
-      }
-    };
+      return () => {
+        unsubscribe();
+        unsubTeams();
+      };
+    } catch (err: any) {
+      setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
+      setLoading(false);
+    }
   }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {
@@ -166,11 +93,6 @@ export default function LeagueTableStandalone() {
       const scoreA = Number(match.scoreA);
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
-
-      // Skip scheduled matches that have not been played yet (0-0)
-      if (match.status === 'scheduled' && scoreA === 0 && scoreB === 0) {
-        return;
-      }
 
       const logoA = extractMatchLogo(match, 'A');
       const logoB = extractMatchLogo(match, 'B');

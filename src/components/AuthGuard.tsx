@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { User } from '@supabase/supabase-js';
+import React, { useState, useEffect, useCallback } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
+  getFirebaseAuth,
   loginWithGoogle,
   logoutUser,
   verifyUserWhitelist,
+  getEnvFirebaseConfig,
   recordUserLoginAttempt,
   FREE_TRIAL_DAYS,
-  onAuthStateChange,
-  getUserDisplayName,
-} from '../services/supabaseAuthService';
-import type { AccessDecision } from '../types/authAccess';
+  type AccessDecision,
+} from '../config/firebaseAuth';
 import { AuthAccessProvider } from '../context/AuthAccessProvider';
-import UserAvatar from './UserAvatar';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -24,18 +23,18 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [whitelistReason, setWhitelistReason] = useState<string | null>(null);
   const [accessDecision, setAccessDecision] = useState<AccessDecision | null>(null);
-  // Supabase can emit SIGNED_IN again when a background tab becomes active.
-  // Keep the last completed/in-flight user id so that this session sync does
-  // not unmount and mount the protected application again.
-  const lastCheckedUserIdRef = useRef<string | null>(null);
-  const checkingUserIdRef = useRef<string | null>(null);
-  const checkRequestIdRef = useRef(0);
+  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
 
-  const checkUserAccess = useCallback(async (currentUser: User | null, force = false) => {
+  // Settings inputs for fallback configuration
+  const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
+    return localStorage.getItem('firebase_auth_api_key') || getEnvFirebaseConfig().apiKey || '';
+  });
+  const [whitelistInput, setWhitelistInput] = useState<string>(() => {
+    return localStorage.getItem('local_allowed_emails') || '';
+  });
+
+  const checkUserAccess = useCallback(async (currentUser: User | null) => {
     if (!currentUser) {
-      checkRequestIdRef.current += 1;
-      lastCheckedUserIdRef.current = null;
-      checkingUserIdRef.current = null;
       setUser(null);
       setIsAllowed(false);
       setAccessDecision(null);
@@ -43,78 +42,37 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       return;
     }
 
-    if (!force && lastCheckedUserIdRef.current === currentUser.id) {
-      // Update profile metadata (for example, the latest Google photo) without
-      // restarting the protected page.
-      setUser(currentUser);
-      return;
-    }
-
-    if (checkingUserIdRef.current === currentUser.id) {
-      return;
-    }
-
-    const requestId = ++checkRequestIdRef.current;
-    checkingUserIdRef.current = currentUser.id;
     setLoading(true);
     setUser(currentUser);
 
-    // Automatically record / update user profile and login timestamp in Supabase.
+    // Automatically record / update user login profile & timestamp in Realtime DB
     try {
       await recordUserLoginAttempt(currentUser);
     } catch (err) {
       console.warn('[AuthGuard] Auto record login attempt failed:', err);
     }
 
-    try {
-      const result = await verifyUserWhitelist(currentUser.email);
-      if (requestId !== checkRequestIdRef.current) return;
-
-      lastCheckedUserIdRef.current = currentUser.id;
-      setIsAllowed(result.isAllowed);
-      setWhitelistReason(result.reason || null);
-      setAccessDecision(result);
-      setAuthError(null);
-    } catch (error) {
-      if (requestId !== checkRequestIdRef.current) return;
-
-      lastCheckedUserIdRef.current = null;
-      console.error('[AuthGuard] Supabase access check failed:', error);
-      setIsAllowed(false);
-      setAccessDecision(null);
-      setAuthError(error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบสิทธิ์กับ Supabase ได้');
-    } finally {
-      if (requestId === checkRequestIdRef.current) {
-        checkingUserIdRef.current = null;
-        setLoading(false);
-      }
-    }
+    const result = await verifyUserWhitelist(currentUser.email);
+    setIsAllowed(result.isAllowed);
+    setWhitelistReason(result.reason || null);
+    setAccessDecision(result);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     try {
-      const unsubscribe = onAuthStateChange((event, session) => {
-        if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
-          return;
-        }
-
-        // USER_UPDATED only changes the displayed profile. Rechecking access
-        // here would briefly hide the whole controller unnecessarily.
-        if (event === 'USER_UPDATED') {
-          setUser(session?.user ?? null);
-          return;
-        }
-
-        // Run database checks outside Supabase's auth event callback.
-        window.setTimeout(() => {
-          void checkUserAccess(session?.user ?? null);
-        }, 0);
+      const auth = getFirebaseAuth();
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        checkUserAccess(currentUser);
+      }, (error) => {
+        console.error('Auth state change error:', error);
+        setAuthError(error.message);
+        setLoading(false);
       });
 
       return () => unsubscribe();
-    } catch (err) {
-      console.warn('Supabase Auth Initialization Warning:', err);
-      setAuthError(err instanceof Error ? err.message : 'ไม่สามารถเริ่มต้น Supabase Auth ได้');
+    } catch (err: any) {
+      console.warn('Firebase Auth Initialization Warning:', err);
       setLoading(false);
     }
   }, [checkUserAccess]);
@@ -126,7 +84,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
     const delay = Math.max(1000, accessDecision.trialExpiresAt - Date.now() + 100);
     const timeoutId = window.setTimeout(() => {
-      void checkUserAccess(user, true);
+      void checkUserAccess(user);
     }, delay);
 
     return () => window.clearTimeout(timeoutId);
@@ -136,10 +94,13 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     setAuthError(null);
     setLoading(true);
     try {
-      await loginWithGoogle();
-    } catch (err) {
+      const loggedUser = await loginWithGoogle();
+      await checkUserAccess(loggedUser);
+    } catch (err: any) {
       console.error('Login Failed:', err);
-      setAuthError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      if (err?.code !== 'auth/popup-closed-by-user') {
+        setAuthError(err?.message || 'Login failed. Please try again.');
+      }
       setLoading(false);
     }
   };
@@ -155,6 +116,24 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       console.error('Logout Failed:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (whitelistInput.trim()) {
+      localStorage.setItem('local_allowed_emails', whitelistInput.trim());
+    } else {
+      localStorage.removeItem('local_allowed_emails');
+    }
+    if (apiKeyInput.trim()) {
+      const currentConfig = getEnvFirebaseConfig();
+      currentConfig.apiKey = apiKeyInput.trim();
+      localStorage.setItem('firebase_auth_config', JSON.stringify(currentConfig));
+    }
+    setShowConfigModal(false);
+    if (user) {
+      checkUserAccess(user);
     }
   };
 
@@ -210,6 +189,55 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           </button>
         </div>
 
+        {/* Config Modal */}
+        {showConfigModal && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalCard}>
+              <h3 style={{ margin: '0 0 16px 0', color: '#f8fafc' }}>⚙️ การตั้งค่าระบบยืนยันตัวตน</h3>
+              <form onSubmit={handleSaveSettings}>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={styles.label}>
+                    รายชื่ออีเมลอนุญาต (Local Whitelist - คั่นด้วยจุลภาค ,):
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={whitelistInput}
+                    onChange={(e) => setWhitelistInput(e.target.value)}
+                    placeholder="example@gmail.com, admin@gmail.com"
+                    style={styles.textarea}
+                  />
+                  <small style={{ color: '#94a3b8' }}>
+                    * สามารถตั้งค่า VITE_ALLOWED_EMAILS ในไฟล์ .env ได้เช่นกัน
+                  </small>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={styles.label}>Firebase API Key (ถ้าไม่ได้ตั้งใน .env):</label>
+                  <input
+                    type="text"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    style={styles.input}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfigModal(false)}
+                    style={styles.cancelBtn}
+                  >
+                    ยกเลิก
+                  </button>
+                  <button type="submit" style={styles.saveBtn}>
+                    บันทึกการตั้งค่า
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -233,9 +261,15 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           </p>
 
           <div style={styles.userInfoBox}>
-            <UserAvatar user={user} size={40} style={styles.userAvatar} />
+            {user.photoURL && (
+              <img
+                src={user.photoURL}
+                alt={user.displayName || 'User'}
+                style={styles.userAvatar}
+              />
+            )}
             <div>
-              <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{getUserDisplayName(user) || 'Google User'}</div>
+              <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{user.displayName || 'Google User'}</div>
               <div style={{ fontSize: '13px', color: '#94a3b8' }}>{user.email}</div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
+import type { FirebaseSaveTarget } from '../utils/excelParser';
 import {
   TEAM_NAME_FONT_OPTIONS,
   TEAM_NAME_MAX_FONT_SIZE,
@@ -73,7 +73,6 @@ interface QuickSetupModalProps {
   onOpenObsSetup: () => void;
   onCopyOverlay: (viewType: string, standaloneFile?: string) => void;
   onOpenDatabase: () => void;
-  onOpenLeagueManager?: () => void;
   onClose: () => void;
 }
 
@@ -111,7 +110,6 @@ export default function QuickSetupModal({
   onOpenObsSetup,
   onCopyOverlay,
   onOpenDatabase,
-  onOpenLeagueManager,
   onClose,
 }: QuickSetupModalProps) {
   const [openPanel, setOpenPanel] = useState<'team-name' | 'score' | 'logo' | null>(null);
@@ -735,14 +733,7 @@ export default function QuickSetupModal({
             </div>
             <button className="btn-warning" style={{ width: '100%', justifyContent: 'center' }} onClick={() => onCopyOverlay('ticker')}><i className="fas fa-tv"></i> Copy Live Ticker URL (ความเร็ว {tickerSpeed}s)</button>
           </div>
-          {onOpenLeagueManager && (
-            <button className="btn-primary" style={{ background: '#0284c7', borderColor: '#0284c7', fontWeight: 'bold' }} onClick={onOpenLeagueManager}>
-              <i className="fas fa-trophy"></i> 🏆 จัดการฐานข้อมูลลีก & ตารางแข่ง (Supabase)
-            </button>
-          )}
-          <button className="btn-secondary" style={{ background: '#8b5cf6', borderColor: '#8b5cf6' }} onClick={onOpenDatabase}>
-            <i className="fas fa-database"></i> จัดการฐานข้อมูล (Firebase)
-          </button>
+          <button className="btn-secondary" style={{ background: '#8b5cf6', borderColor: '#8b5cf6' }} onClick={onOpenDatabase}><i className="fas fa-database"></i> จัดการฐานข้อมูล (Firebase)</button>
         </div>
         <div style={{ marginTop: '16px', textAlign: 'right' }}><button className="btn-secondary" onClick={onClose}>{closeLabel}</button></div>
       </div>

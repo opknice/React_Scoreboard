@@ -116,7 +116,7 @@ export const translations: Record<string, TranslationSet> = {
         saveAndUpdate: "Save & Update",
         helpTitle: "How to Use",
         helpStep1: "1. Click the <i class='fas fa-folder-open'></i> icon to set your logo folder path. By default it is <code>C:/OBSAssets/logos</code>.",
-        helpStep2: "2. Click <i class='fas fa-trophy'></i> League Management button to select/create your league and match schedule (Supabase).",
+        helpStep2: "2. Click <i class='fas fa-file-excel'></i> Excel button to select your data file.",
         helpStep3: "3. Select the desired Match ID and click <i class='fas fa-check'></i> Load.",
         sourcesTitle: "Required OBS Sources",
         sourcesList: [
@@ -228,7 +228,7 @@ export const translations: Record<string, TranslationSet> = {
         saveAndUpdate: "บันทึกและอัปเดต",
         helpTitle: "วิธีการใช้งาน",
         helpStep1: "1. กดปุ่ม <i class='fas fa-folder-open'></i> เพื่อตั้งค่าที่อยู่โฟลเดอร์โลโก้ (ค่าเริ่มต้นคือ <code>C:/OBSAssets/logos</code>)",
-        helpStep2: "2. กดปุ่ม <i class='fas fa-trophy'></i> จัดการลีก เพื่อเลือกหรือสร้างลีก รายชื่อทีม และตารางแข่งขัน (Supabase)",
+        helpStep2: "2. กดปุ่ม <i class='fas fa-file-excel'></i> Excel เพื่อเลือกไฟล์ข้อมูล",
         helpStep3: "3. เลือก Match ID ที่ต้องการ แล้วกด <i class='fas fa-check'></i> Load",
         sourcesTitle: "OBS Sources ที่ต้องมี",
         sourcesList: [

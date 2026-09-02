@@ -1,17 +1,3 @@
-export interface FirebaseSaveTarget {
-  id: string;
-  name: string;
-  index: number;
-  firebaseConfig: any;
-}
-
-export interface TeamColorRow {
-  name: string;
-  color1: string;
-  color2: string;
-  logoUrl?: string;
-}
-
 export function decodeUrlSafeBase64(value: string): string {
   try {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');

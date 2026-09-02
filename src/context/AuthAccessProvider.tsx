@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { AccessDecision } from '../types/authAccess';
+import type { AccessDecision } from '../config/firebaseAuth';
 import { AuthAccessContext } from './authAccessContext';
 
 export function AuthAccessProvider({ value, children }: { value: AccessDecision | null; children: ReactNode }) {
