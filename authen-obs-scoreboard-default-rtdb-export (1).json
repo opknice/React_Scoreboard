@@ -1,0 +1,49 @@
+{
+  "user_permissions": {
+    "chomtanphetchaburi@gmail,com": {
+      "displayName": "ธนกฤต กาสี",
+      "email": "chomtanphetchaburi@gmail.com",
+      "lastLogin": "2026-09-02T05:29:39.360Z",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocIzjej8w_XVicioZUNJuLts6n3ydXirwh8jV90virrLgTnOIuRN=s96-c",
+      "status": "allowed",
+      "trialStartedAt": 1787562815672
+    },
+    "jeab,chomtan@gmail,com": {
+      "displayName": "ชาญณรงค์ ลิ้มวารีรัตน์",
+      "email": "jeab.chomtan@gmail.com",
+      "lastLogin": "2026-09-02T05:29:40.157Z",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJaE1mma7h-kM8KLxs50Xusmiv9nohhg_OGER-IzVvlcUJeSA=s96-c",
+      "status": "pending",
+      "trialStartedAt": 1788183565902
+    },
+    "kasthanakrit4@gmail,com": {
+      "displayName": "Thanakrit kas",
+      "email": "kasthanakrit4@gmail.com",
+      "lastLogin": "2026-09-02T05:20:31.384Z",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocLmomFvaGmuLxwX9VDxKfyCPH2MSzso0SxHelHls-KFL5y6Ow=s96-c",
+      "status": "allowed",
+      "trialStartedAt": 1787472458109
+    },
+    "nutshasucho@gmail,com": {
+      "displayName": "Sucho Nutsha",
+      "email": "nutshasucho@gmail.com",
+      "lastLogin": "2026-09-02T05:26:23.815Z",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJXrur8rq6FttyUlyMSpt8zI1V8BTqP57xExzezkwuROMtsAA=s96-c",
+      "status": "pending",
+      "trialStartedAt": 1788326783279
+    },
+    "thanakrit_kas@hotmail,com": {
+      "displayName": "VAR Live Stream",
+      "email": "thanakrit_kas@hotmail.com",
+      "lastLogin": "2026-09-02T05:26:06.843Z",
+      "photoURL": "https://lh3.googleusercontent.com/a/ACg8ocJ6A9FbmjMneHdSagjbchd-AdzoUU7ATrhgtRtI-R84-Hs-1FYD=s96-c",
+      "status": "allowed",
+      "uploadedImageCount": 3
+    }
+  },
+  "whitelist": [
+    "thanakrit_kas@hotmail.com",
+    "chomtanphetchaburi@gmail.com",
+    "kasthanakrit4@gmail.com"
+  ]
+}

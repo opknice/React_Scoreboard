@@ -24,44 +24,83 @@ export default function AllScoresStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
-    if (!firebaseConfig) {
-      setErrorMsg('ไม่พบ Firebase Config');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const appName = `standalone-scores-${leagueId}-${Date.now()}`;
-      const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
-      const db = getDatabase(app);
-      const matchesRef = ref(db, 'matches');
-
-      const unsubTeams = listenToFirebaseTeams(db);
-
-      const unsubscribe = onValue(
-        matchesRef,
-        (snapshot) => {
-          const items: any[] = [];
-          snapshot.forEach((child) => {
-            items.push({ id: child.key, ...child.val() });
+    const loadFromSupabase = async () => {
+      try {
+        const { LeagueService } = await import('../services/leagueService');
+        const { isSupabaseConfigured } = await import('../config/supabaseClient');
+        if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
+          const [supabaseMatches, supabaseTeams] = await Promise.all([
+            LeagueService.getMatchesByLeague(leagueId),
+            LeagueService.getTeamsByLeague(leagueId),
+          ]);
+          const formatted = supabaseMatches.map((m) => {
+            const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
+            const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
+            return {
+              id: m.id,
+              teamA: m.team_a_name,
+              teamB: m.team_b_name,
+              scoreA: m.score_a,
+              scoreB: m.score_b,
+              logoA: teamAObj?.logo_url || '',
+              logoB: teamBObj?.logo_url || '',
+              round: m.label1 || '',
+              week: m.label2 || '',
+              date: m.match_date ? new Date(m.match_date).toISOString().slice(0, 10) : '',
+            };
           });
-          setMatches(items);
+          setMatches(formatted);
           setLoading(false);
-        },
-        (err) => {
-          setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
-          setLoading(false);
+          return true;
         }
-      );
+      } catch (err: any) {
+        console.warn('Supabase fetch failed in AllScoresStandalone, falling back to Firebase:', err);
+      }
+      return false;
+    };
 
-      return () => {
-        unsubscribe();
-        unsubTeams();
-      };
-    } catch (err: any) {
-      setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
-      setLoading(false);
-    }
+    loadFromSupabase().then((loaded) => {
+      if (loaded) return;
+
+      if (!firebaseConfig) {
+        setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const appName = `standalone-scores-${leagueId}-${Date.now()}`;
+        const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+        const db = getDatabase(app);
+        const matchesRef = ref(db, 'matches');
+
+        const unsubTeams = listenToFirebaseTeams(db);
+
+        const unsubscribe = onValue(
+          matchesRef,
+          (snapshot) => {
+            const items: any[] = [];
+            snapshot.forEach((child) => {
+              items.push({ id: child.key, ...child.val() });
+            });
+            setMatches(items);
+            setLoading(false);
+          },
+          (err) => {
+            setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
+            setLoading(false);
+          }
+        );
+
+        return () => {
+          unsubscribe();
+          unsubTeams();
+        };
+      } catch (err: any) {
+        setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
+        setLoading(false);
+      }
+    });
   }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {

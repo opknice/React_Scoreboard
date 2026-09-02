@@ -16,7 +16,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [uploadedUrl, setUploadedUrl] = useState<string>('');
 
-  const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage } = useImageUploadQuota();
+  const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage, loading: quotaLoading } = useImageUploadQuota();
 
   // Cloudinary config (public info - safe to expose)
   const CLOUD_NAME = 'vayh51zb';
@@ -27,6 +27,10 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
     if (selectedFile) {
       if (isQuotaExceeded) {
         setError('คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว กรุณาสมัครสมาชิกเพื่อใช้งานไม่จำกัด');
+        return;
+      }
+      if (quotaLoading) {
+        setError('กำลังตรวจสอบโควต้า กรุณารอสักครู่');
         return;
       }
 
@@ -58,6 +62,10 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   };
 
   const handleUpload = async () => {
+    if (quotaLoading) {
+      setError('กำลังตรวจสอบโควต้า กรุณารอสักครู่');
+      return;
+    }
     if (isQuotaExceeded) {
       setError('คุณใช้โควต้าอัปโหลดรูปภาพครบ 10 รูปแล้ว กรุณาสมัครสมาชิกเพื่อใช้งานไม่จำกัด');
       return;
@@ -149,7 +157,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
           type="file"
           accept="image/*"
           onChange={handleFileChange}
-          disabled={uploading || isQuotaExceeded}
+          disabled={uploading || isQuotaExceeded || quotaLoading}
           style={{
             padding: '8px',
             borderRadius: '4px',
@@ -199,7 +207,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
 
       <button
         onClick={handleUpload}
-        disabled={!file || uploading || isQuotaExceeded}
+        disabled={!file || uploading || isQuotaExceeded || quotaLoading}
         style={{
           padding: '10px 20px',
           backgroundColor: isQuotaExceeded ? '#7f1d1d' : (file && !uploading ? '#4CAF50' : '#666'),

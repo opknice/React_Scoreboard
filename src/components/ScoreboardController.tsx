@@ -1,8 +1,8 @@
 import React, { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
-import { onAuthStateChanged, type User } from 'firebase/auth';
-import { getFirebaseAuth, logoutUser, isSuperAdmin } from '../config/firebaseAuth';
+import type { User } from '@supabase/supabase-js';
+import { onAuthStateChange, logoutUser, isSuperAdmin } from '../services/supabaseAuthService';
 import { useTimer } from '../hooks/useTimer';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 import { useAutoMacros } from '../hooks/useAutoMacros';
@@ -20,12 +20,7 @@ import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
 import { useAutoObsSourceSync } from '../hooks/useAutoObsSourceSync';
 import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
 import { translations } from '../constants/translations';
-import {
-  normalizeColumnName,
-  isFirebaseConfigSheetName,
-  inferExcelMapping,
-} from '../utils/excelParserCore';
-import type { FirebaseSaveTarget, TeamColorRow } from '../utils/excelParserCore';
+import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
 import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
@@ -71,14 +66,11 @@ const PresetTimeModal = lazy(() => import('./PresetTimeModal'));
 const TeamSelectModal = lazy(() => import('./TeamSelectModal'));
 const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
 const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
-const ExcelUrlModal = lazy(() => import('./ExcelUrlModal'));
-
-export interface SavedExcelUrl {
-  id: string;
-  name: string;
-  url: string;
-  createdAt: number;
-}
+const LeagueManagementModal = lazy(() => import('./LeagueManagementModal'));
+import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
+import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
+import type { SelectableTeam } from './TeamSelectModal';
+import UserAvatar from './UserAvatar';
 
 function renderTeamName(teamName: string) {
   return teamName.split('/').map((part, index) => (
@@ -115,30 +107,7 @@ export default function ScoreboardController() {
   const [currentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
   const [logoFolderPath, setLogoFolderPath] = useState<string>(() => localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
   const [matchIdInput, setMatchIdInput] = useState<number>(1);
-  const [leagueName, setLeagueName] = useState<string>('Football Scoreboard Controller');
-  const [excelData, setExcelData] = useState<any[][]>([]);
-  const [excelMapping, setExcelMapping] = useState<Record<string, string>>({});
-  const [showUrlModal, setShowUrlModal] = useState<boolean>(false);
-  const [excelUrlInput, setExcelUrlInput] = useState<string>(() => localStorage.getItem('lastExcelUrl') || '');
-  const [excelUrlNameInput, setExcelUrlNameInput] = useState<string>('');
-  const [savedExcelUrls, setSavedExcelUrls] = useState<SavedExcelUrl[]>(() => {
-    try {
-      const saved = localStorage.getItem('savedExcelUrls');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [isLoadingUrl, setIsLoadingUrl] = useState<boolean>(false);
-  const excelRequestRef = useRef(0);
-  const excelFetchAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => () => {
-    excelRequestRef.current += 1;
-    excelFetchAbortRef.current?.abort();
-  }, []);
-  const [firebaseTargets, setFirebaseTargets] = useState<FirebaseSaveTarget[]>([]);
-  const [teamSheetData, setTeamSheetData] = useState<TeamColorRow[]>([]);
+  const [firebaseTargets] = useState<FirebaseSaveTarget[]>([]);
   const [teamColorsMemory, setTeamColorsMemory] = useState<Record<string, { color1: string; color2: string }>>(() => {
     const saved = localStorage.getItem('teamColors');
     return saved ? JSON.parse(saved) : {};
@@ -157,9 +126,11 @@ export default function ScoreboardController() {
 
   useEffect(() => {
     try {
-      const auth = getFirebaseAuth();
-      const unsubscribe = onAuthStateChanged(auth, (usr) => {
-        setCurrentUser(usr);
+      const unsubscribe = onAuthStateChange((event, session) => {
+        if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
+          return;
+        }
+        setCurrentUser(session?.user ?? null);
       });
       return () => unsubscribe();
     } catch {
@@ -177,11 +148,11 @@ export default function ScoreboardController() {
     });
   };
 
-  const getTeamLogo = (teamName: string) => {
+  const getTeamLogo = useCallback((teamName: string) => {
     if (!teamName) return '';
     const cleanKey = teamName.trim().toLowerCase();
     return teamLogosMemory[cleanKey] || '';
-  };
+  }, [teamLogosMemory]);
 
   const {
     nameA, setNameA,
@@ -260,6 +231,8 @@ export default function ScoreboardController() {
   const [scoreObsMessage, setScoreObsMessage] = useState('');
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
+  const [showLeagueManagementModal, setShowLeagueManagementModal] = useState<boolean>(false);
+  const [isMatchLoaded, setIsMatchLoaded] = useState<boolean>(() => localStorage.getItem('isMatchLoaded') === 'true');
 
   // Custom Preset Time Input
   const [customTimeMinutes, setCustomTimeMinutes] = useState<number>(0);
@@ -298,9 +271,6 @@ export default function ScoreboardController() {
     }
   }, [logoSettings]);
 
-  // --- Refs ---
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const trans = translations[currentLang] || translations.en;
 
   const { activeDb, getOrCreateFirebaseApp } = useScoreboardFirebase({
@@ -308,37 +278,6 @@ export default function ScoreboardController() {
     selectedTargetId: selectedQuickLeagueId,
     onTeamsUpdated: () => setTeamsCacheVersion((previous) => previous + 1),
   });
-
-  const getMappedValue = useCallback((row: any[], fieldKey: string, currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
-    const columnName = currentMapping[fieldKey];
-    if (!columnName) return '';
-    const idx = currentHeaders.indexOf(columnName);
-    return idx >= 0 ? row[idx] ?? '' : '';
-  }, [excelMapping, excelData]);
-
-  const getMatchIdValue = useCallback((row: any[], currentMapping = excelMapping, currentHeaders = excelData[0] || []) => {
-    const mapped = getMappedValue(row, 'matchId', currentMapping, currentHeaders);
-    if (mapped !== '') return mapped;
-    return row[0] ?? '';
-  }, [getMappedValue, excelMapping, excelData]);
-
-  // Compute list of unique team names from Excel and Team Sheet safely
-  const allUniqueTeams = useMemo(() => {
-    if (!excelData.length && !teamSheetData.length) return [];
-    const headers = excelData[0] || [];
-    const mapping = Object.keys(excelMapping).length ? excelMapping : inferExcelMapping(headers);
-
-    const matchTeams = excelData.slice(1).flatMap((row) => [
-      getMappedValue(row, 'teamA', mapping, headers),
-      getMappedValue(row, 'teamB', mapping, headers)
-    ]);
-
-    const sheetTeams = teamSheetData.map((t) => t.team);
-
-    return Array.from(new Set([...sheetTeams, ...matchTeams]))
-      .map((name) => String(name || '').trim())
-      .filter((name) => name.length > 0);
-  }, [excelData, excelMapping, teamSheetData, getMappedValue]);
 
   // --- Toast Function ---
   const triggerToast = useCallback((message: string, type = 'info') => {
@@ -486,9 +425,27 @@ export default function ScoreboardController() {
     notify: triggerToast,
   });
 
+  const activeUserEmail = currentUser?.email || authAccess?.email || '';
+  const supabaseLeague = useSupabaseLeague(triggerToast, activeUserEmail);
+  const [selectedLeagueIdToLoad, setSelectedLeagueIdToLoad] = useState<string>(() => supabaseLeague.activeLeagueId || '');
+
+  useEffect(() => {
+    if (supabaseLeague.activeLeagueId) {
+      setSelectedLeagueIdToLoad(supabaseLeague.activeLeagueId);
+    }
+  }, [supabaseLeague.activeLeagueId]);
+
+  // Compute list of unique team names from Supabase teams
+  const allUniqueTeams = useMemo(() => {
+    return supabaseLeague.teams.map((t) => t.name).filter(Boolean);
+  }, [supabaseLeague.teams]);
+
   // --- 2-Step Setup Onboarding Gate Checks ---
   const isStep1Complete = videoFolder.isConnected;
-  const isStep2Complete = excelData.length > 0 || firebaseTargets.length > 0;
+  const isStep2Complete =
+    isMatchLoaded ||
+    Boolean(supabaseLeague.activeLeagueId) ||
+    supabaseLeague.matches.length > 0;
   const isSetupComplete = isStep1Complete && isStep2Complete;
 
   // --- Prevent spacebar default behavior (except inside inputs/textareas) ---
@@ -657,284 +614,109 @@ export default function ScoreboardController() {
     localStorage.setItem('teamColors', JSON.stringify(updated));
   };
 
-  const getTeamColors = (teamName: string) => {
+  const getTeamColors = useCallback((teamName: string) => {
     if (!teamName) return { color1: '#ffffff', color2: '#ffffff' };
     const encoded = encodeURIComponent(teamName);
     return teamColorsMemory[encoded] || { color1: '#ffffff', color2: '#ffffff' };
-  };
+  }, [teamColorsMemory]);
 
-  const getTeamColorsFromSheet = (teamName: string) => {
-    if (!teamSheetData.length || !teamName) return null;
-    const row = teamSheetData.find(
-      (r) => normalizeColumnName(r.team) === normalizeColumnName(teamName)
-    );
-    if (!row) return null;
-    return {
-      color1: row.color1 || '#ffffff',
-      color2: row.color2 || '#ffffff'
-    };
-  };
-
-  // --- Apply team from Team Sheet selection ---
-  const applyTeamFromSheet = (teamName: string, target: 'A' | 'B') => {
-    const sheetColors = getTeamColorsFromSheet(teamName) || getTeamColors(teamName);
-    const savedCloudLogo = getTeamLogo(teamName);
-    const logoFile = savedCloudLogo || `${teamName}.png`;
+  // --- Apply team from Supabase selection ---
+  const applyTeamFromSupabase = (team: SelectableTeam, target: 'A' | 'B') => {
+    const primaryColor = team.color_primary || '#ffffff';
+    const secondaryColor = team.color_secondary || '#000000';
+    const logoSrc = team.logo_url || getTeamLogo(team.name) || team.name;
 
     if (target === 'A') {
-      setNameA(teamName);
-      setColorA1(sheetColors.color1);
-      setColorA2(sheetColors.color2);
-      setLogoA(logoFile);
-      obs.setText('name_team_a', teamName.replace(/\//g, '\n'));
-      obs.setImage('logo_team_a', logoFile, logoFolderPath);
-      obs.setSourceColor('Color_Team_A', sheetColors.color1);
-      obs.setSourceColor('Color_Team_A_2', sheetColors.color2);
+      setNameA(team.name);
+      setColorA1(primaryColor);
+      setColorA2(secondaryColor);
+      setLogoA(logoSrc);
+      obs.setText('name_team_a', team.name.replace(/\//g, '\n'));
+      obs.setImage('logo_team_a', logoSrc, logoFolderPath);
+      obs.setSourceColor('Color_Team_A', primaryColor);
+      obs.setSourceColor('Color_Team_A_2', secondaryColor);
     } else {
-      setNameB(teamName);
-      setColorB1(sheetColors.color1);
-      setColorB2(sheetColors.color2);
-      setLogoB(logoFile);
-      obs.setText('name_team_b', teamName.replace(/\//g, '\n'));
-      obs.setImage('logo_team_b', logoFile, logoFolderPath);
-      obs.setSourceColor('Color_Team_B', sheetColors.color1);
-      obs.setSourceColor('Color_Team_B_2', sheetColors.color2);
+      setNameB(team.name);
+      setColorB1(primaryColor);
+      setColorB2(secondaryColor);
+      setLogoB(logoSrc);
+      obs.setText('name_team_b', team.name.replace(/\//g, '\n'));
+      obs.setImage('logo_team_b', logoSrc, logoFolderPath);
+      obs.setSourceColor('Color_Team_B', primaryColor);
+      obs.setSourceColor('Color_Team_B_2', secondaryColor);
     }
     setShowTeamSelectModal(false);
     setTeamSelectSearch('');
-    triggerToast(`เลือกทีม ${teamName} แล้ว`, 'success');
+    triggerToast(`เลือกทีม ${team.name} แล้ว`, 'success');
   };
 
   // --- Logo Preview Logic ---
-  const getLogoSrc = (logoName: string, teamName?: string) => {
+  const getLogoSrc = useCallback((logoName: string, teamName?: string) => {
+    const rawLogo = (logoName || '').trim();
+    if (rawLogo.startsWith('http://') || rawLogo.startsWith('https://')) {
+      return rawLogo;
+    }
+    const cleanTeam = (teamName || '').trim().toLowerCase();
+    const foundTeam = supabaseLeague.teams.find(
+      (t) =>
+        (cleanTeam && t.name.toLowerCase() === cleanTeam) ||
+        (rawLogo && t.name.toLowerCase() === rawLogo.toLowerCase()) ||
+        t.id === rawLogo
+    );
+    if (foundTeam?.logo_url) {
+      return foundTeam.logo_url;
+    }
     return resolveLogoSrc(logoName, teamName, logoFolderPath);
-  };
+  }, [supabaseLeague.teams, logoFolderPath]);
 
-  // --- Excel Loading & Parsing Logic ---
-  const processExcelBuffer = async (
-    buffer: ArrayBuffer,
-    fileName: string,
-    requestId = excelRequestRef.current,
-  ) => {
-    try {
-      const [xlsxModule, parser] = await Promise.all([
-        import('xlsx'),
-        import('../utils/excelParser'),
-      ]);
-      const XLSX = 'default' in xlsxModule ? xlsxModule.default : xlsxModule;
-      const data = new Uint8Array(buffer);
-      const workbook = XLSX.read(data, { type: 'array' });
-
-      const preferredNames = ['matching', 'matches', 'match'];
-      const sheetName =
-        workbook.SheetNames.find((name) => preferredNames.includes(normalizeColumnName(name))) ||
-        workbook.SheetNames.find((name) => !isFirebaseConfigSheetName(name)) ||
-        workbook.SheetNames[0];
-
-      const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '', raw: false });
-      const headers = rows[0] || [];
-      const mapping = inferExcelMapping(headers);
-      const targets = parser.parseFirebaseSaveTargets(workbook);
-
-      const colors = await parser.loadTeamSheetWithColors(buffer);
-      if (requestId !== excelRequestRef.current) return;
-
-      // Commit all parsed data to state
-      setExcelData(rows);
-      setExcelMapping(mapping);
-      setTeamSheetData(colors);
-      setFirebaseTargets(targets);
-      if (targets.length > 0) {
-        setSelectedQuickLeagueId(targets[0].id);
-      }
-
-      const lName = targets.length > 0 ? targets[0].name : fileName.replace(/\.[^/.]+$/, '');
-      setLeagueName(lName);
-      document.title = `${lName} - Scoreboard Controller`;
-
-      // Auto-load match ID 1 with fresh data (rows, mapping, colors all available)
-      applyMatch(1, rows, colors);
-      triggerToast(`โหลดข้อมูล ${lName} เรียบร้อยแล้ว`, 'success');
-    } catch (err: any) {
-      if (requestId !== excelRequestRef.current) return;
-      triggerToast(err.message || 'Error parsing Excel file', 'error');
-      throw err;
-    }
-  };
-
-  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const requestId = ++excelRequestRef.current;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const buffer = event.target?.result as ArrayBuffer;
-      if (buffer && requestId === excelRequestRef.current) {
-        processExcelBuffer(buffer, file.name, requestId).catch(() => { });
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Helper to format Google Sheets URL if needed
-  const formatExcelUrl = (urlStr: string): string => {
-    let cleanUrl = urlStr.trim();
-    if (cleanUrl.includes('docs.google.com/spreadsheets/d/')) {
-      const match = cleanUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-      if (match && match[1]) {
-        const sheetId = match[1];
-        cleanUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=xlsx`;
+  // --- Load match data by ID from Supabase ---
+  const applyMatch = (matchId = matchIdInput) => {
+    if (supabaseLeague.matches.length > 0) {
+      const sbMatch = supabaseLeague.matches.find((m) => m.match_number === matchId);
+      if (sbMatch) {
+        applyMatchFromSupabase(sbMatch);
+        return;
       }
     }
-    return cleanUrl;
+    triggerToast(`ไม่พบข้อมูลแมตช์ #${matchId} ในลีกปัจจุบัน`, 'error');
   };
 
-  const handleExcelFromUrl = async (urlToFetch = excelUrlInput) => {
-    if (!urlToFetch.trim()) {
-      triggerToast('กรุณากรอก URL ลิงก์ไฟล์ Excel หรือ Google Sheets', 'error');
-      return;
-    }
+  // --- Load match from Supabase into scoreboard ---
+  const applyMatchFromSupabase = useCallback((match: SupabaseMatch, customTeams?: SupabaseTeam[]) => {
+    setIsMatchLoaded(true);
+    localStorage.setItem('isMatchLoaded', 'true');
 
-    const requestId = ++excelRequestRef.current;
-    excelFetchAbortRef.current?.abort();
-    const abortController = new AbortController();
-    excelFetchAbortRef.current = abortController;
-    setIsLoadingUrl(true);
-    try {
-      const formattedUrl = formatExcelUrl(urlToFetch);
-      const response = await fetch(formattedUrl, { signal: abortController.signal });
-      if (!response.ok) {
-        throw new Error(`ไม่สามารถดาวน์โหลดไฟล์ได้ (HTTP ${response.status}) กรุณาเช็คสิทธิ์ไฟล์`);
-      }
-      const buffer = await response.arrayBuffer();
+    const availableTeams = customTeams || supabaseLeague.teams;
+    const teamAName = match.team_a_name || 'Team A';
+    const teamBName = match.team_b_name || 'Team B';
 
-      let fileName = 'Excel_URL.xlsx';
-      const disposition = response.headers.get('content-disposition');
-      if (disposition && disposition.includes('filename=')) {
-        const match = disposition.match(/filename="?([^";]+)"?/);
-        if (match && match[1]) fileName = match[1];
-      } else {
-        try {
-          const urlPath = new URL(formattedUrl).pathname;
-          const lastSegment = urlPath.split('/').pop();
-          if (lastSegment && lastSegment.includes('.')) fileName = lastSegment;
-        } catch {
-          // Fallback
-        }
-      }
-
-      await processExcelBuffer(buffer, fileName, requestId);
-      if (requestId !== excelRequestRef.current) return;
-      localStorage.setItem('lastExcelUrl', urlToFetch.trim());
-      setShowUrlModal(false);
-    } catch (err: any) {
-      if (abortController.signal.aborted || requestId !== excelRequestRef.current) return;
-      console.error('Error fetching Excel from URL:', err);
-      triggerToast(err.message || 'เกิดข้อผิดพลาดในการโหลดไฟล์จาก URL (อาจติด CORS หรือสิทธิ์ไฟล์)', 'error');
-    } finally {
-      if (excelFetchAbortRef.current === abortController) {
-        excelFetchAbortRef.current = null;
-        setIsLoadingUrl(false);
-      }
-    }
-  };
-
-  // --- Saved URL Presets Logic ---
-  const handleSaveUrlPreset = () => {
-    const url = excelUrlInput.trim();
-    if (!url) {
-      triggerToast('กรุณากรอก URL ลิงก์ไฟล์ก่อนบันทึก', 'error');
-      return;
-    }
-    const name = excelUrlNameInput.trim() || `Excel Link (${new Date().toLocaleDateString('th-TH')})`;
-
-    const newPreset: SavedExcelUrl = {
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
-      name,
-      url,
-      createdAt: Date.now()
-    };
-
-    const updatedList = [newPreset, ...savedExcelUrls.filter((item) => item.url !== url)];
-    setSavedExcelUrls(updatedList);
-    localStorage.setItem('savedExcelUrls', JSON.stringify(updatedList));
-    setExcelUrlNameInput('');
-    triggerToast(`บันทึก "${name}" เรียบร้อยแล้ว`, 'success');
-  };
-
-  const handleDeleteUrlPreset = (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    const updatedList = savedExcelUrls.filter((item) => item.id !== id);
-    setSavedExcelUrls(updatedList);
-    localStorage.setItem('savedExcelUrls', JSON.stringify(updatedList));
-    triggerToast('ลบรายการบันทึกเรียบร้อยแล้ว', 'info');
-  };
-
-  const handleSelectUrlPreset = (preset: SavedExcelUrl) => {
-    setExcelUrlInput(preset.url);
-    if (!excelUrlNameInput) {
-      setExcelUrlNameInput(preset.name);
-    }
-    handleExcelFromUrl(preset.url);
-  };
-
-  // --- Load match data by ID ---
-  // freshTeamSheet: pass colors directly when calling right after Excel load (before state updates)
-  const applyMatch = (matchId = matchIdInput, customRows = excelData, freshTeamSheet?: TeamColorRow[]) => {
-    if (!customRows.length) {
-      triggerToast(trans.toastLoadFileFirst, 'error');
-      return;
-    }
-
-    const headers = customRows[0] || [];
-    const mapping = Object.keys(excelMapping).length ? excelMapping : inferExcelMapping(headers);
-
-    const matchRow = customRows.slice(1).find((r) => {
-      const idVal = parseInt(getMatchIdValue(r, mapping, headers), 10);
-      return idVal === matchId;
-    });
-
-    if (!matchRow) {
-      triggerToast(`${trans.toastMatchNotFound} ${matchId}`, 'error');
-      return;
-    }
-
-    const teamAName = getMappedValue(matchRow, 'teamA', mapping, headers) || trans.teamA;
-    const teamBName = getMappedValue(matchRow, 'teamB', mapping, headers) || trans.teamB;
+    const teamAObj = availableTeams.find(
+      (t) => t.id === match.team_a_id || t.name.toLowerCase() === teamAName.toLowerCase()
+    );
+    const teamBObj = availableTeams.find(
+      (t) => t.id === match.team_b_id || t.name.toLowerCase() === teamBName.toLowerCase()
+    );
 
     setNameA(teamAName);
     setNameB(teamBName);
     setScoreA(0);
     setScoreB(0);
     timerHook.resetToZero();
+    setMatchIdInput(match.match_number);
 
-    // Logos - Fallback to saved team logo or team name so getLogoSrc resolves Cloud/Local logo immediately
-    const logoAFile = getMappedValue(matchRow, 'logoA', mapping, headers);
-    const logoBFile = getMappedValue(matchRow, 'logoB', mapping, headers);
-    const resolvedLogoA = logoAFile || getTeamLogo(teamAName) || teamAName;
-    const resolvedLogoB = logoBFile || getTeamLogo(teamBName) || teamBName;
+    // Resolve logos from Supabase teams > saved logos > team name
+    const resolvedLogoA = teamAObj?.logo_url || getTeamLogo(teamAName) || teamAName;
+    const resolvedLogoB = teamBObj?.logo_url || getTeamLogo(teamBName) || teamBName;
     setLogoA(resolvedLogoA);
     setLogoB(resolvedLogoB);
 
-    // Apply colors: freshTeamSheet (on first load) > state teamSheetData > saved colors > default
-    const teamSheet = freshTeamSheet ?? teamSheetData;
-    const getSheetColors = (name: string) => {
-      if (!teamSheet.length || !name) return null;
-      const row = teamSheet.find((r) => normalizeColumnName(r.team) === normalizeColumnName(name));
-      return row ? { color1: row.color1 || '#ffffff', color2: row.color2 || '#ffffff' } : null;
-    };
-
-    const sheetColorsA = getSheetColors(teamAName);
-    const sheetColorsB = getSheetColors(teamBName);
+    // Resolve colors from Supabase teams > saved team colors > default
     const savedColorsA = getTeamColors(teamAName);
     const savedColorsB = getTeamColors(teamBName);
-
-    const colA1 = sheetColorsA?.color1 || savedColorsA.color1 || '#ffffff';
-    const colA2 = sheetColorsA?.color2 || savedColorsA.color2 || '#000000';
-    const colB1 = sheetColorsB?.color1 || savedColorsB.color1 || '#ffffff';
-    const colB2 = sheetColorsB?.color2 || savedColorsB.color2 || '#000000';
+    const colA1 = teamAObj?.color_primary || savedColorsA.color1 || '#ffffff';
+    const colA2 = teamAObj?.color_secondary || savedColorsA.color2 || '#000000';
+    const colB1 = teamBObj?.color_primary || savedColorsB.color1 || '#ffffff';
+    const colB2 = teamBObj?.color_secondary || savedColorsB.color2 || '#000000';
 
     setColorA1(colA1);
     setColorA2(colA2);
@@ -944,16 +726,16 @@ export default function ScoreboardController() {
     // Update OBS
     obs.setText('name_team_a', teamAName.replace(/\//g, '\n'));
     obs.setText('name_team_b', teamBName.replace(/\//g, '\n'));
-    obs.setImage('logo_team_a', logoAFile, logoFolderPath);
-    obs.setImage('logo_team_b', logoBFile, logoFolderPath);
+    obs.setImage('logo_team_a', resolvedLogoA, logoFolderPath);
+    obs.setImage('logo_team_b', resolvedLogoB, logoFolderPath);
     obs.setSourceColor('Color_Team_A', colA1);
     obs.setSourceColor('Color_Team_A_2', colA2);
     obs.setSourceColor('Color_Team_B', colB1);
     obs.setSourceColor('Color_Team_B_2', colB2);
 
-    const l1 = getMappedValue(matchRow, 'label1', mapping, headers) || '';
-    const l2 = getMappedValue(matchRow, 'label2', mapping, headers) || '';
-    const l3 = getMappedValue(matchRow, 'label3', mapping, headers) || '';
+    const l1 = match.label1 || '';
+    const l2 = match.label2 || '';
+    const l3 = match.label3 || '';
     setLabel1(l1);
     setLabel2(l2);
     setLabel3(l3);
@@ -961,8 +743,53 @@ export default function ScoreboardController() {
     obs.setText('label_2', l2);
     obs.setText('label_3', l3);
 
-    triggerToast(`${trans.toastLoaded} ${matchId}`, 'success');
-  };
+    triggerToast(`โหลดแมตช์ #${match.match_number} (${teamAName} vs ${teamBName}) จาก Supabase สำเร็จ`, 'success');
+  }, [
+    supabaseLeague.teams,
+    setColorA1,
+    setColorA2,
+    setColorB1,
+    setColorB2,
+    setLabel1,
+    setLabel2,
+    setLabel3,
+    setLogoA,
+    setLogoB,
+    setNameA,
+    setNameB,
+    setScoreA,
+    setScoreB,
+    getTeamColors,
+    getTeamLogo,
+    logoFolderPath,
+    obs,
+    timerHook,
+    triggerToast,
+  ]);
+
+  const handleLoadLeague = useCallback(async () => {
+    if (!selectedLeagueIdToLoad) {
+      triggerToast('กรุณาเลือกลีกก่อนกดโหลด', 'error');
+      return;
+    }
+    supabaseLeague.selectLeague(selectedLeagueIdToLoad);
+    const targetLeague = supabaseLeague.leagues.find((l) => l.id === selectedLeagueIdToLoad);
+    try {
+      const { LeagueService } = await import('../services/leagueService');
+      const [teamsData, matchesData] = await Promise.all([
+        LeagueService.getTeamsByLeague(selectedLeagueIdToLoad),
+        LeagueService.getMatchesByLeague(selectedLeagueIdToLoad),
+      ]);
+      if (matchesData.length > 0) {
+        applyMatchFromSupabase(matchesData[0], teamsData);
+        triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว (พบ ${matchesData.length} แมตช์)`, 'success');
+      } else {
+        triggerToast(`เลือกลีก "${targetLeague?.name || ''}" แล้ว (ยังไม่มีแมตช์ในลีก)`, 'info');
+      }
+    } catch {
+      triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว`, 'success');
+    }
+  }, [selectedLeagueIdToLoad, supabaseLeague, applyMatchFromSupabase, triggerToast]);
 
   // --- Swap Teams ---
   const swapTeams = () => {
@@ -1037,6 +864,53 @@ export default function ScoreboardController() {
     }
   };
 
+  // --- Save match results to Supabase ---
+  const handleSaveMatchToSupabase = async () => {
+    // 1. Try to find match by number or active league match
+    const currentMatch =
+      supabaseLeague.matches.find((m) => m.match_number === matchIdInput) ||
+      supabaseLeague.matches.find((m) => m.team_a_name === nameA && m.team_b_name === nameB);
+
+    if (currentMatch) {
+      try {
+        await supabaseLeague.updateMatch(currentMatch.id, {
+          score_a: scoreA,
+          score_b: scoreB,
+          status: 'finished',
+        });
+        triggerToast(`✓ บันทึกผลแมตช์ #${currentMatch.match_number} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
+      } catch (err: any) {
+        triggerToast(`บันทึกผลไม่สำเร็จ: ${err.message}`, 'error');
+      }
+      return;
+    }
+
+    // 2. If active league exists but match not found, create new finished match
+    if (supabaseLeague.activeLeagueId) {
+      try {
+        await supabaseLeague.createMatch({
+          league_id: supabaseLeague.activeLeagueId,
+          match_number: matchIdInput,
+          team_a_name: nameA,
+          team_b_name: nameB,
+          score_a: scoreA,
+          score_b: scoreB,
+          status: 'finished',
+          label1: label1 || 'บันทึกผลการแข่งขัน',
+          label2: label2 || '',
+          label3: label3 || '',
+          match_date: new Date().toISOString(),
+        });
+        triggerToast(`✓ สร้างและบันทึกผลแมตช์ #${matchIdInput} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
+      } catch (err: any) {
+        triggerToast(`บันทึกผลไม่สำเร็จ: ${err.message}`, 'error');
+      }
+      return;
+    }
+
+    triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ Supabase ก่อนบันทึกผล', 'error');
+  };
+
   // --- Copy Details announcement template ---
   const getThaiDateString = () => {
     const now = new Date();
@@ -1086,19 +960,46 @@ export default function ScoreboardController() {
   };
 
   const handleCopyOverlayUrl = (viewType: string, standaloneFile = '') => {
-    const target = firebaseTargets.find((t) => t.id === selectedQuickLeagueId);
-    if (!target) {
-      triggerToast('กรุณาโหลดไฟล์ Excel ที่มี Firebase Config ก่อน', 'error');
+    const host = window.location.origin;
+    let urlString = '';
+
+    // 1. Check if Supabase league is active
+    if (supabaseLeague.activeLeagueId) {
+      const leagueId = supabaseLeague.activeLeagueId;
+      const leagueTitle = encodeURIComponent(supabaseLeague.activeLeague?.name || 'League');
+
+      if (standaloneFile === 'league-table' || viewType === 'table') {
+        urlString = `${host}/league-table?league=${leagueId}&title=${leagueTitle}`;
+      } else if (standaloneFile === 'all-scores' || viewType === 'results') {
+        urlString = `${host}/all-scores?league=${leagueId}&title=${leagueTitle}`;
+      } else if (standaloneFile === 'all-score-combined' || viewType === 'combined') {
+        urlString = `${host}/all-score-combined?league=${leagueId}&title=${leagueTitle}`;
+      } else {
+        urlString = `${host}/overlay?league=${leagueId}&view=${viewType}&title=${leagueTitle}`;
+        if (viewType === 'ticker') {
+          urlString += `&date=today&speed=${tickerSpeed}`;
+        }
+      }
+
+      navigator.clipboard
+        .writeText(urlString)
+        .then(() => triggerToast('✓ คัดลอก URL เรียบร้อยแล้ว (Supabase)', 'success'))
+        .catch(() => triggerToast(trans.toastCopyFailed, 'error'));
       return;
     }
 
-    const host = window.location.origin;
-    let urlString = '';
-    if (standaloneFile === 'league-table') {
+    // 2. Fallback to Firebase
+    const target = firebaseTargets.find((t) => t.id === selectedQuickLeagueId) || firebaseTargets[0];
+    if (!target) {
+      triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ (Supabase / Excel) ก่อนคัดลอก URL', 'error');
+      return;
+    }
+
+    if (standaloneFile === 'league-table' || viewType === 'table') {
       urlString = `${host}/league-table?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
-    } else if (standaloneFile === 'all-scores') {
+    } else if (standaloneFile === 'all-scores' || viewType === 'results') {
       urlString = `${host}/all-scores?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
-    } else if (standaloneFile === 'all-score-combined') {
+    } else if (standaloneFile === 'all-score-combined' || viewType === 'combined') {
       urlString = `${host}/all-score-combined?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
     } else {
       urlString = `${host}/overlay?league=${target.id}&view=${viewType}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
@@ -1236,7 +1137,7 @@ export default function ScoreboardController() {
       {/* Header */}
       <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 14px', flexWrap: 'wrap', gap: '8px' }}>
         <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-color)' }}>
-          {leagueName}
+          {supabaseLeague.activeLeague?.name || 'Football Scoreboard Controller'}
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1276,9 +1177,7 @@ export default function ScoreboardController() {
           </div>
           {currentUser && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255, 255, 255, 0.05)', padding: '4px 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-              {currentUser.photoURL && (
-                <img src={currentUser.photoURL} alt="" style={{ width: '22px', height: '22px', borderRadius: '50%' }} />
-              )}
+              <UserAvatar user={currentUser} size={22} />
               <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
                 {currentUser.email}
               </span>
@@ -1320,15 +1219,6 @@ export default function ScoreboardController() {
           )}
         </div>
       </div>
-
-      {/* Hidden File Input for Excel Import */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        accept=".xlsx, .xls"
-        onChange={handleExcelUpload}
-      />
 
       {/* 2-Step Setup Onboarding Wizard Gate */}
       {!isSetupComplete ? (
@@ -1399,7 +1289,7 @@ export default function ScoreboardController() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <span style={{ fontWeight: 700, fontSize: '1rem', color: '#f8fafc' }}>
-                    2️⃣ นำเข้าตารางแข่งขัน
+                    2️⃣ เลือก/สร้างลีกการแข่งขัน (Supabase)
                   </span>
                   <span style={{
                     fontSize: '0.75rem',
@@ -1409,31 +1299,22 @@ export default function ScoreboardController() {
                     color: isStep2Complete ? '#6ee7b7' : '#fca5a5',
                     fontWeight: 600
                   }}>
-                    {isStep2Complete ? '🟢 นำเข้าแล้ว' : '🔴 ยังไม่นำเข้า'}
+                    {isStep2Complete ? '🟢 พร้อมใช้งาน' : '🔴 ยังไม่เลือกลีก'}
                   </span>
                 </div>
                 <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: 0, lineHeight: 1.4 }}>
-                  นำเข้าไฟล์ตารางแข่งขัน Excel (.xlsx) หรือดึงจาก URL / Google Sheets
+                  {supabaseLeague.activeLeague ? `ลีกปัจจุบัน: ${supabaseLeague.activeLeague.name}` : 'เลือกหรือสร้างลีก รายชื่อทีม และตารางการแข่งขันผ่านระบบ Supabase'}
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  type="button"
-                  className="btn-success"
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                >
-                  <i className="fas fa-file-excel"></i> ไฟล์ Excel
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => setShowUrlModal(true)}
-                  style={{ flex: 1, padding: '8px 10px', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                >
-                  <i className="fas fa-link"></i> จาก URL
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setShowLeagueManagementModal(true)}
+                style={{ width: '100%', padding: '10px 14px', fontSize: '0.88rem', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', cursor: 'pointer' }}
+              >
+                <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
+                <span>{supabaseLeague.activeLeague ? '🏆 จัดการลีก / สลับคู่แข่งขัน' : '🏆 จัดการลีก & ตารางแข่ง (Supabase)'}</span>
+              </button>
             </div>
           </div>
 
@@ -1446,34 +1327,93 @@ export default function ScoreboardController() {
           {/* Controls Bar */}
           <div className="card" style={{ padding: '8px 12px' }}>
             <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
-              <div className="row" style={{ marginBottom: 0, gap: '6px' }}>
-                <button
-                  className="btn-success btn-sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  title="นำเข้าตารางแข่งขันจากไฟล์ Excel (.xlsx, .xls)"
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
-                >
-                  <i className="fas fa-file-excel" style={{ fontSize: '0.9rem' }}></i>
-                  <span>นำเข้าไฟล์ Excel</span>
-                </button>
+              <div className="row" style={{ marginBottom: 0, gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <button
                   className="btn-primary btn-sm"
-                  onClick={() => setShowUrlModal(true)}
-                  title="ดึงข้อมูลตารางแข่งขันจาก URL หรือ Google Sheets"
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
+                  onClick={() => setShowLeagueManagementModal(true)}
+                  title="จัดการข้อมูลลีก รายชื่อทีม และตารางการแข่งขันผ่าน Supabase"
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', fontWeight: 600 }}
                 >
-                  <i className="fas fa-link" style={{ fontSize: '0.9rem' }}></i>
-                  <span>นำเข้าจาก URL</span>
+                  <i className="fas fa-trophy" style={{ fontSize: '0.9rem', color: '#f59e0b' }}></i>
+                  <span>🏆 จัดการลีก</span>
                 </button>
+
+                {/* League Selector Dropdown */}
+                <select
+                  style={{
+                    padding: '5px 8px',
+                    fontSize: '0.82rem',
+                    background: '#0f172a',
+                    color: '#38bdf8',
+                    border: '1px solid #334155',
+                    borderRadius: '4px',
+                    minWidth: '150px',
+                    maxWidth: '220px',
+                    fontWeight: 600
+                  }}
+                  value={selectedLeagueIdToLoad}
+                  onChange={(e) => setSelectedLeagueIdToLoad(e.target.value)}
+                  title="เลือกลีกจากฐานข้อมูล Supabase"
+                >
+                  <option value="">-- โปรดเลือกลีก --</option>
+                  {supabaseLeague.leagues.map((league) => (
+                    <option key={league.id} value={league.id}>
+                      {league.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Load Button */}
                 <button
-                  className="btn-success btn-sm"
-                  onClick={() => setShowTeamLogosManagerModal(true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                  title="จัดการและบันทึกโลโก้ทีมทั้งหมดลง Firebase Database ครั้งเดียว"
+                  type="button"
+                  className="btn-primary btn-sm"
+                  onClick={() => void handleLoadLeague()}
+                  disabled={!selectedLeagueIdToLoad || supabaseLeague.loading}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: '#059669',
+                    borderColor: '#059669',
+                    fontWeight: 600,
+                    cursor: selectedLeagueIdToLoad ? 'pointer' : 'not-allowed'
+                  }}
+                  title="โหลดข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
                 >
-                  <i className="fas fa-shield-halved" style={{ fontSize: '0.9rem' }}></i>
-                  <span>🛡️ จัดการโลโก้ประจำลีก</span>
+                  <i className={supabaseLeague.loading ? "fas fa-spinner fa-spin" : "fas fa-download"}></i>
+                  <span>{supabaseLeague.loading ? 'กำลังโหลด...' : 'Load'}</span>
                 </button>
+
+                {/* Matches Dropdown (shown when matches exist) */}
+                {supabaseLeague.matches.length > 0 && (
+                  <select
+                    style={{
+                      padding: '5px 8px',
+                      fontSize: '0.82rem',
+                      background: '#1e293b',
+                      color: '#f8fafc',
+                      border: '1px solid #475569',
+                      borderRadius: '4px',
+                      maxWidth: '250px'
+                    }}
+                    value={matchIdInput}
+                    onChange={(e) => {
+                      const num = parseInt(e.target.value, 10);
+                      if (num) {
+                        setMatchIdInput(num);
+                        const matchObj = supabaseLeague.matches.find((m) => m.match_number === num);
+                        if (matchObj) applyMatchFromSupabase(matchObj);
+                      }
+                    }}
+                    title="เลือกคู่แข่งขัน"
+                  >
+                    {supabaseLeague.matches.map((m) => (
+                      <option key={m.id} value={m.match_number}>
+                        #{m.match_number}: {m.team_a_name} vs {m.team_b_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="row" style={{ marginBottom: 0, gap: '4px' }}>
@@ -1572,7 +1512,7 @@ export default function ScoreboardController() {
                   </div>
                 </div>
 
-                <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
+                <div className="logo-container" title="คลิกเพื่อจัดการรายชื่อทีมและอัปโหลดโลโก้ (Supabase)" onClick={() => setShowLeagueManagementModal(true)}>
                   {logoA || nameA ? (
                     <img
                       key={`${logoA}-${nameA}-${teamsCacheVersion}`}
@@ -1620,11 +1560,11 @@ export default function ScoreboardController() {
                         >
                           <i className="fas fa-pencil-alt"></i>
                         </button>
-                        {teamSheetData.length > 0 && (
+                        {supabaseLeague.teams.length > 0 && (
                           <button
                             className="btn-primary"
                             style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
-                            title="เลือกทีมจากรายชื่อ"
+                            title="เลือกทีมจากรายชื่อใน Supabase"
                             onClick={() => {
                               setTeamSelectTarget('A');
                               setTeamSelectSearch('');
@@ -1696,7 +1636,7 @@ export default function ScoreboardController() {
                   </div>
                 </div>
 
-                <div className="logo-container" title="คลิกเพื่อตั้งค่าโลโก้" onClick={() => setShowTeamLogosManagerModal(true)}>
+                <div className="logo-container" title="คลิกเพื่อจัดการรายชื่อทีมและอัปโหลดโลโก้ (Supabase)" onClick={() => setShowLeagueManagementModal(true)}>
                   {logoB || nameB ? (
                     <img
                       key={`${logoB}-${nameB}-${teamsCacheVersion}`}
@@ -1744,11 +1684,11 @@ export default function ScoreboardController() {
                         >
                           <i className="fas fa-pencil-alt"></i>
                         </button>
-                        {teamSheetData.length > 0 && (
+                        {supabaseLeague.teams.length > 0 && (
                           <button
                             className="btn-primary"
                             style={{ flex: 1, maxWidth: '90px', fontSize: '0.8rem' }}
-                            title="เลือกทีมจากรายชื่อ"
+                            title="เลือกทีมจากรายชื่อใน Supabase"
                             onClick={() => {
                               setTeamSelectTarget('B');
                               setTeamSelectSearch('');
@@ -1788,18 +1728,41 @@ export default function ScoreboardController() {
           />
 
           {/* Match save triggers dynamically */}
-          {firebaseTargets.length > 0 && (
-            <div className="card">
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', textAlign: 'center' }}>บันทึกข้อมูลคะแนนแมตช์การแข่งขันไปยัง Firebase:</h3>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                {firebaseTargets.map((target) => (
-                  <button key={target.id} className="btn-primary" onClick={() => handleSaveMatchToFirebase(target)}>
-                    <i className="fas fa-save"></i> บันทึกข้อมูลแมตช์ {target.name}
-                  </button>
-                ))}
-              </div>
+          {/* Match save triggers dynamically (Supabase & Firebase) */}
+          <div className="card" style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1rem', textAlign: 'center', color: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <i className="fas fa-save" style={{ color: '#38bdf8' }}></i>
+              <span>บันทึกผลการแข่งขัน (Save Match Score):</span>
+            </h3>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
+              {supabaseLeague.activeLeague ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleSaveMatchToSupabase}
+                  style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none', padding: '10px 22px', fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(5, 150, 105, 0.4)', cursor: 'pointer' }}
+                >
+                  <i className="fas fa-check-circle" style={{ fontSize: '1.1rem', color: '#6ee7b7' }}></i>
+                  <span>💾 บันทึกผลแมตช์ #{matchIdInput} ลง {supabaseLeague.activeLeague.name} ({scoreA} - {scoreB})</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setShowLeagueManagementModal(true)}
+                  style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', padding: '8px 16px', fontWeight: 600 }}
+                >
+                  <i className="fas fa-trophy"></i> เลือกลีก Supabase เพื่อเปิดใช้ปุ่มบันทึกผลบอล
+                </button>
+              )}
+
+              {firebaseTargets.map((target) => (
+                <button key={target.id} className="btn-secondary" onClick={() => handleSaveMatchToFirebase(target)} style={{ fontSize: '0.85rem' }}>
+                  <i className="fas fa-fire"></i> บันทึกไปยัง Firebase ({target.name})
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
           {/* Footer Settings & Buttons */}
           <div className="card">
@@ -1824,7 +1787,7 @@ export default function ScoreboardController() {
           </div>
 
           {/* Labels display bar */}
-          {excelData.length > 0 && (
+          {(Boolean(label1 || label2 || label3) || supabaseLeague.matches.length > 0) && (
             <div className="card" style={{ padding: '8px 12px' }}>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
@@ -2034,7 +1997,7 @@ export default function ScoreboardController() {
           onClose={() => setShowTeamLogosManagerModal(false)}
           teamList={allUniqueTeams}
           db={activeDb}
-          leagueName={leagueName}
+          leagueName={supabaseLeague.activeLeague?.name || 'Football League'}
           logoFolderPath={logoFolderPath}
           onLogoFolderPathChange={setLogoFolderPath}
           onToast={triggerToast}
@@ -2106,6 +2069,10 @@ export default function ScoreboardController() {
             setShowOBSSetupModal(true);
           }}
           onCopyOverlay={handleCopyOverlayUrl}
+          onOpenLeagueManager={() => {
+            setShowQuickSetupModal(false);
+            setShowLeagueManagementModal(true);
+          }}
           onOpenDatabase={() => {
             if (!selectedQuickLeagueId) {
               triggerToast('กรุณาเลือกลีกก่อน', 'error');
@@ -2162,13 +2129,11 @@ export default function ScoreboardController() {
           isOpen={showTeamSelectModal}
           target={teamSelectTarget}
           search={teamSelectSearch}
-          teams={teamSheetData}
+          teams={supabaseLeague.teams}
           closeLabel={trans.close}
           onSearchChange={setTeamSelectSearch}
-          onSelect={(teamName) => {
-            applyTeamFromSheet(teamName, teamSelectTarget);
-            setShowTeamSelectModal(false);
-            setTeamSelectSearch('');
+          onSelect={(selectedTeam) => {
+            applyTeamFromSupabase(selectedTeam, teamSelectTarget);
           }}
           onClose={() => setShowTeamSelectModal(false)}
         />}
@@ -2197,19 +2162,11 @@ export default function ScoreboardController() {
           />
         )}
 
-        {showUrlModal && <ExcelUrlModal
-          isOpen={showUrlModal}
-          url={excelUrlInput}
-          name={excelUrlNameInput}
-          presets={savedExcelUrls}
-          isLoading={isLoadingUrl}
-          onUrlChange={setExcelUrlInput}
-          onNameChange={setExcelUrlNameInput}
-          onLoad={() => { void handleExcelFromUrl(); }}
-          onSavePreset={handleSaveUrlPreset}
-          onSelectPreset={(preset) => handleSelectUrlPreset(preset as SavedExcelUrl)}
-          onDeletePreset={handleDeleteUrlPreset}
-          onClose={() => setShowUrlModal(false)}
+        {showLeagueManagementModal && <LeagueManagementModal
+          isOpen={showLeagueManagementModal}
+          onClose={() => setShowLeagueManagementModal(false)}
+          onSelectMatchToScoreboard={applyMatchFromSupabase}
+          currentUserEmail={activeUserEmail}
         />}
       </Suspense>
     </div>

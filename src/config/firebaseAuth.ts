@@ -9,6 +9,7 @@ export type AccessType = 'super-admin' | 'whitelist' | 'trial' | 'trial-expired'
 export interface AccessDecision {
   isAllowed: boolean;
   accessType: AccessType;
+  email?: string;
   reason?: string;
   trialStartedAt?: number;
   trialExpiresAt?: number;
@@ -250,7 +251,7 @@ export const verifyUserWhitelist = async (
 
   // 0. Super Admin bypass: Always allowed
   if (SUPER_ADMIN_EMAILS.includes(cleanEmail)) {
-    return { isAllowed: true, accessType: 'super-admin' };
+    return { isAllowed: true, accessType: 'super-admin', email: cleanEmail };
   }
 
   // 1. Check user_permissions node in Firebase Realtime Database
@@ -264,16 +265,16 @@ export const verifyUserWhitelist = async (
     if (snapshot.exists()) {
       const record = snapshot.val() as UserAccessRecord;
       if (record.status === 'allowed') {
-        return { isAllowed: true, accessType: 'whitelist' };
+        return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
       }
       if (record.status === 'denied') {
-        return { isAllowed: false, accessType: 'denied', reason: 'บัญชีนี้ถูกปฏิเสธ/ระงับการเข้าใช้งานโดย Super Admin' };
+        return { isAllowed: false, accessType: 'denied', email: cleanEmail, reason: 'บัญชีนี้ถูกปฏิเสธ/ระงับการเข้าใช้งานโดย Super Admin' };
       }
       if (record.status === 'pending') {
         // Environment whitelist remains a permanent access path even when a
         // legacy pending record already exists for this email.
         if (allowedList.includes(cleanEmail)) {
-          return { isAllowed: true, accessType: 'whitelist' };
+          return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
         }
 
         const trialStartedAt = typeof record.trialStartedAt === 'number' ? record.trialStartedAt : undefined;
@@ -283,6 +284,7 @@ export const verifyUserWhitelist = async (
             return {
               isAllowed: true,
               accessType: 'trial',
+              email: cleanEmail,
               trialStartedAt,
               trialExpiresAt: trial.expiresAt,
               trialDaysRemaining: trial.daysRemaining,
@@ -291,12 +293,13 @@ export const verifyUserWhitelist = async (
           return {
             isAllowed: false,
             accessType: 'trial-expired',
+            email: cleanEmail,
             trialStartedAt,
             trialExpiresAt: trial.expiresAt,
             reason: `สิทธิ์ทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วันหมดอายุแล้ว กรุณาติดต่อ Super Admin เพื่อขออนุมัติสิทธิ์ใช้งาน`,
           };
         }
-        return { isAllowed: false, accessType: 'pending', reason: 'บัญชีของคุณกำลังรอการอนุมัติสิทธิ์จาก Super Admin (thanakrit_kas@hotmail.com)' };
+        return { isAllowed: false, accessType: 'pending', email: cleanEmail, reason: 'บัญชีของคุณกำลังรอการอนุมัติสิทธิ์จาก Super Admin (thanakrit_kas@hotmail.com)' };
       }
     }
   } catch (err) {
@@ -305,7 +308,7 @@ export const verifyUserWhitelist = async (
 
   // 2. Check local / ENV whitelist fallback
   if (allowedList.length > 0 && allowedList.includes(cleanEmail)) {
-    return { isAllowed: true, accessType: 'whitelist' };
+    return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
   }
 
   // 3. Check legacy Firebase Realtime Database '/whitelist' path
@@ -324,7 +327,7 @@ export const verifyUserWhitelist = async (
       }
 
       if (dbEmails.includes(cleanEmail)) {
-        return { isAllowed: true, accessType: 'whitelist' };
+        return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
       }
     }
   } catch (err) {
@@ -335,6 +338,7 @@ export const verifyUserWhitelist = async (
   return {
     isAllowed: false,
     accessType: 'pending',
+    email: cleanEmail,
     reason: `บัญชี ${cleanEmail} กำลังรอ Super Admin (thanakrit_kas@hotmail.com) อนุมัติสิทธิ์การใช้งาน`,
   };
 };

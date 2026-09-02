@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import { getDatabase, type Database } from 'firebase/database';
-import type { FirebaseSaveTarget } from '../utils/excelParser';
+import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
 import { listenToFirebaseTeams } from '../utils/logoResolver';
 
 interface UseScoreboardFirebaseOptions {
