@@ -14,6 +14,34 @@ interface LeagueManagementModalProps {
   initialTab?: 'league' | 'teams' | 'matches';
 }
 
+// Helper to get today's date in YYYY-MM-DD format based on local time
+const getTodayDateString = (): string => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Helper to safely format dates into YYYY-MM-DD for HTML5 date input without timezone shift
+const formatToDateInput = (val?: any): string => {
+  if (val === null || val === undefined) return '';
+  const str = typeof val === 'string' ? val.trim() : typeof val === 'object' && val instanceof Date ? val.toISOString() : String(val).trim();
+  if (!str) return '';
+  const matched = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (matched) return matched[1];
+  try {
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return '';
+  }
+};
+
 export default function LeagueManagementModal({
   isOpen,
   onClose,
@@ -125,7 +153,7 @@ export default function LeagueManagementModal({
   const [matchLabel1, setMatchLabel1] = useState<string>('รอบแรก');
   const [matchLabel2, setMatchLabel2] = useState<string>('สัปดาห์ที่ 1');
   const [matchLabel3, setMatchLabel3] = useState<string>('สนาม 1');
-  const [matchDate, setMatchDate] = useState<string>('');
+  const [matchDate, setMatchDate] = useState<string>(() => getTodayDateString());
   const [matchStatus, setMatchStatus] = useState<'scheduled' | 'in_progress' | 'finished' | 'postponed'>('scheduled');
   const [matchScoreA, setMatchScoreA] = useState<number>(0);
   const [matchScoreB, setMatchScoreB] = useState<number>(0);
@@ -245,24 +273,6 @@ export default function LeagueManagementModal({
     setTeamLogoUrl('');
   };
 
-// Helper to safely format dates into YYYY-MM-DD for HTML5 date input without timezone shift
-const formatToDateInput = (val?: string | null): string => {
-  if (!val) return '';
-  const trimmed = val.trim();
-  const matched = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (matched) return matched[1];
-  try {
-    const d = new Date(trimmed);
-    if (isNaN(d.getTime())) return '';
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  } catch {
-    return '';
-  }
-};
-
   // ==========================================
   // HANDLERS: MATCHES
   // ==========================================
@@ -276,7 +286,7 @@ const formatToDateInput = (val?: string | null): string => {
     setMatchLabel1('รอบแรก');
     setMatchLabel2('สัปดาห์ที่ 1');
     setMatchLabel3('สนาม 1');
-    setMatchDate('');
+    setMatchDate(getTodayDateString());
     setMatchStatus('scheduled');
     setMatchScoreA(0);
     setMatchScoreB(0);

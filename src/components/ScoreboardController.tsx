@@ -66,7 +66,7 @@ const PresetTimeModal = lazy(() => import('./PresetTimeModal'));
 const TeamSelectModal = lazy(() => import('./TeamSelectModal'));
 const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
 const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
-const LeagueManagementModal = lazy(() => import('./LeagueManagementModal'));
+import LeagueManagementModal from './LeagueManagementModal';
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
 import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
 import type { SelectableTeam } from './TeamSelectModal';
