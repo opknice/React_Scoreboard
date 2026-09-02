@@ -193,8 +193,7 @@ export default function AllScoresStandalone() {
     const weekLabel = sampleMatch?.week || (weekNum ? `สัปดาห์ที่ ${weekNum}` : '');
 
     if (hasDate) {
-      const subInfo = [roundLabel, weekLabel].filter(Boolean).join(' • ');
-      return `📅 วันที่ ${date} ${subInfo ? `(${subInfo})` : `(WEEK #${weekNum})`}`;
+      return `📅 วันที่ ${date}`;
     }
 
     if (roundLabel && weekLabel) {

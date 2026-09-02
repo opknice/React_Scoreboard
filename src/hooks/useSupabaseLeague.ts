@@ -35,9 +35,9 @@ export function useSupabaseLeague(
   activeLeagueIdRef.current = activeLeagueId;
 
   // Load all leagues for the current user
-  const fetchLeagues = useCallback(async () => {
+  const fetchLeagues = useCallback(async (silent = false) => {
     if (!isConfigured) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const currentEmail = userEmailRef.current;
@@ -59,18 +59,18 @@ export function useSupabaseLeague(
       console.error('Failed to load leagues from Supabase:', err);
       setError(err.message || 'Failed to load leagues');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [isConfigured, getStorageKey]);
 
   // Load teams and matches for the active league
-  const fetchLeagueDetails = useCallback(async (leagueId: string) => {
+  const fetchLeagueDetails = useCallback(async (leagueId: string, silent = false) => {
     if (!isConfigured || !leagueId) {
       setTeams([]);
       setMatches([]);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const [teamsData, matchesData] = await Promise.all([
         LeagueService.getTeamsByLeague(leagueId),
@@ -82,9 +82,15 @@ export function useSupabaseLeague(
       console.error(`Failed to load details for league ${leagueId}:`, err);
       setError(err.message || 'Failed to load league details');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [isConfigured]);
+
+  const fetchLeaguesRef = useRef(fetchLeagues);
+  fetchLeaguesRef.current = fetchLeagues;
+
+  const fetchLeagueDetailsRef = useRef(fetchLeagueDetails);
+  fetchLeagueDetailsRef.current = fetchLeagueDetails;
 
   // Handle user change
   useEffect(() => {
@@ -96,16 +102,23 @@ export function useSupabaseLeague(
 
   // Initial load & Cross-instance sync (Syncs both leagues list AND current league matches/teams)
   useEffect(() => {
-    const handleSync = () => {
+    const handleSync = (e?: Event) => {
+      if (e && 'key' in e) {
+        const storageEvt = e as StorageEvent;
+        const key = getStorageKey(userEmailRef.current);
+        if (storageEvt.key && storageEvt.key !== key && storageEvt.key !== ACTIVE_LEAGUE_STORAGE_KEY) {
+          return;
+        }
+      }
       const key = getStorageKey(userEmailRef.current);
       const saved = localStorage.getItem(key) || '';
       if (saved !== activeLeagueIdRef.current) {
         setActiveLeagueId(saved);
       }
-      void fetchLeagues();
+      void fetchLeaguesRef.current(true);
       const currentId = saved || activeLeagueIdRef.current;
       if (currentId) {
-        void fetchLeagueDetails(currentId);
+        void fetchLeagueDetailsRef.current(currentId, true);
       }
     };
 
@@ -116,20 +129,19 @@ export function useSupabaseLeague(
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('supabase_league_changed', handleSync);
     };
-  }, [fetchLeagues, fetchLeagueDetails, getStorageKey]);
+  }, [getStorageKey]);
 
   // Supabase Realtime Subscription: Automatically sync leagues, teams, and matches live
   useEffect(() => {
     if (!isConfigured || !supabase) return;
 
-    const channelId = `realtime_hook_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const channel = supabase
-      .channel(channelId)
+      .channel('realtime_public_league_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'leagues' },
         () => {
-          void fetchLeagues();
+          void fetchLeaguesRef.current(true);
         }
       )
       .on(
@@ -140,7 +152,7 @@ export function useSupabaseLeague(
           const newRecord = payload.new as { league_id?: string } | undefined;
           const oldRecord = payload.old as { league_id?: string } | undefined;
           if (!currentId || newRecord?.league_id === currentId || oldRecord?.league_id === currentId) {
-            if (currentId) void fetchLeagueDetails(currentId);
+            if (currentId) void fetchLeagueDetailsRef.current(currentId, true);
           }
         }
       )
@@ -152,7 +164,7 @@ export function useSupabaseLeague(
           const newRecord = payload.new as { league_id?: string } | undefined;
           const oldRecord = payload.old as { league_id?: string } | undefined;
           if (!currentId || newRecord?.league_id === currentId || oldRecord?.league_id === currentId) {
-            if (currentId) void fetchLeagueDetails(currentId);
+            if (currentId) void fetchLeagueDetailsRef.current(currentId, true);
           }
         }
       )
@@ -163,7 +175,7 @@ export function useSupabaseLeague(
         void supabase.removeChannel(channel);
       }
     };
-  }, [isConfigured, fetchLeagues, fetchLeagueDetails]);
+  }, [isConfigured]);
 
   // Load teams & matches whenever activeLeagueId changes
   useEffect(() => {

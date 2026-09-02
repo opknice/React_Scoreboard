@@ -6,6 +6,14 @@ import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/lo
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
 
+const getLocalTodayString = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function OverlayContainer() {
   useDisableZoom();
   const [searchParams] = useSearchParams();
@@ -86,7 +94,7 @@ export default function OverlayContainer() {
         const baseRef = ref(db, 'matches');
 
         // Build Query
-        const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+        const selectedDate = dateParam === 'today' ? getLocalTodayString() : dateParam && dateParam !== 'all' ? dateParam : '';
         let q: any = baseRef;
 
         if (view === 'ticker' && selectedDate) {
@@ -287,11 +295,16 @@ export default function OverlayContainer() {
 
   // 2. Results List View
   const renderResultsView = () => {
-    const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+    const todayStr = getLocalTodayString();
+    const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
 
     if (filtered.length === 0) {
-      return <div className="overlay-status">ยังไม่มีข้อมูลการแข่งขัน</div>;
+      return (
+        <div className="overlay-status">
+          {selectedDate ? `ยังไม่มีข้อมูลการแข่งขันสำหรับวันที่ ${selectedDate}` : 'ยังไม่มีข้อมูลการแข่งขัน'}
+        </div>
+      );
     }
 
     // Group by Date and Week
@@ -318,8 +331,7 @@ export default function OverlayContainer() {
       const weekLabel = sampleMatch?.week || (weekNum ? `สัปดาห์ที่ ${weekNum}` : '');
 
       if (hasDate) {
-        const subInfo = [roundLabel, weekLabel].filter(Boolean).join(' • ');
-        return `📅 วันที่ ${date} ${subInfo ? `(${subInfo})` : `(WEEK #${weekNum})`}`;
+        return `📅 วันที่ ${date}`;
       }
 
       if (roundLabel && weekLabel) return `🏆 ${roundLabel} • ${weekLabel}`;
@@ -381,12 +393,16 @@ export default function OverlayContainer() {
 
   // 3. Ticker View (Bottom scrolling list)
   const renderTickerView = () => {
-    const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
-    const todayMatches = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
-    const filtered = todayMatches.length > 0 ? todayMatches : matches;
+    const todayStr = getLocalTodayString();
+    const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
+    const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
 
     if (filtered.length === 0) {
-      return <div className="overlay-status">ยังไม่มีข้อมูลการแข่งขันสำหรับแสดงผล</div>;
+      return (
+        <div className="overlay-status" style={{ padding: '8px 16px', fontSize: '0.9rem', color: '#94a3b8' }}>
+          ยังไม่มีข้อมูลการแข่งขันสำหรับวันที่ {selectedDate || todayStr}
+        </div>
+      );
     }
 
     const duration = parseInt(speed, 10) || 75;
