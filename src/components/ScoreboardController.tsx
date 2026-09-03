@@ -68,6 +68,7 @@ const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
 import LeagueManagementModal from './LeagueManagementModal';
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
 import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
+import { getFirstUnplayedMatch } from './league-management/leagueMatchUtils';
 import type { SelectableTeam } from './TeamSelectModal';
 import ScoreboardHeader from './scoreboard/ScoreboardHeader';
 import ScoreboardSetupWizard from './scoreboard/ScoreboardSetupWizard';
@@ -226,7 +227,6 @@ export default function ScoreboardController() {
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
   const [showLeagueManagementModal, setShowLeagueManagementModal] = useState<boolean>(false);
   const [leagueModalInitialTab, setLeagueModalInitialTab] = useState<'league' | 'teams' | 'matches'>('matches');
-  const [isMatchLoaded, setIsMatchLoaded] = useState<boolean>(() => localStorage.getItem('isMatchLoaded') === 'true');
 
   // Custom Preset Time Input
   const [customTimeMinutes, setCustomTimeMinutes] = useState<number>(0);
@@ -421,12 +421,16 @@ export default function ScoreboardController() {
 
   const activeUserEmail = currentUser?.email || authAccess?.email || '';
   const supabaseLeague = useSupabaseLeague(triggerToast, activeUserEmail);
+  const {
+    activeLeagueId: activeSupabaseLeagueId,
+    refreshLeagueDetails,
+    selectLeague,
+  } = supabaseLeague;
   const [selectedLeagueIdToLoad, setSelectedLeagueIdToLoad] = useState<string>(() => supabaseLeague.activeLeagueId || '');
+  const autoLoadedLeagueIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (supabaseLeague.activeLeagueId) {
-      setSelectedLeagueIdToLoad(supabaseLeague.activeLeagueId);
-    }
+    setSelectedLeagueIdToLoad(supabaseLeague.activeLeagueId || '');
   }, [supabaseLeague.activeLeagueId]);
 
   // Compute list of unique team names from Supabase teams
@@ -436,10 +440,7 @@ export default function ScoreboardController() {
 
   // --- 2-Step Setup Onboarding Gate Checks ---
   const isStep1Complete = videoFolder.isConnected;
-  const isStep2Complete =
-    isMatchLoaded ||
-    Boolean(supabaseLeague.activeLeagueId) ||
-    supabaseLeague.matches.length > 0;
+  const isStep2Complete = Boolean(supabaseLeague.activeLeagueId);
   const isSetupComplete = isStep1Complete && isStep2Complete;
 
   // --- Prevent spacebar default behavior (except inside inputs/textareas) ---
@@ -669,7 +670,9 @@ export default function ScoreboardController() {
 
   // --- Pending (Unplayed) matches in active league ---
   const pendingMatches = useMemo(() => {
-    return supabaseLeague.matches.filter((m) => !isMatchFinished(m));
+    return supabaseLeague.matches
+      .filter((m) => !isMatchFinished(m))
+      .sort((a, b) => a.match_number - b.match_number);
   }, [supabaseLeague.matches, isMatchFinished]);
 
   // --- Load match data by ID from Supabase ---
@@ -694,9 +697,6 @@ export default function ScoreboardController() {
       triggerToast(`⚠️ แมตช์ #${match.match_number} (${match.team_a_name} vs ${match.team_b_name}) บันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
       return;
     }
-
-    setIsMatchLoaded(true);
-    localStorage.setItem('isMatchLoaded', 'true');
 
     const availableTeams = customTeams || supabaseLeague.teams;
     const teamAName = match.team_a_name || 'Team A';
@@ -783,9 +783,49 @@ export default function ScoreboardController() {
     triggerToast,
   ]);
 
+  // Automatically load the first pending match after both setup steps and the
+  // latest league details are ready. The ref prevents duplicate loads caused
+  // by React re-renders, Strict Mode, or realtime refreshes.
+  useEffect(() => {
+    const leagueId = supabaseLeague.activeLeagueId;
+    if (!leagueId) {
+      autoLoadedLeagueIdRef.current = null;
+      return;
+    }
+
+    if (
+      !isSetupComplete ||
+      supabaseLeague.detailsLoading ||
+      supabaseLeague.detailsLoadedLeagueId !== leagueId ||
+      autoLoadedLeagueIdRef.current === leagueId
+    ) {
+      return;
+    }
+
+    autoLoadedLeagueIdRef.current = leagueId;
+    const firstUnplayedMatch = getFirstUnplayedMatch(supabaseLeague.matches);
+    if (!firstUnplayedMatch) {
+      triggerToast(`ลีก "${supabaseLeague.activeLeague?.name || ''}" ไม่มีคู่แข่งขันที่รอแข่งแล้ว`, 'info');
+      return;
+    }
+
+    applyMatchFromSupabase(firstUnplayedMatch);
+  }, [
+    applyMatchFromSupabase,
+    isSetupComplete,
+    supabaseLeague.activeLeague?.name,
+    supabaseLeague.activeLeagueId,
+    supabaseLeague.detailsLoadedLeagueId,
+    supabaseLeague.detailsLoading,
+    supabaseLeague.matches,
+    triggerToast,
+  ]);
+
   // --- Navigate matches by index (prev / next) through pending matches only ---
   const handleNavigateMatch = useCallback((direction: 'prev' | 'next') => {
-    const unplayedMatches = supabaseLeague.matches.filter((m) => !isMatchFinished(m));
+    const unplayedMatches = supabaseLeague.matches
+      .filter((m) => !isMatchFinished(m))
+      .sort((a, b) => a.match_number - b.match_number);
     if (!unplayedMatches.length) {
       triggerToast('ไม่มีคู่แข่งขันที่รอแข่งในลีกนี้ (บันทึกผลครบแล้ว)', 'warning');
       return;
@@ -808,33 +848,16 @@ export default function ScoreboardController() {
     }
   }, [supabaseLeague.matches, matchIdInput, applyMatchFromSupabase, isMatchFinished, triggerToast]);
 
-  const handleLoadLeague = useCallback(async () => {
-    const targetId = selectedLeagueIdToLoad || supabaseLeague.activeLeagueId;
-    if (!targetId) {
-      triggerToast('กรุณาเลือกลีกก่อนกดโหลด', 'error');
+  const handleRefreshLeague = useCallback(() => {
+    if (!activeSupabaseLeagueId) {
+      triggerToast('กรุณาเลือกลีกก่อนรีเฟรชข้อมูล', 'error');
       return;
     }
-    supabaseLeague.selectLeague(targetId);
-    const targetLeague = supabaseLeague.leagues.find((l) => l.id === targetId);
-    try {
-      const { LeagueService } = await import('../services/leagueService');
-      const [teamsData, matchesData] = await Promise.all([
-        LeagueService.getTeamsByLeague(targetId),
-        LeagueService.getMatchesByLeague(targetId),
-      ]);
-      const unplayedMatches = matchesData.filter((m) => !isMatchFinished(m));
-      if (unplayedMatches.length > 0) {
-        applyMatchFromSupabase(unplayedMatches[0], teamsData);
-        triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว (พบ ${unplayedMatches.length} คู่ที่รอแข่ง)`, 'success');
-      } else if (matchesData.length > 0) {
-        triggerToast(`ลีก "${targetLeague?.name || ''}" บันทึกผลครบทุกคู่แล้ว`, 'info');
-      } else {
-        triggerToast(`เลือกลีก "${targetLeague?.name || ''}" แล้ว (ยังไม่มีแมตช์ในลีก)`, 'info');
-      }
-    } catch {
-      triggerToast(`โหลดข้อมูลลีก "${targetLeague?.name || ''}" เรียบร้อยแล้ว`, 'success');
-    }
-  }, [selectedLeagueIdToLoad, supabaseLeague, applyMatchFromSupabase, isMatchFinished, triggerToast]);
+
+    // Refresh only the active league details. The current scoreboard match is
+    // intentionally preserved; auto-loading is handled when entering a league.
+    void refreshLeagueDetails();
+  }, [activeSupabaseLeagueId, refreshLeagueDetails, triggerToast]);
 
   // --- Swap Teams ---
   const swapTeams = useCallback(() => {
@@ -1219,11 +1242,9 @@ export default function ScoreboardController() {
   }, []);
 
   const handleSelectLeagueWizard = useCallback((newId: string) => {
-    if (newId) {
-      supabaseLeague.selectLeague(newId);
-      setSelectedLeagueIdToLoad(newId);
-    }
-  }, [supabaseLeague]);
+    setSelectedLeagueIdToLoad(newId);
+    selectLeague(newId);
+  }, [selectLeague]);
 
   const handleOpenLeagueManagement = useCallback((tab: 'league' | 'teams' | 'matches') => {
     setLeagueModalInitialTab(tab);
@@ -1387,9 +1408,7 @@ export default function ScoreboardController() {
                   onChange={(e) => {
                     const newId = e.target.value;
                     setSelectedLeagueIdToLoad(newId);
-                    if (newId) {
-                      supabaseLeague.selectLeague(newId);
-                    }
+                    selectLeague(newId);
                   }}
                   title="เลือกลีกจากฐานข้อมูล Supabase"
                 >
@@ -1401,12 +1420,12 @@ export default function ScoreboardController() {
                   ))}
                 </select>
 
-                {/* Load Button */}
+                {/* Refresh league data button */}
                 <button
                   type="button"
                   className="btn-primary btn-sm"
-                  onClick={() => void handleLoadLeague()}
-                  disabled={(!selectedLeagueIdToLoad && !supabaseLeague.activeLeagueId) || supabaseLeague.loading}
+                  onClick={handleRefreshLeague}
+                  disabled={!supabaseLeague.activeLeagueId || supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1414,12 +1433,12 @@ export default function ScoreboardController() {
                     background: '#059669',
                     borderColor: '#059669',
                     fontWeight: 600,
-                    cursor: (selectedLeagueIdToLoad || supabaseLeague.activeLeagueId) ? 'pointer' : 'not-allowed'
+                    cursor: supabaseLeague.activeLeagueId && !supabaseLeague.detailsLoading ? 'pointer' : 'not-allowed'
                   }}
-                  title="โหลดข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
+                  title="รีเฟรชข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
                 >
-                  <i className={supabaseLeague.loading ? "fas fa-spinner fa-spin" : "fas fa-download"}></i>
-                  <span>{supabaseLeague.loading ? 'กำลังโหลด...' : 'Load'}</span>
+                  <i className={supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? "fas fa-spinner fa-spin" : "fas fa-sync-alt"}></i>
+                  <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? 'กำลังรีเฟรช...' : 'รีเฟรชข้อมูลลีก'}</span>
                 </button>
 
                 {/* Matches Dropdown (shown when matches exist in active league) */}

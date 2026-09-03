@@ -5,7 +5,6 @@ import { supabase, isSupabaseConfigured } from '../config/supabaseClient';
 import { LeagueService, type StandingsRow } from '../services/leagueService';
 import { dedupeRequest, leagueMemoryCache } from '../utils/memoryCache';
 
-const ACTIVE_LEAGUE_STORAGE_KEY = 'supabase_active_league_id';
 const LEAGUES_CACHE_PREFIX = 'leagues:';
 const DETAILS_CACHE_PREFIX = 'league-details:';
 
@@ -53,6 +52,8 @@ export interface UseSupabaseLeagueResult {
   matches: Match[];
   standings: StandingsRow[];
   loading: boolean;
+  detailsLoading: boolean;
+  detailsLoadedLeagueId: string | null;
   refreshing: boolean;
   error: string | null;
   selectLeague: (leagueId: string) => void;
@@ -132,17 +133,14 @@ export function useSupabaseLeague(
   const userEmailRef = useRef(userEmail);
   userEmailRef.current = userEmail;
 
-  const getStorageKey = useCallback((email?: string) => {
-    const clean = email ? email.trim().toLowerCase() : '';
-    return clean ? `${ACTIVE_LEAGUE_STORAGE_KEY}_${clean}` : ACTIVE_LEAGUE_STORAGE_KEY;
-  }, []);
-
-  const [activeLeagueId, setActiveLeagueId] = useState<string>(() => {
-    return localStorage.getItem(getStorageKey(userEmail)) || '';
-  });
+  // The selected league is intentionally session-scoped. A new page load must
+  // always start with the placeholder instead of restoring a previous league.
+  const [activeLeagueId, setActiveLeagueId] = useState<string>('');
   const [teams, setTeams] = useState<Team[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [detailsLoading, setDetailsLoading] = useState<boolean>(false);
+  const [detailsLoadedLeagueId, setDetailsLoadedLeagueId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -177,16 +175,13 @@ export function useSupabaseLeague(
       if (requestId !== leaguesRequestIdRef.current) return;
       setLeagues(data);
       const currentActive = activeLeagueIdRef.current;
-      const key = getStorageKey(currentEmail);
       if (data.length > 0 && currentActive) {
         const currentValid = data.some((l) => l.id === currentActive);
         if (!currentValid) {
           setActiveLeagueId('');
-          localStorage.removeItem(key);
         }
       } else if (!data.length) {
         setActiveLeagueId('');
-        localStorage.removeItem(key);
       }
     } catch (err: unknown) {
       if (requestId !== leaguesRequestIdRef.current) return;
@@ -198,7 +193,7 @@ export function useSupabaseLeague(
         if (silent) setRefreshing(false);
       }
     }
-  }, [isConfigured, getStorageKey]);
+  }, [isConfigured]);
 
   // Load teams and matches for the active league
   const fetchLeagueDetails = useCallback(async (leagueId: string, silent = false) => {
@@ -206,10 +201,16 @@ export function useSupabaseLeague(
     if (!isConfigured || !leagueId) {
       setTeams([]);
       setMatches([]);
+      setDetailsLoading(false);
+      setDetailsLoadedLeagueId(null);
       if (silent) setRefreshing(false);
       return;
     }
 
+    // A fresh server response is required before auto-loading a match. This
+    // prevents stale cached details from being treated as the current league.
+    setDetailsLoading(true);
+    setDetailsLoadedLeagueId(null);
     const teamsCacheKey = getTeamsCacheKey(leagueId);
     const matchesCacheKey = getMatchesCacheKey(leagueId);
     const cachedTeams = leagueMemoryCache.read<Team[]>(teamsCacheKey);
@@ -232,12 +233,14 @@ export function useSupabaseLeague(
       if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return;
       setTeams(teamsData);
       setMatches(matchesData);
+      setDetailsLoadedLeagueId(leagueId);
     } catch (err: unknown) {
       if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return;
       console.error(`Failed to load details for league ${leagueId}:`, err);
       setError(getErrorMessage(err, 'Failed to load league details'));
     } finally {
       if (requestId === detailsRequestIdRef.current) {
+        setDetailsLoading(false);
         setLoading(false);
         if (silent) setRefreshing(false);
       }
@@ -281,42 +284,29 @@ export function useSupabaseLeague(
 
   // Handle user change
   useEffect(() => {
-    const key = getStorageKey(userEmail);
-    const saved = localStorage.getItem(key) || '';
-    setActiveLeagueId(saved);
-    fetchLeagues();
-  }, [userEmail, fetchLeagues, getStorageKey]);
+    // Never carry a league selection across users or page sessions.
+    setActiveLeagueId('');
+    setTeams([]);
+    setMatches([]);
+    void fetchLeagues();
+  }, [userEmail, fetchLeagues]);
 
   // Initial load & Cross-instance sync (Syncs both leagues list AND current league matches/teams)
   useEffect(() => {
-    const handleSync = (e?: Event) => {
-      if (e && 'key' in e) {
-        const storageEvt = e as StorageEvent;
-        const key = getStorageKey(userEmailRef.current);
-        if (storageEvt.key && storageEvt.key !== key && storageEvt.key !== ACTIVE_LEAGUE_STORAGE_KEY) {
-          return;
-        }
-      }
-      const key = getStorageKey(userEmailRef.current);
-      const saved = localStorage.getItem(key) || '';
-      if (saved !== activeLeagueIdRef.current) {
-        setActiveLeagueId(saved);
-      }
+    const handleSync = () => {
       scheduleLeaguesRefresh();
-      const currentId = saved || activeLeagueIdRef.current;
+      const currentId = activeLeagueIdRef.current;
       if (currentId) {
         scheduleDetailsRefresh(currentId);
       }
     };
 
-    window.addEventListener('storage', handleSync);
     window.addEventListener('supabase_league_changed', handleSync);
 
     return () => {
-      window.removeEventListener('storage', handleSync);
       window.removeEventListener('supabase_league_changed', handleSync);
     };
-  }, [getStorageKey, scheduleDetailsRefresh, scheduleLeaguesRefresh]);
+  }, [scheduleDetailsRefresh, scheduleLeaguesRefresh]);
 
   // Supabase Realtime Subscription: all hook instances share one channel.
   useEffect(() => {
@@ -371,14 +361,8 @@ export function useSupabaseLeague(
   // Change active league
   const selectLeague = useCallback((leagueId: string) => {
     setActiveLeagueId(leagueId);
-    const key = getStorageKey(userEmailRef.current);
-    if (leagueId) {
-      localStorage.setItem(key, leagueId);
-    } else {
-      localStorage.removeItem(key);
-    }
     window.dispatchEvent(new CustomEvent('supabase_league_changed'));
-  }, [getStorageKey]);
+  }, []);
 
   // League Actions
   const createLeague = useCallback(async (payload: Omit<League, 'id' | 'created_at' | 'updated_at'>) => {
@@ -559,6 +543,8 @@ export function useSupabaseLeague(
     matches,
     standings,
     loading,
+    detailsLoading,
+    detailsLoadedLeagueId,
     refreshing,
     error,
     selectLeague,

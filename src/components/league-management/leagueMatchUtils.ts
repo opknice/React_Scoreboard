@@ -11,6 +11,18 @@ export const isUnplayedMatch = (
 };
 
 /**
+ * Returns the lowest-numbered match that has not been played yet.
+ * A copy is sorted so the caller's array is never mutated.
+ */
+export const getFirstUnplayedMatch = <
+  T extends Pick<Match, 'match_number' | 'score_a' | 'score_b' | 'status'>,
+>(matches: T[]): T | null => {
+  return [...matches]
+    .filter(isUnplayedMatch)
+    .sort((a, b) => a.match_number - b.match_number)[0] ?? null;
+};
+
+/**
  * Generates the next internal match number without exposing it in the UI.
  */
 export const getNextMatchNumber = (
