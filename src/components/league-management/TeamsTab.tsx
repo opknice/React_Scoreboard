@@ -263,7 +263,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
 
             {teamLogoUrl && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div className="league-team-logo" style={{ background: teamColor1 }}>
+                <div className="league-team-logo">
                   <img src={teamLogoUrl} alt="" onError={(e) => ((e.target as HTMLElement).style.display = 'none')} />
                 </div>
                 <span style={{ fontSize: '0.8rem', color: '#4ade80' }}>✓ โลโก้พร้อมใช้งาน</span>
@@ -308,7 +308,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
           <div className="league-teams-grid">
             {teams.map((t) => (
               <div key={t.id} className="league-team-card">
-                <div className="league-team-logo" style={{ background: t.color_primary || '#1e293b' }}>
+                <div className="league-team-logo">
                   {t.logo_url ? (
                     <img src={t.logo_url} alt="" onError={(e) => ((e.target as HTMLElement).style.display = 'none')} />
                   ) : (

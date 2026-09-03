@@ -381,7 +381,8 @@
   width: 44px;
   height: 44px;
   border-radius: 8px;
-  background: #1e293b;
+  /* Keep both uploaded logos and initials transparent. */
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
