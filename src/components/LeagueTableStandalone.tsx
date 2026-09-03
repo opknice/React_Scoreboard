@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
@@ -23,7 +24,9 @@ export default function LeagueTableStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
-    let supabaseChannel: any = null;
+    let isCancelled = false;
+    let supabaseChannel: RealtimeChannel | null = null;
+    let firebaseCleanup: (() => void) | null = null;
 
     // 1. Try Supabase first if configured and leagueId looks like a Supabase ID / not 'excel'
     const loadFromSupabase = async () => {
@@ -35,6 +38,7 @@ export default function LeagueTableStandalone() {
             LeagueService.getMatchesByLeague(leagueId),
             LeagueService.getTeamsByLeague(leagueId),
           ]);
+          if (isCancelled) return true;
           // Map to match structure expected by calculateStandings
           const formatted = supabaseMatches.map((m) => {
             const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
@@ -83,6 +87,7 @@ export default function LeagueTableStandalone() {
     };
 
     loadFromSupabase().then((loaded) => {
+      if (isCancelled) return;
       if (loaded) return;
 
       if (!firebaseConfig) {
@@ -115,7 +120,7 @@ export default function LeagueTableStandalone() {
           }
         );
 
-        return () => {
+        firebaseCleanup = () => {
           unsubscribe();
           unsubTeams();
         };
@@ -126,11 +131,11 @@ export default function LeagueTableStandalone() {
     });
 
     return () => {
+      isCancelled = true;
+      firebaseCleanup?.();
       if (supabaseChannel) {
-        import('../config/supabaseClient').then(({ supabase }) => {
-          if (supabase && supabaseChannel) {
-            void supabase.removeChannel(supabaseChannel);
-          }
+        void import('../config/supabaseClient').then(({ supabase }) => {
+          if (supabase && supabaseChannel) void supabase.removeChannel(supabaseChannel);
         });
       }
     };

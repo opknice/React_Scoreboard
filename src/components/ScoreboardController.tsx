@@ -1993,6 +1993,7 @@ export default function ScoreboardController() {
           onSelectMatchToScoreboard={applyMatchFromSupabase}
           currentUserEmail={activeUserEmail}
           initialTab={leagueModalInitialTab}
+          leagueState={supabaseLeague}
         />}
       </Suspense>
     </div>

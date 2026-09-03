@@ -1,4 +1,22 @@
 import { supabase, isSupabaseConfigured, type League, type Team, type Match } from '../config/supabaseClient';
+import { retryWithBackoff } from '../utils/retry';
+
+const LEAGUE_COLUMNS = 'id, name, slug, season, description, is_active, created_by, settings, created_at, updated_at';
+const TEAM_COLUMNS = 'id, league_id, name, short_name, logo_url, color_primary, color_secondary, crop_metadata, created_at, updated_at';
+const MATCH_COLUMNS = 'id, league_id, match_number, team_a_id, team_b_id, team_a_name, team_b_name, score_a, score_b, status, label1, label2, label3, match_date, created_at, updated_at';
+
+interface SupabaseRequestResult<T> {
+  data: T;
+  error: unknown | null;
+}
+
+async function executeSupabaseRequest<T>(
+  operation: () => PromiseLike<SupabaseRequestResult<T>>,
+): Promise<T> {
+  const result = await retryWithBackoff(operation);
+  if (result.error) throw result.error;
+  return result.data;
+}
 
 export interface StandingsRow {
   teamId?: string;
@@ -28,31 +46,23 @@ export class LeagueService {
     }
 
     const cleanEmail = userEmail.trim().toLowerCase();
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('leagues')
-      .select('*')
+      .select(LEAGUE_COLUMNS)
       .eq('created_by', cleanEmail)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }));
 
-    if (error) {
-      console.error('Error fetching leagues:', error);
-      throw error;
-    }
     return (data as unknown as League[]) || [];
   }
 
   static async getLeagueById(id: string): Promise<League | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('leagues')
-      .select('*')
+      .select(LEAGUE_COLUMNS)
       .eq('id', id)
-      .single();
+      .single());
 
-    if (error) {
-      console.error(`Error fetching league ${id}:`, error);
-      return null;
-    }
     return (data as unknown as League);
   }
 
@@ -61,20 +71,16 @@ export class LeagueService {
       throw new Error('Supabase is not configured.');
     }
     const cleanCreatedBy = payload.created_by ? payload.created_by.trim().toLowerCase() : null;
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('leagues')
       .insert([{
         ...payload,
         created_by: cleanCreatedBy,
         updated_at: new Date().toISOString()
       }])
-      .select()
-      .single();
+      .select(LEAGUE_COLUMNS)
+      .single());
 
-    if (error) {
-      console.error('Error creating league:', error);
-      throw error;
-    }
     return (data as unknown as League);
   }
 
@@ -82,17 +88,13 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('leagues')
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select()
-      .single();
+      .select(LEAGUE_COLUMNS)
+      .single());
 
-    if (error) {
-      console.error(`Error updating league ${id}:`, error);
-      throw error;
-    }
     return (data as unknown as League);
   }
 
@@ -100,15 +102,10 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { error } = await supabase
+    await executeSupabaseRequest(() => supabase!
       .from('leagues')
       .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error(`Error deleting league ${id}:`, error);
-      throw error;
-    }
+      .eq('id', id));
   }
 
   // ==========================================
@@ -117,16 +114,12 @@ export class LeagueService {
 
   static async getTeamsByLeague(leagueId: string): Promise<Team[]> {
     if (!isSupabaseConfigured() || !supabase || !leagueId) return [];
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('teams')
-      .select('*')
+      .select(TEAM_COLUMNS)
       .eq('league_id', leagueId)
-      .order('name', { ascending: true });
+      .order('name', { ascending: true }));
 
-    if (error) {
-      console.error(`Error fetching teams for league ${leagueId}:`, error);
-      throw error;
-    }
     return (data as unknown as Team[]) || [];
   }
 
@@ -134,16 +127,12 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('teams')
       .insert([{ ...payload, updated_at: new Date().toISOString() }])
-      .select()
-      .single();
+      .select(TEAM_COLUMNS)
+      .single());
 
-    if (error) {
-      console.error('Error creating team:', error);
-      throw error;
-    }
     return (data as unknown as Team);
   }
 
@@ -151,17 +140,13 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('teams')
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select()
-      .single();
+      .select(TEAM_COLUMNS)
+      .single());
 
-    if (error) {
-      console.error(`Error updating team ${id}:`, error);
-      throw error;
-    }
     return (data as unknown as Team);
   }
 
@@ -169,15 +154,10 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { error } = await supabase
+    await executeSupabaseRequest(() => supabase!
       .from('teams')
       .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error(`Error deleting team ${id}:`, error);
-      throw error;
-    }
+      .eq('id', id));
   }
 
   /**
@@ -214,18 +194,13 @@ export class LeagueService {
 
     const filePath = `logos/${finalFileName}`;
 
-    const { error: uploadError } = await supabase.storage
+    await executeSupabaseRequest(() => supabase!.storage
       .from('team-logos')
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: true,
         contentType: file.type || 'image/png',
-      });
-
-    if (uploadError) {
-      console.error('Error uploading team logo to Supabase Storage:', uploadError);
-      throw uploadError;
-    }
+      }));
 
     const { data } = supabase.storage
       .from('team-logos')
@@ -240,16 +215,12 @@ export class LeagueService {
 
   static async getMatchesByLeague(leagueId: string): Promise<Match[]> {
     if (!isSupabaseConfigured() || !supabase || !leagueId) return [];
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('matches')
-      .select('*')
+      .select(MATCH_COLUMNS)
       .eq('league_id', leagueId)
-      .order('match_number', { ascending: true });
+      .order('match_number', { ascending: true }));
 
-    if (error) {
-      console.error(`Error fetching matches for league ${leagueId}:`, error);
-      throw error;
-    }
     return (data as Match[]) || [];
   }
 
@@ -257,7 +228,7 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('matches')
       .insert([{
         ...payload,
@@ -266,13 +237,9 @@ export class LeagueService {
         label3: payload.label3 || '',
         updated_at: new Date().toISOString(),
       }])
-      .select()
-      .single();
+      .select(MATCH_COLUMNS)
+      .single());
 
-    if (error) {
-      console.error('Error creating match:', error);
-      throw error;
-    }
     return data as Match;
   }
 
@@ -280,7 +247,7 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const cleanUpdates: Record<string, any> = {
+    const cleanUpdates: Partial<Match> = {
       ...updates,
       updated_at: new Date().toISOString(),
     };
@@ -288,17 +255,13 @@ export class LeagueService {
     if (updates.label2 !== undefined) cleanUpdates.label2 = updates.label2 || '';
     if (updates.label3 !== undefined) cleanUpdates.label3 = updates.label3 || '';
 
-    const { data, error } = await supabase
+    const data = await executeSupabaseRequest(() => supabase!
       .from('matches')
-      .update(cleanUpdates as any)
+      .update(cleanUpdates)
       .eq('id', id)
-      .select()
-      .single();
+      .select(MATCH_COLUMNS)
+      .single());
 
-    if (error) {
-      console.error(`Error updating match ${id}:`, error);
-      throw error;
-    }
     return data as unknown as Match;
   }
 
@@ -306,28 +269,18 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-    const { error } = await supabase
+    await executeSupabaseRequest(() => supabase!
       .from('matches')
       .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error(`Error deleting match ${id}:`, error);
-      throw error;
-    }
+      .eq('id', id));
   }
 
   static async deleteMatchesByLeague(leagueId: string): Promise<void> {
     if (!isSupabaseConfigured() || !supabase || !leagueId) return;
-    const { error } = await supabase
+    await executeSupabaseRequest(() => supabase!
       .from('matches')
       .delete()
-      .eq('league_id', leagueId);
-
-    if (error) {
-      console.error(`Error clearing matches for league ${leagueId}:`, error);
-      throw error;
-    }
+      .eq('league_id', leagueId));
   }
 
   // ==========================================

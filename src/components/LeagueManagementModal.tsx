@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
+import type { UseSupabaseLeagueResult } from '../hooks/useSupabaseLeague';
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
 import type { Match } from '../config/supabaseClient';
@@ -16,6 +16,7 @@ export interface LeagueManagementModalProps {
   onSelectMatchToScoreboard?: (match: Match) => void;
   currentUserEmail?: string;
   initialTab?: 'league' | 'teams' | 'matches';
+  leagueState: UseSupabaseLeagueResult;
 }
 
 export default function LeagueManagementModal({
@@ -24,6 +25,7 @@ export default function LeagueManagementModal({
   onSelectMatchToScoreboard,
   currentUserEmail,
   initialTab = 'matches',
+  leagueState,
 }: LeagueManagementModalProps) {
   const authAccess = useAuthAccess();
   const effectiveEmail = currentUserEmail || authAccess?.email || '';
@@ -49,7 +51,7 @@ export default function LeagueManagementModal({
     updateMatch,
     deleteMatch,
     clearMatches,
-  } = useSupabaseLeague(undefined, effectiveEmail);
+  } = leagueState;
 
   const [activeTab, setActiveTab] = useState<'league' | 'teams' | 'matches'>(() => {
     return initialTab || (leagues.length === 0 ? 'league' : 'matches');
