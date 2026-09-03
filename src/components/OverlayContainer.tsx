@@ -6,6 +6,14 @@ import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/lo
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
 
+const getLocalTodayString = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function OverlayContainer() {
   useDisableZoom();
   const [searchParams] = useSearchParams();
@@ -30,57 +38,101 @@ export default function OverlayContainer() {
 
   // Initialize and load data
   useEffect(() => {
-    if (!firebaseConfig) {
-      setErrorMsg('ไม่พบ Firebase Config (กรุณาใช้ URL ที่สร้างจาก Control Panel)');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const appName = `overlay-${leagueId.replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}`;
-      const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
-      const db = getDatabase(app);
-      const baseRef = ref(db, 'matches');
-
-      // Build Query
-      const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
-      let q: any = baseRef;
-
-      if (view === 'ticker' && selectedDate) {
-        q = query(baseRef, orderByChild('date'), equalTo(selectedDate));
-      } else if (view === 'results' && limitParam) {
-        const limitVal = parseInt(limitParam, 10);
-        if (Number.isFinite(limitVal) && limitVal > 0) {
-          q = query(baseRef, limitToLast(limitVal));
+    const loadFromSupabase = async () => {
+      try {
+        const { LeagueService } = await import('../services/leagueService');
+        const { isSupabaseConfigured } = await import('../config/supabaseClient');
+        if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
+          const [supabaseMatches, supabaseTeams] = await Promise.all([
+            LeagueService.getMatchesByLeague(leagueId),
+            LeagueService.getTeamsByLeague(leagueId),
+          ]);
+          const formatted = supabaseMatches.map((m) => {
+            const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
+            const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
+            const dateStr = m.match_date
+              ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '')
+              : '';
+            return {
+              id: m.id,
+              teamA: m.team_a_name,
+              teamB: m.team_b_name,
+              scoreA: m.score_a || 0,
+              scoreB: m.score_b || 0,
+              logoA: teamAObj?.logo_url || '',
+              logoB: teamBObj?.logo_url || '',
+              roundLabel: m.label1 || m.label2 || '',
+              round: m.label1 || '',
+              week: m.label2 || '',
+              date: dateStr,
+              status: m.status,
+            };
+          });
+          setMatches(formatted);
+          setLoading(false);
+          return true;
         }
+      } catch (err: any) {
+        console.warn('Supabase fetch failed in OverlayContainer, falling back to Firebase:', err);
+      }
+      return false;
+    };
+
+    loadFromSupabase().then((loaded) => {
+      if (loaded) return;
+
+      if (!firebaseConfig) {
+        setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database (กรุณาใช้ URL ที่สร้างจาก Control Panel)');
+        setLoading(false);
+        return;
       }
 
-      const unsubTeams = listenToFirebaseTeams(db);
+      try {
+        const appName = `overlay-${leagueId.replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}`;
+        const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+        const db = getDatabase(app);
+        const baseRef = ref(db, 'matches');
 
-      const unsubscribe = onValue(
-        q,
-        (snapshot) => {
-          const items: any[] = [];
-          snapshot.forEach((child) => {
-            items.push({ id: child.key, ...child.val() });
-          });
-          setMatches(items);
-          setLoading(false);
-        },
-        (err) => {
-          setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
-          setLoading(false);
+        // Build Query
+        const selectedDate = dateParam === 'today' ? getLocalTodayString() : dateParam && dateParam !== 'all' ? dateParam : '';
+        let q: any = baseRef;
+
+        if (view === 'ticker' && selectedDate) {
+          q = query(baseRef, orderByChild('date'), equalTo(selectedDate));
+        } else if (view === 'results' && limitParam) {
+          const limitVal = parseInt(limitParam, 10);
+          if (Number.isFinite(limitVal) && limitVal > 0) {
+            q = query(baseRef, limitToLast(limitVal));
+          }
         }
-      );
 
-      return () => {
-        unsubscribe();
-        unsubTeams();
-      };
-    } catch (err: any) {
-      setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${err.message}`);
-      setLoading(false);
-    }
+        const unsubTeams = listenToFirebaseTeams(db);
+
+        const unsubscribe = onValue(
+          q,
+          (snapshot) => {
+            const items: any[] = [];
+            snapshot.forEach((child) => {
+              items.push({ id: child.key, ...child.val() });
+            });
+            setMatches(items);
+            setLoading(false);
+          },
+          (err) => {
+            setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
+            setLoading(false);
+          }
+        );
+
+        return () => {
+          unsubscribe();
+          unsubTeams();
+        };
+      } catch (err: any) {
+        setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${err.message}`);
+        setLoading(false);
+      }
+    });
   }, [dateParam, firebaseConfig, leagueId, limitParam, searchParams, view]);
 
   if (loading) {
@@ -243,17 +295,22 @@ export default function OverlayContainer() {
 
   // 2. Results List View
   const renderResultsView = () => {
-    const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+    const todayStr = getLocalTodayString();
+    const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
 
     if (filtered.length === 0) {
-      return <div className="overlay-status">ยังไม่มีข้อมูลการแข่งขัน</div>;
+      return (
+        <div className="overlay-status">
+          {selectedDate ? `ยังไม่มีข้อมูลการแข่งขันสำหรับวันที่ ${selectedDate}` : 'ยังไม่มีข้อมูลการแข่งขัน'}
+        </div>
+      );
     }
 
     // Group by Date and Week
     const groups: Record<string, any[]> = {};
     filtered.forEach((match) => {
-      const date = match.date || 'ไม่ระบุวันที่';
+      const date = match.date || '';
       let week = match.week || match.matchday || match.round || '1';
 
       if (!match.week && !match.matchday && !match.round && match.date) {
@@ -267,6 +324,21 @@ export default function OverlayContainer() {
       groups[key] ||= [];
       groups[key].push(match);
     });
+
+    const formatGroupTitle = (date: string, weekNum: string, sampleMatch?: any) => {
+      const hasDate = date && date.trim() !== '';
+      const roundLabel = sampleMatch?.round || '';
+      const weekLabel = sampleMatch?.week || (weekNum ? `สัปดาห์ที่ ${weekNum}` : '');
+
+      if (hasDate) {
+        return `📅 วันที่ ${date}`;
+      }
+
+      if (roundLabel && weekLabel) return `🏆 ${roundLabel} • ${weekLabel}`;
+      if (roundLabel) return `🏆 ${roundLabel} (WEEK #${weekNum})`;
+      if (weekLabel) return `🏆 ${weekLabel}`;
+      return `🏆 ตารางการแข่งขัน (WEEK #${weekNum || '1'})`;
+    };
 
     return (
       <div className="overlay-app">
@@ -286,10 +358,11 @@ export default function OverlayContainer() {
             })
             .map((key) => {
               const [date, weekNum] = key.split('|||');
+              const sampleMatch = groups[key][0];
               return (
                 <div key={key} className="overlay-date-group">
                   <div className="overlay-date-title">
-                    วันที่ {date} (WEEK #{weekNum})
+                    {formatGroupTitle(date, weekNum, sampleMatch)}
                   </div>
                   {groups[key].map((m) => {
                     const scoreA = Number(m.scoreA) || 0;
@@ -320,11 +393,16 @@ export default function OverlayContainer() {
 
   // 3. Ticker View (Bottom scrolling list)
   const renderTickerView = () => {
-    const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+    const todayStr = getLocalTodayString();
+    const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
 
     if (filtered.length === 0) {
-      return <div className="overlay-status">ยังไม่มีคะแนนสำหรับวันนี้</div>;
+      return (
+        <div className="overlay-status" style={{ padding: '8px 16px', fontSize: '0.9rem', color: '#94a3b8' }}>
+          ยังไม่มีข้อมูลการแข่งขันสำหรับวันที่ {selectedDate || todayStr}
+        </div>
+      );
     }
 
     const duration = parseInt(speed, 10) || 75;

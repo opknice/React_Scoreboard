@@ -1,3 +1,4 @@
+import React from 'react';
 import { broadcastScoreboardButton } from '../hooks/useScoreboardChannels';
 
 interface ScoreboardTimerControls {
@@ -20,7 +21,7 @@ interface ScoreboardTimerPanelProps {
   onOpenInstantReplay: () => void;
 }
 
-export default function ScoreboardTimerPanel({
+function ScoreboardTimerPanel({
   timer,
   onOpenPresetTime,
   onHideTime,
@@ -102,3 +103,5 @@ export default function ScoreboardTimerPanel({
     </div>
   );
 }
+
+export default React.memo(ScoreboardTimerPanel);

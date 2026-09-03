@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref, remove, update, type Database } from 'firebase/database';
-import type { FirebaseSaveTarget } from '../utils/excelParser';
+import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
 
 export interface DatabaseMatch {
   id: string;

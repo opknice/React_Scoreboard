@@ -14,14 +14,13 @@
     "verify:tailwind": "node verify-tailwind.mjs"
   },
   "dependencies": {
-    "exceljs": "^4.4.0",
+    "@supabase/supabase-js": "^2.112.4",
     "firebase": "^12.16.0",
     "obs-websocket-js": "^5.0.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-easy-crop": "^6.2.3",
-    "react-router-dom": "^7.18.1",
-    "xlsx": "^0.18.5"
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
@@ -36,6 +35,7 @@
     "jsdom": "^29.1.1",
     "oxlint": "^1.71.0",
     "postcss": "^8.4.49",
+    "supabase": "^2.116.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",

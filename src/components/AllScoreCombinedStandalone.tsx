@@ -24,44 +24,118 @@ export default function AllScoreCombinedStandalone() {
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
 
   useEffect(() => {
-    if (!firebaseConfig) {
-      setErrorMsg('ไม่พบ Firebase Config');
-      setLoading(false);
-      return;
-    }
+    let supabaseChannel: any = null;
 
-    try {
-      const appName = `standalone-combined-${leagueId}-${Date.now()}`;
-      const app = getApps().some((a) => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
-      const db = getDatabase(app);
-      const matchesRef = ref(db, 'matches');
-
-      const unsubTeams = listenToFirebaseTeams(db);
-
-      const unsubscribe = onValue(
-        matchesRef,
-        (snapshot) => {
-          const items: any[] = [];
-          snapshot.forEach((child) => {
-            items.push({ id: child.key, ...child.val() });
+    const loadFromSupabase = async () => {
+      try {
+        const { LeagueService } = await import('../services/leagueService');
+        const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
+        if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
+          const [supabaseMatches, supabaseTeams] = await Promise.all([
+            LeagueService.getMatchesByLeague(leagueId),
+            LeagueService.getTeamsByLeague(leagueId),
+          ]);
+          const formatted = supabaseMatches.map((m) => {
+            const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
+            const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
+            return {
+              id: m.id,
+              teamA: m.team_a_name,
+              teamB: m.team_b_name,
+              scoreA: m.score_a,
+              scoreB: m.score_b,
+              status: m.status,
+              logoA: teamAObj?.logo_url || '',
+              logoB: teamBObj?.logo_url || '',
+              round: m.label1 || '',
+              week: m.label2 || '',
+              date: m.match_date ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '') : '',
+            };
           });
-          setMatches(items);
+          setMatches(formatted);
           setLoading(false);
-        },
-        (err) => {
-          setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
-          setLoading(false);
-        }
-      );
 
-      return () => {
-        unsubscribe();
-        unsubTeams();
-      };
-    } catch (err: any) {
-      setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
-      setLoading(false);
-    }
+          // Setup Realtime subscription for automatic updates on OBS
+          if (!supabaseChannel && supabase) {
+            supabaseChannel = supabase
+              .channel(`public:combined_table_${leagueId}`)
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
+                () => {
+                  void loadFromSupabase();
+                }
+              )
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
+                () => {
+                  void loadFromSupabase();
+                }
+              )
+              .subscribe();
+          }
+
+          return true;
+        }
+      } catch (err: any) {
+        console.warn('Supabase fetch failed in AllScoreCombinedStandalone, falling back to Firebase:', err);
+      }
+      return false;
+    };
+
+    loadFromSupabase().then((loaded) => {
+      if (loaded) return;
+
+      if (!firebaseConfig) {
+        setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const appName = `standalone-combined-${leagueId}-${Date.now()}`;
+        const app = getApps().some((a) => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
+        const db = getDatabase(app);
+        const matchesRef = ref(db, 'matches');
+
+        const unsubTeams = listenToFirebaseTeams(db);
+
+        const unsubscribe = onValue(
+          matchesRef,
+          (snapshot) => {
+            const items: any[] = [];
+            snapshot.forEach((child) => {
+              items.push({ id: child.key, ...child.val() });
+            });
+            setMatches(items);
+            setLoading(false);
+          },
+          (err) => {
+            setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
+            setLoading(false);
+          }
+        );
+
+        return () => {
+          unsubscribe();
+          unsubTeams();
+        };
+      } catch (err: any) {
+        setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      if (supabaseChannel) {
+        import('../config/supabaseClient').then(({ supabase }) => {
+          if (supabase && supabaseChannel) {
+            void supabase.removeChannel(supabaseChannel);
+          }
+        });
+      }
+    };
   }, [firebaseConfig, leagueId, searchParams]);
 
   if (loading) {
@@ -94,6 +168,11 @@ export default function AllScoreCombinedStandalone() {
       const scoreA = Number(match.scoreA);
       const scoreB = Number(match.scoreB);
       if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
+
+      // Skip scheduled matches that have not been played yet (0-0)
+      if (match.status === 'scheduled' && scoreA === 0 && scoreB === 0) {
+        return;
+      }
 
       const logoA = extractMatchLogo(match, 'A');
       const logoB = extractMatchLogo(match, 'B');
@@ -143,7 +222,7 @@ export default function AllScoreCombinedStandalone() {
 
   const groups: Record<string, any[]> = {};
   filteredMatches.forEach((match) => {
-    const date = match.date || 'ไม่ระบุวันที่';
+    const date = match.date || '';
     let week = match.week || match.matchday || match.round || '1';
 
     if (!match.week && !match.matchday && !match.round && match.date) {
@@ -158,6 +237,30 @@ export default function AllScoreCombinedStandalone() {
     groups[key] ||= [];
     groups[key].push(match);
   });
+
+  const formatGroupTitle = (date: string, weekNum: string, sampleMatch?: any) => {
+    const hasDate = date && date !== 'ไม่ระบุวันที่' && date.trim() !== '';
+    const roundLabel = sampleMatch?.round || '';
+    const weekLabel = sampleMatch?.week || (weekNum ? `สัปดาห์ที่ ${weekNum}` : '');
+
+    if (hasDate) {
+      return `📅 วันที่ ${date}`;
+    }
+
+    if (roundLabel && weekLabel) {
+      return `🏆 ${roundLabel} • ${weekLabel}`;
+    }
+
+    if (roundLabel) {
+      return `🏆 ${roundLabel} (WEEK #${weekNum})`;
+    }
+
+    if (weekLabel) {
+      return `🏆 ${weekLabel}`;
+    }
+
+    return `🏆 ตารางการแข่งขัน (WEEK #${weekNum || '1'})`;
+  };
 
   const renderLogo = (logoIdentifier: string | undefined, teamName: string) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
@@ -272,10 +375,11 @@ export default function AllScoreCombinedStandalone() {
                 })
                 .map((key) => {
                   const [date, weekNum] = key.split('|||');
+                  const sampleMatch = groups[key][0];
                   return (
                     <div key={key} className="combined-date-group">
                       <div className="combined-date-title">
-                        วันที่ {date} (WEEK #{weekNum})
+                        {formatGroupTitle(date, weekNum, sampleMatch)}
                       </div>
 
                       {groups[key].map((m) => {

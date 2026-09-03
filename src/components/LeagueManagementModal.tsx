@@ -1,0 +1,241 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
+import { useAuthAccess } from '../hooks/useAuthAccess';
+import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
+import type { Match } from '../config/supabaseClient';
+import LeagueTab from './league-management/LeagueTab';
+import TeamsTab from './league-management/TeamsTab';
+import MatchesTab from './league-management/MatchesTab';
+import './LeagueManagementModal.css';
+
+
+export interface LeagueManagementModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelectMatchToScoreboard?: (match: Match) => void;
+  currentUserEmail?: string;
+  initialTab?: 'league' | 'teams' | 'matches';
+}
+
+export default function LeagueManagementModal({
+  isOpen,
+  onClose,
+  onSelectMatchToScoreboard,
+  currentUserEmail,
+  initialTab = 'matches',
+}: LeagueManagementModalProps) {
+  const authAccess = useAuthAccess();
+  const effectiveEmail = currentUserEmail || authAccess?.email || '';
+  const { isQuotaExceeded, incrementUploadCount, loading: quotaLoading } = useImageUploadQuota();
+
+  const {
+    isConfigured,
+    leagues,
+    activeLeagueId,
+    teams,
+    matches,
+    loading,
+    selectLeague,
+    createLeague,
+    updateLeague,
+    deleteLeague,
+    createTeam,
+    updateTeam,
+    deleteTeam,
+    uploadTeamLogo,
+    createMatch,
+    createMatchesBatch,
+    updateMatch,
+    deleteMatch,
+    clearMatches,
+  } = useSupabaseLeague(undefined, effectiveEmail);
+
+  const [activeTab, setActiveTab] = useState<'league' | 'teams' | 'matches'>(() => {
+    return initialTab || (leagues.length === 0 ? 'league' : 'matches');
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      } else if (leagues.length === 0) {
+        setActiveTab('league');
+      }
+    }
+  }, [isOpen, initialTab, leagues.length]);
+
+  // Handle ESC key and prevent body scroll when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  // Robust Click-Outside handling (prevents text-drag outside from accidentally closing modal)
+  const overlayMouseDownRef = useRef(false);
+
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      overlayMouseDownRef.current = true;
+    } else {
+      overlayMouseDownRef.current = false;
+    }
+  }, []);
+
+  const handleOverlayMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (overlayMouseDownRef.current && e.target === e.currentTarget) {
+      onClose();
+    }
+    overlayMouseDownRef.current = false;
+  }, [onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div
+      className="league-modal-overlay"
+      onMouseDown={handleOverlayMouseDown}
+      onMouseUp={handleOverlayMouseUp}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="league-modal-title"
+    >
+      <div className="league-modal-container">
+        {/* Header */}
+        <div className="league-modal-header">
+          <h2 id="league-modal-title" className="league-modal-title">
+            <i className="fas fa-trophy"></i>
+            <span>จัดการข้อมูลลีก & ตารางการแข่งขัน (Supabase)</span>
+            {effectiveEmail && (
+              <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 500, marginLeft: '8px' }}>
+                <i className="fas fa-user" style={{ marginRight: '4px' }}></i>
+                {effectiveEmail}
+              </span>
+            )}
+          </h2>
+          <button className="league-modal-close" onClick={onClose}>
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+
+        {/* Warning if Supabase is not configured */}
+        {!isConfigured && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.2)', borderLeft: '4px solid #ef4444', padding: '12px 20px', fontSize: '0.88rem', color: '#fca5a5' }}>
+            <strong>⚠️ ยังไม่ได้เชื่อมต่อ Supabase:</strong> กรุณากรอก <code>VITE_SUPABASE_URL</code> และ <code>VITE_SUPABASE_ANON_KEY</code> ในไฟล์ <code>.env</code> และรัน SQL Script ใน Supabase SQL Editor
+          </div>
+        )}
+
+        {/* Active League Quick Selector & Tabs Navigation */}
+        <div className="league-modal-tabs">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '12px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#94a3b8' }}>ลีกปัจจุบัน:</span>
+            <select
+              className="league-form-select"
+              style={{ width: 'auto', padding: '4px 10px', fontSize: '0.82rem', background: '#1e293b' }}
+              value={activeLeagueId}
+              onChange={(e) => selectLeague(e.target.value)}
+            >
+              {leagues.length === 0 && <option value="">(ยังไม่มีลีกในระบบ)</option>}
+              {leagues.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} {l.season ? `(${l.season})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            className={`league-tab-btn ${activeTab === 'matches' ? 'active' : ''}`}
+            onClick={() => setActiveTab('matches')}
+          >
+            <i className="fas fa-calendar-alt"></i> ตารางแข่งขัน ({matches.length})
+          </button>
+          <button
+            className={`league-tab-btn ${activeTab === 'teams' ? 'active' : ''}`}
+            onClick={() => setActiveTab('teams')}
+          >
+            <i className="fas fa-users"></i> ทีม ({teams.length})
+          </button>
+          <button
+            className={`league-tab-btn ${activeTab === 'league' ? 'active' : ''}`}
+            onClick={() => setActiveTab('league')}
+          >
+            <i className="fas fa-cog"></i> จัดการลีก
+          </button>
+        </div>
+
+        {/* Body Content */}
+        <div className="league-modal-body">
+          {activeTab === 'league' && (
+            <LeagueTab
+              leagues={leagues}
+              activeLeagueId={activeLeagueId}
+              loading={loading}
+              effectiveEmail={effectiveEmail}
+              onSelectLeague={selectLeague}
+              onCreateLeague={createLeague}
+              onUpdateLeague={updateLeague}
+              onDeleteLeague={deleteLeague}
+            />
+          )}
+
+          {activeTab === 'teams' && (
+            <TeamsTab
+              activeLeagueId={activeLeagueId}
+              teams={teams}
+              loading={loading}
+              isQuotaExceeded={isQuotaExceeded}
+              quotaLoading={quotaLoading}
+              onCreateTeam={createTeam}
+              onUpdateTeam={updateTeam}
+              onDeleteTeam={deleteTeam}
+              onUploadTeamLogo={uploadTeamLogo}
+              onIncrementUploadCount={incrementUploadCount}
+            />
+          )}
+
+          {activeTab === 'matches' && (
+            <MatchesTab
+              activeLeagueId={activeLeagueId}
+              teams={teams}
+              matches={matches}
+              loading={loading}
+              onCreateMatch={createMatch}
+              onCreateMatchesBatch={createMatchesBatch}
+              onUpdateMatch={updateMatch}
+              onDeleteMatch={deleteMatch}
+              onClearMatches={clearMatches}
+              onSelectMatchToScoreboard={onSelectMatchToScoreboard}
+              onCloseModal={onClose}
+            />
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="league-modal-footer">
+          <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+            ⚡ ข้อมูลทั้งหมดจะถูกซิงค์และบันทึกลง Supabase แบบ Real-time ทันที
+          </span>
+          <button className="league-btn-secondary" onClick={onClose}>
+            ปิดหน้าต่าง
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}

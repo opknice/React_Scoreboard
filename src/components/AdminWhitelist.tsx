@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { useNavigate } from 'react-router-dom';
 import {
-  getFirebaseAuth,
   loginWithGoogle,
   logoutUser,
   isSuperAdmin,
   SUPER_ADMIN_EMAILS,
+  onAuthStateChange,
   fetchAllUserPermissions,
   setUserAccessStatus,
-  type UserAccessRecord
-} from '../config/firebaseAuth';
+} from '../services/supabaseAuthService';
+import type { UserAccessRecord, UserAccessStatus } from '../config/supabaseClient';
 import { evaluateTrialAccess } from '../utils/trialAccess';
 
 export default function AdminWhitelist() {
@@ -24,17 +24,17 @@ export default function AdminWhitelist() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'allowed' | 'pending' | 'denied'>('all');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  // Load all user records from Firebase Realtime Database
+  // Load all user records through the protected Supabase RPC.
   const loadUserRecords = useCallback(async () => {
     setLoadingData(true);
     try {
       const records = await fetchAllUserPermissions();
       setUserRecords(records);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error fetching user permissions:', err);
-      const detail = err?.message || 'Permission denied';
+      const detail = err instanceof Error ? err.message : 'Permission denied';
       setMessage({
-        text: `ไม่สามารถโหลดข้อมูลสิทธิ์จาก Firebase ได้: ${detail}`,
+        text: `ไม่สามารถโหลดข้อมูลสิทธิ์จาก Supabase ได้: ${detail}`,
         type: 'error',
       });
     } finally {
@@ -44,12 +44,15 @@ export default function AdminWhitelist() {
 
   useEffect(() => {
     try {
-      const auth = getFirebaseAuth();
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      const unsubscribe = onAuthStateChange((event, session) => {
+        if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN' && event !== 'SIGNED_OUT' && event !== 'USER_UPDATED') {
+          return;
+        }
+        const currentUser = session?.user ?? null;
         setUser(currentUser);
         setAuthLoading(false);
         if (currentUser && isSuperAdmin(currentUser.email)) {
-          loadUserRecords();
+          void loadUserRecords();
         }
       });
       return () => unsubscribe();
@@ -60,7 +63,7 @@ export default function AdminWhitelist() {
   }, [loadUserRecords]);
 
   // Handle 1-click status change (Allow / Deny / Pending)
-  const handleStatusChange = async (targetEmail: string, newStatus: 'allowed' | 'denied' | 'pending') => {
+  const handleStatusChange = async (targetEmail: string, newStatus: UserAccessStatus) => {
     if (SUPER_ADMIN_EMAILS.includes(targetEmail.toLowerCase())) {
       setMessage({ text: 'ไม่สามารถเปลี่ยนสิทธิ์ของ Super Admin ได้', type: 'error' });
       return;
@@ -72,9 +75,9 @@ export default function AdminWhitelist() {
       setUserRecords(updatedList);
       const actionLabel = newStatus === 'allowed' ? 'อนุญาต' : newStatus === 'denied' ? 'ระงับ/บล็อก' : 'ตั้งเป็นรออนุมัติ';
       setMessage({ text: `เปลี่ยนสิทธิ์สำหรับ ${targetEmail} เป็น "${actionLabel}" เรียบร้อยแล้ว!`, type: 'success' });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error changing status:', err);
-      setMessage({ text: 'เกิดข้อผิดพลาดในการอัปเดตสิทธิ์บน Firebase', type: 'error' });
+      setMessage({ text: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการอัปเดตสิทธิ์บน Supabase', type: 'error' });
     } finally {
       setLoadingData(false);
     }
@@ -97,9 +100,9 @@ export default function AdminWhitelist() {
       setUserRecords(updatedList);
       setNewEmail('');
       setMessage({ text: `เพิ่มและอนุญาตสิทธิ์อีเมล ${target} เรียบร้อยแล้ว!`, type: 'success' });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error adding email:', err);
-      setMessage({ text: 'เกิดข้อผิดพลาดในการบันทึกไปยัง Firebase Database', type: 'error' });
+      setMessage({ text: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึกไปยัง Supabase', type: 'error' });
     } finally {
       setLoadingData(false);
     }
@@ -108,7 +111,7 @@ export default function AdminWhitelist() {
   const handleLogin = async () => {
     try {
       await loginWithGoogle();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Login Error:', err);
     }
   };
@@ -125,7 +128,7 @@ export default function AdminWhitelist() {
   const filteredRecords = userRecords.filter((rec) => {
     const matchesSearch =
       rec.email.toLowerCase().includes(searchTerm.trim().toLowerCase()) ||
-      (rec.displayName && rec.displayName.toLowerCase().includes(searchTerm.trim().toLowerCase()));
+      (rec.display_name && rec.display_name.toLowerCase().includes(searchTerm.trim().toLowerCase()));
     const matchesStatus = statusFilter === 'all' || rec.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -235,13 +238,12 @@ export default function AdminWhitelist() {
 
             {message.type === 'error' && (
               <div style={{ marginTop: '12px', fontSize: '13px', color: '#fca5a5', borderTop: '1px solid rgba(239,68,68,0.2)', paddingTop: '10px' }}>
-                💡 <strong>วิธีตั้งค่า Realtime Database อย่างปลอดภัย:</strong>
+                💡 <strong>ตรวจสอบ RLS และ RPC ใน Supabase Dashboard:</strong>
                 <ol style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: '1.6' }}>
-                  <li>เข้าสู่ <strong>Firebase Console</strong> ➔ โปรเจกต์ <strong>authen-obs-scoreboard</strong></li>
-                  <li>ไปที่เมนู <strong>Build</strong> ➔ <strong>Realtime Database</strong> (กด <em>Create Database</em> หากยังไม่ได้สร้าง)</li>
-                  <li>เลือกแท็บ <strong>Rules</strong> แล้วนำเนื้อหาจากไฟล์ <strong>database.rules.json</strong> ในโปรเจกต์ไปใช้ จากนั้นกด <strong>Publish</strong></li>
-                  <li>ห้ามตั้งค่า <code>.read: true</code> หรือ <code>.write: true</code> ในระบบจริง เพราะจะทำให้ผู้ใช้แก้สิทธิ์และวันทดลองเองได้</li>
-                  <li>กลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Firebase"</strong></li>
+                  <li>เปิดเมนู <strong>Supabase → SQL Editor</strong></li>
+                  <li>ตรวจสอบว่า migration ของ <strong>user_permissions</strong> ทำงานสำเร็จ</li>
+                  <li>ห้ามเปิดสิทธิ์ public เพราะผู้ใช้จะสามารถแก้ status และ quota เองได้</li>
+                  <li>กลับมากดปุ่ม <strong>"🔄 รีเฟรชข้อมูลจาก Supabase"</strong></li>
                 </ol>
               </div>
             )}
@@ -322,18 +324,18 @@ export default function AdminWhitelist() {
         <div style={styles.tableContainer}>
           {filteredRecords.length === 0 ? (
             <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-              {loadingData ? 'กำลังดึงข้อมูลจาก Firebase...' : 'ยังไม่มีประวัติการเข้าใช้งานหรืออีเมลในระบบ'}
+              {loadingData ? 'กำลังดึงข้อมูลจาก Supabase...' : 'ยังไม่มีประวัติการเข้าใช้งานหรืออีเมลในระบบ'}
             </div>
           ) : (
             filteredRecords.map((rec) => {
               const isSuper = SUPER_ADMIN_EMAILS.includes(rec.email.toLowerCase());
-              const trial = rec.status === 'pending' ? evaluateTrialAccess(rec.trialStartedAt) : null;
+              const trial = rec.status === 'pending' ? evaluateTrialAccess(rec.trial_started_at) : null;
               return (
                 <div key={rec.email} style={styles.tableRow}>
                   {/* User Profile Info */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '220px' }}>
-                    {rec.photoURL ? (
-                      <img src={rec.photoURL} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                    {rec.photo_url ? (
+                      <img src={rec.photo_url} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
                     ) : (
                       <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#cbd5e1' }}>
                         {rec.email.charAt(0).toUpperCase()}
@@ -342,7 +344,7 @@ export default function AdminWhitelist() {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '14px', color: '#f8fafc', fontWeight: 600 }}>
-                          {rec.displayName || rec.email.split('@')[0]}
+                          {rec.display_name || rec.email.split('@')[0]}
                         </span>
                         {isSuper && (
                           <span style={{ fontSize: '10px', backgroundColor: 'rgba(234, 179, 8, 0.2)', color: '#facc15', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>
@@ -351,9 +353,9 @@ export default function AdminWhitelist() {
                         )}
                       </div>
                       <div style={{ fontSize: '12px', color: '#94a3b8' }}>{rec.email}</div>
-                      {rec.lastLogin && (
+                      {rec.last_login && (
                         <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
-                          ล็อกอินล่าสุด: {new Date(rec.lastLogin).toLocaleString('th-TH')}
+                          ล็อกอินล่าสุด: {new Date(rec.last_login).toLocaleString('th-TH')}
                         </div>
                       )}
                     </div>
@@ -409,6 +411,17 @@ export default function AdminWhitelist() {
                           🚫 Deny
                         </button>
                       )}
+                      {rec.status !== 'pending' && (
+                        <button
+                          type="button"
+                          onClick={() => handleStatusChange(rec.email, 'pending')}
+                          disabled={loadingData}
+                          style={styles.filterTab}
+                          title="คืนสถานะเป็นรออนุมัติ/ทดลองใช้งาน"
+                        >
+                          ⏳ Pending
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <span style={{ fontSize: '12px', color: '#64748b' }}>สิทธิ์ถาวร</span>
@@ -422,7 +435,7 @@ export default function AdminWhitelist() {
         {/* Refresh & Logout Footer */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <button onClick={loadUserRecords} style={styles.secondaryBtn}>
-            🔄 รีเฟรชข้อมูลจาก Firebase
+            🔄 รีเฟรชข้อมูลจาก Supabase
           </button>
           <button onClick={handleLogout} style={styles.dangerBtn}>
             🚪 ออกจากระบบ

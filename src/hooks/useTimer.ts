@@ -15,6 +15,11 @@ export const useTimer = () => {
   const timerRef = useRef(timer);
   const baseTimerRef = useRef(timer);
   const startedAtRef = useRef<number | null>(null);
+  const countdownStartTimeRef = useRef(countdownStartTime);
+
+  useEffect(() => {
+    countdownStartTimeRef.current = countdownStartTime;
+  }, [countdownStartTime]);
 
   const syncTimer = useCallback(() => {
     if (startedAtRef.current === null) return;
@@ -41,7 +46,7 @@ export const useTimer = () => {
     };
   }, [isRunning, syncTimer]);
 
-  const start1 = () => {
+  const start1 = useCallback(() => {
     setHalf('1st');
     setCustomText('');
     baseTimerRef.current = 0;
@@ -49,77 +54,79 @@ export const useTimer = () => {
     setTimer(0);
     startedAtRef.current = Date.now();
     setIsRunning(true);
-  };
+  }, []);
 
-  const start2 = () => {
+  const start2 = useCallback(() => {
+    const startVal = countdownStartTimeRef.current;
     setHalf('2nd');
     setCustomText('');
-    baseTimerRef.current = countdownStartTime;
-    timerRef.current = countdownStartTime;
-    setTimer(countdownStartTime);
+    baseTimerRef.current = startVal;
+    timerRef.current = startVal;
+    setTimer(startVal);
     startedAtRef.current = Date.now();
     setIsRunning(true);
-  };
+  }, []);
 
-  const pause = () => {
+  const pause = useCallback(() => {
     syncTimer();
     baseTimerRef.current = timerRef.current;
     startedAtRef.current = null;
     setIsRunning(false);
-  };
+  }, [syncTimer]);
 
-  const resume = () => {
-    if (customText) setCustomText('');
+  const resume = useCallback(() => {
+    setCustomText('');
     baseTimerRef.current = timerRef.current;
     startedAtRef.current = Date.now();
     setIsRunning(true);
-  };
+  }, []);
 
-  const halfpause = () => {
+  const halfpause = useCallback(() => {
     syncTimer();
     baseTimerRef.current = timerRef.current;
     startedAtRef.current = null;
     setIsRunning(false);
     setHalf('');
     setCustomText('HT');
-  };
+  }, [syncTimer]);
 
-  const fulltime = () => {
+  const fulltime = useCallback(() => {
     syncTimer();
     baseTimerRef.current = timerRef.current;
     startedAtRef.current = null;
     setIsRunning(false);
     setHalf('');
     setCustomText('FT');
-  };
+  }, [syncTimer]);
 
-  const resetToZero = () => {
+  const resetToZero = useCallback(() => {
     startedAtRef.current = null;
     baseTimerRef.current = 0;
     timerRef.current = 0;
     setIsRunning(false);
     setCustomText('');
     setTimer(0);
-  };
+  }, []);
 
-  const setCountdownStartTime = (seconds: number) => {
+  const setCountdownStartTime = useCallback((seconds: number) => {
     const nextSeconds = Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : 0;
     setCountdownStartTimeState(nextSeconds);
+    countdownStartTimeRef.current = nextSeconds;
     localStorage.setItem('countdownStartTime', nextSeconds.toString());
-  };
+  }, []);
 
-  const setTimerValue = (seconds: number) => {
+  const setTimerValue = useCallback((seconds: number) => {
     const nextSeconds = Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : 0;
     timerRef.current = nextSeconds;
     baseTimerRef.current = nextSeconds;
     if (startedAtRef.current !== null) startedAtRef.current = Date.now();
     setTimer(nextSeconds);
-  };
+  }, []);
 
-  const toggleHalf = () => {
-    if (customText) setCustomText('');
+  const toggleHalf = useCallback(() => {
+    setCustomText('');
     setHalf((prev) => (prev === '1st' ? '2nd' : '1st'));
-  };
+  }, []);
 
   const formattedTime = useMemo(() => {
     if (customText) return customText;
