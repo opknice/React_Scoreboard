@@ -675,22 +675,6 @@ export default function ScoreboardController() {
       .sort((a, b) => a.match_number - b.match_number);
   }, [supabaseLeague.matches, isMatchFinished]);
 
-  // --- Load match data by ID from Supabase ---
-  const applyMatch = (matchId = matchIdInput) => {
-    if (supabaseLeague.matches.length > 0) {
-      const sbMatch = supabaseLeague.matches.find((m) => m.match_number === matchId);
-      if (sbMatch) {
-        if (isMatchFinished(sbMatch)) {
-          triggerToast(`⚠️ แมตช์ #${matchId} (${sbMatch.team_a_name} vs ${sbMatch.team_b_name}) มีการบันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
-          return;
-        }
-        applyMatchFromSupabase(sbMatch);
-        return;
-      }
-    }
-    triggerToast(`ไม่พบข้อมูลแมตช์ #${matchId} ในลีกปัจจุบัน`, 'error');
-  };
-
   // --- Load match from Supabase into scoreboard ---
   const applyMatchFromSupabase = useCallback((match: SupabaseMatch, customTeams?: SupabaseTeam[]) => {
     if (!supabaseLeague.activeLeagueId || match.league_id !== supabaseLeague.activeLeagueId) {
@@ -1368,7 +1352,6 @@ export default function ScoreboardController() {
 
       {/* Header */}
       <ScoreboardHeader
-        leagueName={supabaseLeague.activeLeague?.name}
         videoFolder={videoFolder}
         onConnectVideoFolder={handleVideoFolderConnect}
         onResetVideoFolder={handleVideoFolderReset}
@@ -1400,6 +1383,7 @@ export default function ScoreboardController() {
           <div className="card" style={{ padding: '8px 12px' }}>
             <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
               <div className="row" style={{ marginBottom: 0, gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* ปุ่มจัดการลีก - เก็บไว้ที่เดิม */}
                 <button
                   className="btn-primary btn-sm"
                   onClick={() => setShowLeagueManagementModal(true)}
@@ -1410,7 +1394,10 @@ export default function ScoreboardController() {
                   <span>🏆 จัดการลีก</span>
                 </button>
 
-                {/* League Selector Dropdown */}
+              </div>
+
+              <div className="row" style={{ marginBottom: 0, gap: '4px', alignItems: 'center' }}>
+                {/* League Selector Dropdown (ย้ายมาจาก Header) */}
                 <select
                   style={{
                     padding: '5px 8px',
@@ -1419,8 +1406,8 @@ export default function ScoreboardController() {
                     color: '#38bdf8',
                     border: '1px solid #334155',
                     borderRadius: '4px',
-                    minWidth: '150px',
-                    maxWidth: '220px',
+                    minWidth: '100px',
+                    maxWidth: '150px',
                     fontWeight: 600
                   }}
                   value={supabaseLeague.activeLeagueId || selectedLeagueIdToLoad}
@@ -1439,7 +1426,7 @@ export default function ScoreboardController() {
                   ))}
                 </select>
 
-                {/* Refresh league data button */}
+                {/* Refresh league data button (ย้ายมาจาก Header) */}
                 <button
                   type="button"
                   className="btn-primary btn-sm"
@@ -1452,19 +1439,16 @@ export default function ScoreboardController() {
                     background: '#059669',
                     borderColor: '#059669',
                     fontWeight: 600,
-                    cursor: supabaseLeague.activeLeagueId && !supabaseLeague.detailsLoading ? 'pointer' : 'not-allowed'
+                    cursor: supabaseLeague.activeLeagueId && !supabaseLeague.detailsLoading ? 'pointer' : 'not-allowed',
+                    padding: '5px 10px',
+                    fontSize: '0.8rem',
                   }}
                   title="รีเฟรชข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
                 >
                   <i className={supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? "fas fa-spinner fa-spin" : "fas fa-sync-alt"}></i>
-                  <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? 'กำลังรีเฟรช...' : 'รีเฟรชข้อมูลลีก'}</span>
+                  <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? 'Refreshing ...' : ''}</span>
                 </button>
 
-
-              </div>
-
-              <div className="row" style={{ marginBottom: 0, gap: '4px', alignItems: 'center' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>เลือกคู่แข่งขัน</label>
                 <button
                   onClick={() => handleNavigateMatch('prev')}
                   style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
@@ -1483,8 +1467,8 @@ export default function ScoreboardController() {
                       color: '#f8fafc',
                       border: '1px solid #475569',
                       borderRadius: '4px',
-                      minWidth: '200px',
-                      maxWidth: '320px',
+                      minWidth: '100px',
+                      maxWidth: '150px',
                       flex: '1'
                     }}
                     value={pendingMatches.some((m) => m.match_number === matchIdInput) ? matchIdInput : ''}

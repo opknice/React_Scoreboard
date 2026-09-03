@@ -5,7 +5,6 @@ import UserAvatar from '../UserAvatar';
 import { formatTrialRemaining } from '../../utils/trialAccess';
 
 export interface ScoreboardHeaderProps {
-  leagueName?: string;
   videoFolder: {
     isConnected: boolean;
     isConnecting: boolean;
@@ -23,7 +22,6 @@ export interface ScoreboardHeaderProps {
 }
 
 export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
-  leagueName,
   videoFolder,
   onConnectVideoFolder,
   onResetVideoFolder,
@@ -45,9 +43,8 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
         gap: '8px',
       }}
     >
-      <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-color)' }}>
-        {leagueName || 'Football Scoreboard Controller'}
-      </h1>
+      {/* Placeholder - เว้นว่างไว้ */}
+      <div style={{ minHeight: '20px' }}></div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
