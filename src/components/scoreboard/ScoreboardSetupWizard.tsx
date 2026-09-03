@@ -221,7 +221,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                   }}
                 >
                   <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
-                  <span>🏆 จัดการลีก / สลับคู่แข่งขัน</span>
+                  <span> จัดการลีก / สลับคู่แข่งขัน</span>
                 </button>
                 <button
                   type="button"
@@ -242,7 +242,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                   }}
                 >
                   <i className="fas fa-plus-circle"></i>
-                  <span>➕ สร้างลีกใหม่</span>
+                  <span> สร้างลีกใหม่</span>
                 </button>
               </div>
             </>

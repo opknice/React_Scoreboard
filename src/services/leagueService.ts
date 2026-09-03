@@ -136,28 +136,33 @@ export class LeagueService {
     return (data as unknown as Team);
   }
 
-  static async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
+  static async updateTeam(id: string, updates: Partial<Team>, expectedLeagueId: string): Promise<Team> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
+    }
+    if (updates.league_id !== undefined && updates.league_id !== expectedLeagueId) {
+      throw new Error('Team league_id does not match the active league.');
     }
     const data = await executeSupabaseRequest(() => supabase!
       .from('teams')
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id)
+      .eq('league_id', expectedLeagueId)
       .select(TEAM_COLUMNS)
       .single());
 
     return (data as unknown as Team);
   }
 
-  static async deleteTeam(id: string): Promise<void> {
+  static async deleteTeam(id: string, expectedLeagueId: string): Promise<void> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
     await executeSupabaseRequest(() => supabase!
       .from('teams')
       .delete()
-      .eq('id', id));
+      .eq('id', id)
+      .eq('league_id', expectedLeagueId));
   }
 
   /**
@@ -243,9 +248,12 @@ export class LeagueService {
     return data as Match;
   }
 
-  static async updateMatch(id: string, updates: Partial<Match>): Promise<Match> {
+  static async updateMatch(id: string, updates: Partial<Match>, expectedLeagueId: string): Promise<Match> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
+    }
+    if (updates.league_id !== undefined && updates.league_id !== expectedLeagueId) {
+      throw new Error('Match league_id does not match the active league.');
     }
     const cleanUpdates: Partial<Match> = {
       ...updates,
@@ -259,20 +267,22 @@ export class LeagueService {
       .from('matches')
       .update(cleanUpdates)
       .eq('id', id)
+      .eq('league_id', expectedLeagueId)
       .select(MATCH_COLUMNS)
       .single());
 
     return data as unknown as Match;
   }
 
-  static async deleteMatch(id: string): Promise<void> {
+  static async deleteMatch(id: string, expectedLeagueId: string): Promise<void> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
     await executeSupabaseRequest(() => supabase!
       .from('matches')
       .delete()
-      .eq('id', id));
+      .eq('id', id)
+      .eq('league_id', expectedLeagueId));
   }
 
   static async deleteMatchesByLeague(leagueId: string): Promise<void> {

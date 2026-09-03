@@ -29,6 +29,10 @@ function invalidateLeagueDetailsCache(leagueId: string): void {
   leagueMemoryCache.invalidate(getMatchesCacheKey(leagueId));
 }
 
+function filterRowsByLeague<T extends { league_id: string }>(rows: T[], leagueId: string): T[] {
+  return rows.filter((row) => row.league_id === leagueId);
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
@@ -42,6 +46,17 @@ interface SharedRealtimeChange {
 }
 
 type SharedRealtimeListener = (change: SharedRealtimeChange) => void;
+
+interface LeagueChangedEventDetail {
+  type: 'data-changed';
+  leagueId?: string;
+}
+
+function dispatchLeagueChanged(leagueId?: string): void {
+  window.dispatchEvent(new CustomEvent<LeagueChangedEventDetail>('supabase_league_changed', {
+    detail: { type: 'data-changed', leagueId },
+  }));
+}
 
 export interface UseSupabaseLeagueResult {
   isConfigured: boolean;
@@ -178,9 +193,11 @@ export function useSupabaseLeague(
       if (data.length > 0 && currentActive) {
         const currentValid = data.some((l) => l.id === currentActive);
         if (!currentValid) {
+          activeLeagueIdRef.current = '';
           setActiveLeagueId('');
         }
       } else if (!data.length) {
+        activeLeagueIdRef.current = '';
         setActiveLeagueId('');
       }
     } catch (err: unknown) {
@@ -197,8 +214,8 @@ export function useSupabaseLeague(
 
   // Load teams and matches for the active league
   const fetchLeagueDetails = useCallback(async (leagueId: string, silent = false) => {
-    const requestId = ++detailsRequestIdRef.current;
     if (!isConfigured || !leagueId) {
+      detailsRequestIdRef.current += 1;
       setTeams([]);
       setMatches([]);
       setDetailsLoading(false);
@@ -206,6 +223,12 @@ export function useSupabaseLeague(
       if (silent) setRefreshing(false);
       return;
     }
+
+    // A delayed refresh for an old league must never touch the active league's
+    // state. This is the primary boundary against stale cross-league data.
+    if (activeLeagueIdRef.current !== leagueId) return;
+
+    const requestId = ++detailsRequestIdRef.current;
 
     // A fresh server response is required before auto-loading a match. This
     // prevents stale cached details from being treated as the current league.
@@ -218,8 +241,10 @@ export function useSupabaseLeague(
     const hasCachedDetails = Boolean(cachedTeams || cachedMatches);
 
     // Keep the current screen responsive while the latest data is fetched.
-    if (cachedTeams) setTeams(cachedTeams.data);
-    if (cachedMatches) setMatches(cachedMatches.data);
+    if (activeLeagueIdRef.current === leagueId) {
+      if (cachedTeams) setTeams(filterRowsByLeague(cachedTeams.data, leagueId));
+      if (cachedMatches) setMatches(filterRowsByLeague(cachedMatches.data, leagueId));
+    }
     if (!silent && !hasCachedDetails) setLoading(true);
     if (silent) setRefreshing(true);
     if (!silent) setRefreshing(false);
@@ -228,11 +253,13 @@ export function useSupabaseLeague(
         dedupeRequest(teamsCacheKey, () => LeagueService.getTeamsByLeague(leagueId)),
         dedupeRequest(matchesCacheKey, () => LeagueService.getMatchesByLeague(leagueId)),
       ]);
-      leagueMemoryCache.write(teamsCacheKey, teamsData);
-      leagueMemoryCache.write(matchesCacheKey, matchesData);
+      const scopedTeams = filterRowsByLeague(teamsData, leagueId);
+      const scopedMatches = filterRowsByLeague(matchesData, leagueId);
+      leagueMemoryCache.write(teamsCacheKey, scopedTeams);
+      leagueMemoryCache.write(matchesCacheKey, scopedMatches);
       if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return;
-      setTeams(teamsData);
-      setMatches(matchesData);
+      setTeams(scopedTeams);
+      setMatches(scopedMatches);
       setDetailsLoadedLeagueId(leagueId);
     } catch (err: unknown) {
       if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return;
@@ -285,18 +312,30 @@ export function useSupabaseLeague(
   // Handle user change
   useEffect(() => {
     // Never carry a league selection across users or page sessions.
+    activeLeagueIdRef.current = '';
+    detailsRequestIdRef.current += 1;
     setActiveLeagueId('');
     setTeams([]);
     setMatches([]);
+    setDetailsLoading(false);
+    setDetailsLoadedLeagueId(null);
     void fetchLeagues();
   }, [userEmail, fetchLeagues]);
 
   // Initial load & Cross-instance sync (Syncs both leagues list AND current league matches/teams)
   useEffect(() => {
-    const handleSync = () => {
+    const handleSync = (event: Event) => {
+      const detail = event instanceof CustomEvent
+        && event.detail
+        && typeof event.detail === 'object'
+        ? event.detail as Partial<LeagueChangedEventDetail>
+        : undefined;
+      const changedLeagueId = typeof detail?.leagueId === 'string'
+        ? detail.leagueId
+        : undefined;
       scheduleLeaguesRefresh();
       const currentId = activeLeagueIdRef.current;
-      if (currentId) {
+      if (currentId && (!changedLeagueId || changedLeagueId === currentId)) {
         scheduleDetailsRefresh(currentId);
       }
     };
@@ -351,17 +390,31 @@ export function useSupabaseLeague(
   // Load teams & matches whenever activeLeagueId changes
   useEffect(() => {
     if (activeLeagueId) {
-      fetchLeagueDetails(activeLeagueId);
+      void fetchLeagueDetails(activeLeagueId);
     } else {
       setTeams([]);
       setMatches([]);
+      setDetailsLoading(false);
+      setDetailsLoadedLeagueId(null);
     }
   }, [activeLeagueId, fetchLeagueDetails]);
 
   // Change active league
   const selectLeague = useCallback((leagueId: string) => {
+    const previousLeagueId = activeLeagueIdRef.current;
+    if (previousLeagueId !== leagueId) {
+      // Invalidate any in-flight request for the previous league immediately.
+      detailsRequestIdRef.current += 1;
+    }
+    activeLeagueIdRef.current = leagueId;
     setActiveLeagueId(leagueId);
-    window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+
+    if (previousLeagueId !== leagueId) {
+      setTeams([]);
+      setMatches([]);
+      setDetailsLoadedLeagueId(null);
+      setDetailsLoading(Boolean(leagueId));
+    }
   }, []);
 
   // League Actions
@@ -375,7 +428,7 @@ export function useSupabaseLeague(
       leagueMemoryCache.invalidatePrefix(LEAGUES_CACHE_PREFIX);
       setLeagues((prev) => [created, ...prev]);
       selectLeague(created.id);
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(created.id);
       notify?.(`สร้างลีก "${created.name}" สำเร็จ`, 'success');
       return created;
     } catch (err: unknown) {
@@ -389,7 +442,7 @@ export function useSupabaseLeague(
       const updated = await LeagueService.updateLeague(id, updates);
       leagueMemoryCache.invalidatePrefix(LEAGUES_CACHE_PREFIX);
       setLeagues((prev) => prev.map((l) => (l.id === id ? updated : l)));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(updated.id);
       notify?.(`อัปเดตข้อมูลลีกสำเร็จ`, 'success');
       return updated;
     } catch (err: unknown) {
@@ -410,7 +463,7 @@ export function useSupabaseLeague(
         selectLeague(nextId);
       }
       notify?.(`ลบลีกเรียบร้อยแล้ว`, 'info');
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(id);
     } catch (err: unknown) {
       notify?.(`ลบลีกไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
       throw err;
@@ -420,10 +473,14 @@ export function useSupabaseLeague(
   // Team Actions
   const createTeam = useCallback(async (payload: Omit<Team, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      const activeId = activeLeagueIdRef.current;
+      if (!activeId || payload.league_id !== activeId) {
+        throw new Error('ไม่สามารถเพิ่มทีมข้ามลีกได้ กรุณาเลือก League ปัจจุบันใหม่');
+      }
       const created = await LeagueService.createTeam(payload);
       invalidateLeagueDetailsCache(created.league_id);
       setTeams((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'th')));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(created.league_id);
       notify?.(`เพิ่มทีม "${created.name}" สำเร็จ`, 'success');
       return created;
     } catch (err: unknown) {
@@ -434,10 +491,14 @@ export function useSupabaseLeague(
 
   const updateTeam = useCallback(async (id: string, updates: Partial<Team>) => {
     try {
-      const updated = await LeagueService.updateTeam(id, updates);
+      const activeId = activeLeagueIdRef.current;
+      if (!activeId || (updates.league_id !== undefined && updates.league_id !== activeId)) {
+        throw new Error('ไม่สามารถแก้ไขทีมข้ามลีกได้ กรุณาเลือก League ปัจจุบันใหม่');
+      }
+      const updated = await LeagueService.updateTeam(id, updates, activeId);
       invalidateLeagueDetailsCache(updated.league_id);
       setTeams((prev) => prev.map((t) => (t.id === id ? updated : t)).sort((a, b) => a.name.localeCompare(b.name, 'th')));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(updated.league_id);
       notify?.(`อัปเดตทีม "${updated.name}" สำเร็จ`, 'success');
       return updated;
     } catch (err: unknown) {
@@ -448,16 +509,18 @@ export function useSupabaseLeague(
 
   const deleteTeam = useCallback(async (id: string) => {
     try {
-      await LeagueService.deleteTeam(id);
-      if (activeLeagueId) invalidateLeagueDetailsCache(activeLeagueId);
+      const activeId = activeLeagueIdRef.current;
+      if (!activeId) throw new Error('กรุณาเลือก League ก่อนลบทีม');
+      await LeagueService.deleteTeam(id, activeId);
+      invalidateLeagueDetailsCache(activeId);
       setTeams((prev) => prev.filter((t) => t.id !== id));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(activeId);
       notify?.(`ลบทีมเรียบร้อยแล้ว`, 'info');
     } catch (err: unknown) {
       notify?.(`ลบทีมไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
       throw err;
     }
-  }, [activeLeagueId, notify]);
+  }, [notify]);
 
   const uploadTeamLogo = useCallback(async (file: File | Blob, fileName: string) => {
     try {
@@ -471,10 +534,14 @@ export function useSupabaseLeague(
   // Match Actions
   const createMatch = useCallback(async (payload: Omit<Match, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      const activeId = activeLeagueIdRef.current;
+      if (!activeId || payload.league_id !== activeId) {
+        throw new Error('ไม่สามารถเพิ่มแมตช์ข้ามลีกได้ กรุณาเลือก League ปัจจุบันใหม่');
+      }
       const created = await LeagueService.createMatch(payload);
       invalidateLeagueDetailsCache(created.league_id);
       setMatches((prev) => [...prev, created].sort((a, b) => a.match_number - b.match_number));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(created.league_id);
       notify?.(`เพิ่มแมตช์ที่ ${created.match_number} เรียบร้อยแล้ว`, 'success');
       return created;
     } catch (err: unknown) {
@@ -485,10 +552,14 @@ export function useSupabaseLeague(
 
   const updateMatch = useCallback(async (id: string, updates: Partial<Match>) => {
     try {
-      const updated = await LeagueService.updateMatch(id, updates);
+      const activeId = activeLeagueIdRef.current;
+      if (!activeId || (updates.league_id !== undefined && updates.league_id !== activeId)) {
+        throw new Error('ไม่สามารถแก้ไขแมตช์ข้ามลีกได้ กรุณาเลือก League ปัจจุบันใหม่');
+      }
+      const updated = await LeagueService.updateMatch(id, updates, activeId);
       invalidateLeagueDetailsCache(updated.league_id);
       setMatches((prev) => prev.map((m) => (m.id === id ? updated : m)).sort((a, b) => a.match_number - b.match_number));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(updated.league_id);
       notify?.(`อัปเดตแมตช์ที่ ${updated.match_number} สำเร็จ`, 'success');
       return updated;
     } catch (err: unknown) {
@@ -499,16 +570,18 @@ export function useSupabaseLeague(
 
   const deleteMatch = useCallback(async (id: string) => {
     try {
-      await LeagueService.deleteMatch(id);
-      if (activeLeagueId) invalidateLeagueDetailsCache(activeLeagueId);
+      const activeId = activeLeagueIdRef.current;
+      if (!activeId) throw new Error('กรุณาเลือก League ก่อนลบแมตช์');
+      await LeagueService.deleteMatch(id, activeId);
+      invalidateLeagueDetailsCache(activeId);
       setMatches((prev) => prev.filter((m) => m.id !== id));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(activeId);
       notify?.(`ลบแมตช์เรียบร้อยแล้ว`, 'info');
     } catch (err: unknown) {
       notify?.(`ลบแมตช์ไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
       throw err;
     }
-  }, [activeLeagueId, notify]);
+  }, [notify]);
 
   const clearMatches = useCallback(async () => {
     if (!activeLeagueId) return;
@@ -516,7 +589,7 @@ export function useSupabaseLeague(
       await LeagueService.deleteMatchesByLeague(activeLeagueId);
       invalidateLeagueDetailsCache(activeLeagueId);
       setMatches([]);
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
+      dispatchLeagueChanged(activeLeagueId);
       notify?.(`ล้างตารางการแข่งขันทั้งหมดแล้ว`, 'info');
     } catch (err: unknown) {
       notify?.(`ล้างตารางแข่งไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');

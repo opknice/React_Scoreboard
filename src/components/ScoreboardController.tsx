@@ -693,6 +693,10 @@ export default function ScoreboardController() {
 
   // --- Load match from Supabase into scoreboard ---
   const applyMatchFromSupabase = useCallback((match: SupabaseMatch, customTeams?: SupabaseTeam[]) => {
+    if (!supabaseLeague.activeLeagueId || match.league_id !== supabaseLeague.activeLeagueId) {
+      triggerToast('ข้อมูลแมตช์ไม่ตรงกับ League ปัจจุบัน กรุณารีเฟรชข้อมูลลีกก่อน', 'error');
+      return;
+    }
     if (isMatchFinished(match)) {
       triggerToast(`⚠️ แมตช์ #${match.match_number} (${match.team_a_name} vs ${match.team_b_name}) บันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
       return;
@@ -760,6 +764,7 @@ export default function ScoreboardController() {
 
     triggerToast(`โหลดแมตช์ #${match.match_number} (${teamAName} vs ${teamBName}) จาก Supabase สำเร็จ`, 'success');
   }, [
+    supabaseLeague.activeLeagueId,
     supabaseLeague.teams,
     isMatchFinished,
     setColorA1,
@@ -959,10 +964,29 @@ export default function ScoreboardController() {
 
   // --- Save match results to Supabase ---
   const handleSaveMatchToSupabase = async () => {
-    // 1. Try to find match by number or active league match
+    const activeLeagueId = supabaseLeague.activeLeagueId;
+    if (!activeLeagueId) {
+      triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ Supabase ก่อนบันทึกผล', 'error');
+      return;
+    }
+
+    // Do not allow a save while the selected league's latest data is still loading.
+    if (
+      supabaseLeague.detailsLoading
+      || supabaseLeague.detailsLoadedLeagueId !== activeLeagueId
+    ) {
+      triggerToast('กำลังโหลดข้อมูล League ปัจจุบัน กรุณารอสักครู่แล้วลองใหม่', 'warning');
+      return;
+    }
+
+    // 1. Try to find a match only inside the currently selected league.
     const currentMatch =
-      supabaseLeague.matches.find((m) => m.match_number === matchIdInput) ||
-      supabaseLeague.matches.find((m) => m.team_a_name === nameA && m.team_b_name === nameB);
+      supabaseLeague.matches.find((m) => m.league_id === activeLeagueId && m.match_number === matchIdInput) ||
+      supabaseLeague.matches.find((m) => (
+        m.league_id === activeLeagueId
+        && m.team_a_name === nameA
+        && m.team_b_name === nameB
+      ));
 
     if (currentMatch) {
       try {
@@ -978,30 +1002,25 @@ export default function ScoreboardController() {
       return;
     }
 
-    // 2. If active league exists but match not found, create new finished match
-    if (supabaseLeague.activeLeagueId) {
-      try {
-        await supabaseLeague.createMatch({
-          league_id: supabaseLeague.activeLeagueId,
-          match_number: matchIdInput,
-          team_a_name: nameA,
-          team_b_name: nameB,
-          score_a: scoreA,
-          score_b: scoreB,
-          status: 'finished',
-          label1: label1 || 'บันทึกผลการแข่งขัน',
-          label2: label2 || '',
-          label3: label3 || '',
-          match_date: new Date().toISOString(),
-        });
-        triggerToast(`✓ สร้างและบันทึกผลแมตช์ #${matchIdInput} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
-      } catch (err: any) {
-        triggerToast(`บันทึกผลไม่สำเร็จ: ${err.message}`, 'error');
-      }
-      return;
+    // 2. If the active league has no matching row, create a new finished match
+    try {
+      await supabaseLeague.createMatch({
+        league_id: activeLeagueId,
+        match_number: matchIdInput,
+        team_a_name: nameA,
+        team_b_name: nameB,
+        score_a: scoreA,
+        score_b: scoreB,
+        status: 'finished',
+        label1: label1 || 'บันทึกผลการแข่งขัน',
+        label2: label2 || '',
+        label3: label3 || '',
+        match_date: new Date().toISOString(),
+      });
+      triggerToast(`✓ สร้างและบันทึกผลแมตช์ #${matchIdInput} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
+    } catch (err: unknown) {
+      triggerToast(`บันทึกผลไม่สำเร็จ: ${err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'}`, 'error');
     }
-
-    triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ Supabase ก่อนบันทึกผล', 'error');
   };
 
   // --- Copy Details announcement template ---
@@ -1441,61 +1460,11 @@ export default function ScoreboardController() {
                   <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? 'กำลังรีเฟรช...' : 'รีเฟรชข้อมูลลีก'}</span>
                 </button>
 
-                {/* Matches Dropdown (shown when matches exist in active league) */}
-                {supabaseLeague.matches.length > 0 && (
-                  pendingMatches.length > 0 ? (
-                    <select
-                      style={{
-                        padding: '5px 8px',
-                        fontSize: '0.82rem',
-                        background: '#1e293b',
-                        color: '#f8fafc',
-                        border: '1px solid #475569',
-                        borderRadius: '4px',
-                        maxWidth: '280px'
-                      }}
-                      value={pendingMatches.some((m) => m.match_number === matchIdInput) ? matchIdInput : ''}
-                      onChange={(e) => {
-                        const num = parseInt(e.target.value, 10);
-                        if (num) {
-                          setMatchIdInput(num);
-                          const matchObj = pendingMatches.find((m) => m.match_number === num);
-                          if (matchObj) applyMatchFromSupabase(matchObj);
-                        }
-                      }}
-                      title="เลือกคู่แข่งขัน (เฉพาะคู่ที่ยังไม่ได้บันทึกผล)"
-                    >
-                      <option value="" disabled>-- เลือกคู่แข่งขัน (รอแข่ง) --</option>
-                      {pendingMatches.map((m) => (
-                        <option key={m.id} value={m.match_number}>
-                          #{m.match_number}: {m.team_a_name} vs {m.team_b_name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: '0.8rem',
-                        color: '#4ade80',
-                        fontWeight: 600,
-                        padding: '4px 8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        background: 'rgba(74, 222, 128, 0.1)',
-                        borderRadius: '4px',
-                        border: '1px solid rgba(74, 222, 128, 0.2)'
-                      }}
-                      title="แมตช์ทั้งหมดในลีกนี้ได้รับการบันทึกผลคะแนนเรียบร้อยแล้ว"
-                    >
-                      <i className="fas fa-check-circle"></i> บันทึกผลครบทุกคู่แล้ว
-                    </span>
-                  )
-                )}
+
               </div>
 
-              <div className="row" style={{ marginBottom: 0, gap: '4px' }}>
-                <label htmlFor="matchIDInput" style={{ fontWeight: 600, fontSize: '0.85rem' }}>{trans.matchId}</label>
+              <div className="row" style={{ marginBottom: 0, gap: '4px', alignItems: 'center' }}>
+                <label style={{ fontWeight: 600, fontSize: '0.85rem' }}>เลือกคู่แข่งขัน</label>
                 <button
                   onClick={() => handleNavigateMatch('prev')}
                   style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
@@ -1503,21 +1472,52 @@ export default function ScoreboardController() {
                 >
                   &lt;
                 </button>
-                <input
-                  type="number"
-                  id="matchIDInput"
-                  min="1"
-                  value={matchIdInput}
-                  onChange={(e) => setMatchIdInput(parseInt(e.target.value, 10) || 1)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const val = parseInt((e.target as HTMLInputElement).value, 10) || 1;
-                      applyMatch(val);
-                    }
-                  }}
-                  style={{ width: '48px', padding: '3px 6px', fontSize: '0.85rem', textAlign: 'center' }}
-                  title="พิมพ์หมายเลขแมตช์แล้วกด Enter เพื่อโหลด"
-                />
+                
+                {/* Matches Dropdown */}
+                {supabaseLeague.matches.length > 0 && pendingMatches.length > 0 ? (
+                  <select
+                    style={{
+                      padding: '5px 8px',
+                      fontSize: '0.82rem',
+                      background: '#1e293b',
+                      color: '#f8fafc',
+                      border: '1px solid #475569',
+                      borderRadius: '4px',
+                      minWidth: '200px',
+                      maxWidth: '320px',
+                      flex: '1'
+                    }}
+                    value={pendingMatches.some((m) => m.match_number === matchIdInput) ? matchIdInput : ''}
+                    onChange={(e) => {
+                      const num = parseInt(e.target.value, 10);
+                      if (num) {
+                        setMatchIdInput(num);
+                        const matchObj = pendingMatches.find((m) => m.match_number === num);
+                        if (matchObj) applyMatchFromSupabase(matchObj);
+                      }
+                    }}
+                    title="เลือกคู่แข่งขัน (เฉพาะคู่ที่ยังไม่ได้บันทึกผล)"
+                  >
+                    <option value="" disabled>-- เลือกคู่แข่งขัน (รอแข่ง) --</option>
+                    {pendingMatches.map((m) => (
+                      <option key={m.id} value={m.match_number}>
+                        {m.team_a_name} vs {m.team_b_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: '0.8rem',
+                      color: '#94a3b8',
+                      fontStyle: 'italic',
+                      padding: '5px 8px'
+                    }}
+                  >
+                    {supabaseLeague.matches.length > 0 ? 'บันทึกผลครบทุกคู่แล้ว ✓' : 'ไม่มีคู่แข่งขัน'}
+                  </span>
+                )}
+                
                 <button
                   onClick={() => handleNavigateMatch('next')}
                   style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
