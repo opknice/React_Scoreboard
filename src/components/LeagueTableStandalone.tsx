@@ -3,14 +3,17 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue } from 'firebase/database';
-import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
+import { getLogoSrc, listenToFirebaseTeams } from '../utils/logoResolver';
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
+import { calculateFinishedStandings } from '../utils/standingsCalculator';
+import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 
 export default function LeagueTableStandalone() {
   useDisableZoom();
   const [searchParams] = useSearchParams();
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<OverlayMatch[]>([]);
+  const [registeredTeams, setRegisteredTeams] = useState<OverlayTeam[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -22,6 +25,10 @@ export default function LeagueTableStandalone() {
   const backgroundParam = searchParams.get('background') || '';
 
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
+  const standingsRows = useMemo(
+    () => calculateFinishedStandings(matches, registeredTeams),
+    [matches, registeredTeams],
+  );
 
   useEffect(() => {
     let isCancelled = false;
@@ -54,6 +61,11 @@ export default function LeagueTableStandalone() {
               logoB: teamBObj?.logo_url || '',
             };
           });
+          setRegisteredTeams(supabaseTeams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            logo: team.logo_url || '',
+          })));
           setMatches(formatted);
           setLoading(false);
 
@@ -102,12 +114,18 @@ export default function LeagueTableStandalone() {
         const db = getDatabase(app);
         const matchesRef = ref(db, 'matches');
 
-        const unsubTeams = listenToFirebaseTeams(db);
+        const unsubTeams = listenToFirebaseTeams(db, (teamsMap) => {
+          setRegisteredTeams(Object.entries(teamsMap).map(([id, team]) => ({
+            id,
+            name: team.name,
+            logo: team.logo,
+          })));
+        });
 
         const unsubscribe = onValue(
           matchesRef,
           (snapshot) => {
-            const items: any[] = [];
+            const items: OverlayMatch[] = [];
             snapshot.forEach((child) => {
               items.push({ id: child.key, ...child.val() });
             });
@@ -159,65 +177,6 @@ export default function LeagueTableStandalone() {
       </div>
     );
   }
-
-  // Standings ranking calculation
-  const calculateStandings = () => {
-    const stats: Record<string, any> = {};
-    matches.forEach((match) => {
-      const teamA = (match.teamA || '').trim();
-      const teamB = (match.teamB || '').trim();
-      if (!teamA || !teamB) return;
-
-      const scoreA = Number(match.scoreA);
-      const scoreB = Number(match.scoreB);
-      if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
-
-      // Skip scheduled matches that have not been played yet (0-0)
-      if (match.status === 'scheduled' && scoreA === 0 && scoreB === 0) {
-        return;
-      }
-
-      const logoA = extractMatchLogo(match, 'A');
-      const logoB = extractMatchLogo(match, 'B');
-      stats[teamA] ||= { team: teamA, logo: logoA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      stats[teamB] ||= { team: teamB, logo: logoB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      if (!stats[teamA].logo && logoA) stats[teamA].logo = logoA;
-      if (!stats[teamB].logo && logoB) stats[teamB].logo = logoB;
-
-      const a = stats[teamA];
-      const b = stats[teamB];
-
-      a.P++;
-      b.P++;
-      a.GF += scoreA;
-      a.GA += scoreB;
-      b.GF += scoreB;
-      b.GA += scoreA;
-
-      if (scoreA > scoreB) {
-        a.W++;
-        a.Pts += 3;
-        b.L++;
-      } else if (scoreA < scoreB) {
-        b.W++;
-        b.Pts += 3;
-        a.L++;
-      } else {
-        a.D++;
-        b.D++;
-        a.Pts++;
-        b.Pts++;
-      }
-    });
-
-    const rows = Object.values(stats)
-      .map((row) => ({ ...row, GD: row.GF - row.GA }))
-      .sort((a, b) => b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF || a.team.localeCompare(b.team, 'th'));
-
-    return rows;
-  };
-
-  const standingsRows = calculateStandings();
 
   const renderLogo = (logoIdentifier: string | undefined, teamName: string) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);

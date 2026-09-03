@@ -6,11 +6,13 @@ import { getDatabase, ref, onValue } from 'firebase/database';
 import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
+import { filterFinishedMatches } from '../utils/finishedMatch';
+import type { OverlayMatch } from '../types/overlay';
 
 export default function AllScoresStandalone() {
   useDisableZoom();
   const [searchParams] = useSearchParams();
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<OverlayMatch[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -23,6 +25,7 @@ export default function AllScoresStandalone() {
   const backgroundParam = searchParams.get('background') || '';
 
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
+  const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -109,7 +112,7 @@ export default function AllScoresStandalone() {
         const unsubscribe = onValue(
           matchesRef,
           (snapshot) => {
-            const items: any[] = [];
+            const items: OverlayMatch[] = [];
             snapshot.forEach((child) => {
               items.push({ id: child.key, ...child.val() });
             });
@@ -162,7 +165,7 @@ export default function AllScoresStandalone() {
   }
 
   const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
-  const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
+  const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
 
   if (filtered.length === 0) {
     return (
@@ -179,7 +182,7 @@ export default function AllScoresStandalone() {
     let week = match.week || match.matchday || match.round || '1';
 
     if (!match.week && !match.matchday && !match.round && match.date) {
-      const uniqueDates = [...new Set(matches.map((m) => m.date).filter(Boolean))].sort();
+      const uniqueDates = [...new Set(finishedMatches.map((m) => m.date).filter(Boolean))].sort();
       const idx = uniqueDates.indexOf(match.date);
       week = idx >= 0 ? `${idx + 1}` : '1';
     }

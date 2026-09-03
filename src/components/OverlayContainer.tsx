@@ -5,6 +5,9 @@ import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } 
 import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
+import { filterFinishedMatches } from '../utils/finishedMatch';
+import { calculateFinishedStandings } from '../utils/standingsCalculator';
+import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 
 const getLocalTodayString = (): string => {
   const now = new Date();
@@ -17,7 +20,8 @@ const getLocalTodayString = (): string => {
 export default function OverlayContainer() {
   useDisableZoom();
   const [searchParams] = useSearchParams();
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<OverlayMatch[]>([]);
+  const [registeredTeams, setRegisteredTeams] = useState<OverlayTeam[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
@@ -35,6 +39,11 @@ export default function OverlayContainer() {
 
   // Decode Firebase configuration
   const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
+  const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
+  const standingsRows = useMemo(
+    () => calculateFinishedStandings(matches, registeredTeams),
+    [matches, registeredTeams],
+  );
 
   // Initialize and load data
   useEffect(() => {
@@ -68,6 +77,11 @@ export default function OverlayContainer() {
               status: m.status,
             };
           });
+          setRegisteredTeams(supabaseTeams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            logo: team.logo_url || '',
+          })));
           setMatches(formatted);
           setLoading(false);
           return true;
@@ -106,12 +120,18 @@ export default function OverlayContainer() {
           }
         }
 
-        const unsubTeams = listenToFirebaseTeams(db);
+        const unsubTeams = listenToFirebaseTeams(db, (teamsMap) => {
+          setRegisteredTeams(Object.entries(teamsMap).map(([id, team]) => ({
+            id,
+            name: team.name,
+            logo: team.logo,
+          })));
+        });
 
         const unsubscribe = onValue(
           q,
           (snapshot) => {
-            const items: any[] = [];
+            const items: OverlayMatch[] = [];
             snapshot.forEach((child) => {
               items.push({ id: child.key, ...child.val() });
             });
@@ -154,60 +174,7 @@ export default function OverlayContainer() {
     );
   }
 
-  // --- Calculations for Standings Table ---
-  const calculateStandings = () => {
-    const stats: Record<string, any> = {};
-    matches.forEach((match) => {
-      const teamA = (match.teamA || '').trim();
-      const teamB = (match.teamB || '').trim();
-      if (!teamA || !teamB) return;
-
-      const scoreA = Number(match.scoreA);
-      const scoreB = Number(match.scoreB);
-      if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
-
-      const logoA = extractMatchLogo(match, 'A');
-      const logoB = extractMatchLogo(match, 'B');
-      stats[teamA] ||= { team: teamA, logo: logoA, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      stats[teamB] ||= { team: teamB, logo: logoB, P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 };
-      if (!stats[teamA].logo && logoA) stats[teamA].logo = logoA;
-      if (!stats[teamB].logo && logoB) stats[teamB].logo = logoB;
-
-      const a = stats[teamA];
-      const b = stats[teamB];
-
-      a.P++;
-      b.P++;
-      a.GF += scoreA;
-      a.GA += scoreB;
-      b.GF += scoreB;
-      b.GA += scoreA;
-
-      if (scoreA > scoreB) {
-        a.W++;
-        a.Pts += 3;
-        b.L++;
-      } else if (scoreA < scoreB) {
-        b.W++;
-        b.Pts += 3;
-        a.L++;
-      } else {
-        a.D++;
-        b.D++;
-        a.Pts++;
-        b.Pts++;
-      }
-    });
-
-    const rows = Object.values(stats)
-      .map((row) => ({ ...row, GD: row.GF - row.GA }))
-      .sort((a, b) => b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF || a.team.localeCompare(b.team, 'th'));
-
-    return rows;
-  };
-
-  const standingsRows = calculateStandings();
-
+  // Finished matches drive both the table and every result-based view.
   // Helper for rendering logos
   const renderLogo = (logoIdentifier: string | undefined, teamName: string, className = 'overlay-logo') => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
@@ -297,7 +264,7 @@ export default function OverlayContainer() {
   const renderResultsView = () => {
     const todayStr = getLocalTodayString();
     const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
-    const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
+    const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
 
     if (filtered.length === 0) {
       return (
@@ -314,7 +281,7 @@ export default function OverlayContainer() {
       let week = match.week || match.matchday || match.round || '1';
 
       if (!match.week && !match.matchday && !match.round && match.date) {
-        const uniqueDates = [...new Set(matches.map((m) => m.date).filter(Boolean))].sort();
+        const uniqueDates = [...new Set(finishedMatches.map((m) => m.date).filter(Boolean))].sort();
         const idx = uniqueDates.indexOf(match.date);
         week = idx >= 0 ? `${idx + 1}` : '1';
       }
@@ -395,7 +362,7 @@ export default function OverlayContainer() {
   const renderTickerView = () => {
     const todayStr = getLocalTodayString();
     const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
-    const filtered = selectedDate ? matches.filter((m) => m.date === selectedDate) : matches;
+    const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
 
     if (filtered.length === 0) {
       return (
@@ -440,10 +407,10 @@ export default function OverlayContainer() {
 
     // Group matches by week
     const groupByWeek: Record<string, any[]> = {};
-    matches.forEach((match) => {
+    finishedMatches.forEach((match) => {
       let week = match.week || match.matchday || match.round;
       if (!week && match.date) {
-        const uniqueDates = [...new Set(matches.map((m) => m.date).filter(Boolean))].sort();
+        const uniqueDates = [...new Set(finishedMatches.map((m) => m.date).filter(Boolean))].sort();
         const idx = uniqueDates.indexOf(match.date);
         week = idx >= 0 ? `สัปดาห์ ${idx + 1}` : 'สัปดาห์ 1';
       } else if (!week) {

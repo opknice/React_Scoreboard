@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, type League, type Team, type Match } from '../config/supabaseClient';
 import { retryWithBackoff } from '../utils/retry';
+import { isFinishedMatch } from '../utils/finishedMatch';
 
 const LEAGUE_COLUMNS = 'id, name, slug, season, description, is_active, created_by, settings, created_at, updated_at';
 const TEAM_COLUMNS = 'id, league_id, name, short_name, logo_url, color_primary, color_secondary, crop_metadata, created_at, updated_at';
@@ -317,16 +318,13 @@ export class LeagueService {
       };
     });
 
-    // Process finished matches (or matches with score recorded)
+    // Standings must be based on explicitly finished matches only.
     matches.forEach((m) => {
       const teamA = (m.team_a_name || '').trim();
       const teamB = (m.team_b_name || '').trim();
       if (!teamA || !teamB) return;
 
-      // Only count matches that are finished or in progress with valid score
-      if (m.status === 'scheduled' && m.score_a === 0 && m.score_b === 0) {
-        return;
-      }
+      if (!isFinishedMatch(m)) return;
 
       if (!stats[teamA]) {
         stats[teamA] = {
