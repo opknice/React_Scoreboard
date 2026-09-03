@@ -276,32 +276,6 @@ export class LeagueService {
     return data as Match;
   }
 
-  static async createMatchesBatch(matches: Omit<Match, 'id' | 'created_at' | 'updated_at'>[]): Promise<Match[]> {
-    if (!isSupabaseConfigured() || !supabase) {
-      throw new Error('Supabase is not configured.');
-    }
-    if (matches.length === 0) return [];
-
-    const payload = matches.map((m) => ({
-      ...m,
-      label1: m.label1 || '',
-      label2: m.label2 || '',
-      label3: m.label3 || '',
-      updated_at: new Date().toISOString(),
-    }));
-
-    const { data, error } = await supabase
-      .from('matches')
-      .insert(payload)
-      .select();
-
-    if (error) {
-      console.error('Error batch creating matches:', error);
-      throw error;
-    }
-    return (data as Match[]) || [];
-  }
-
   static async updateMatch(id: string, updates: Partial<Match>): Promise<Match> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');

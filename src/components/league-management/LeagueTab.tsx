@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { League } from '../../config/supabaseClient';
 
 export interface LeagueTabProps {
@@ -26,18 +26,36 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
   const [leagueName, setLeagueName] = useState('');
   const [leagueSeason, setLeagueSeason] = useState('');
   const [leagueDesc, setLeagueDesc] = useState('');
+  const [isLeagueFormOpen, setIsLeagueFormOpen] = useState(false);
+  const leagueModalOverlayMouseDownRef = useRef(false);
+
+  const resetLeagueForm = () => {
+    setIsEditingLeague(false);
+    setLeagueName('');
+    setLeagueSeason('');
+    setLeagueDesc('');
+  };
+
+  const closeLeagueForm = () => {
+    setIsLeagueFormOpen(false);
+    resetLeagueForm();
+  };
+
+  const handleOpenCreateLeague = () => {
+    resetLeagueForm();
+    setIsLeagueFormOpen(true);
+  };
 
   const handleSaveLeague = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leagueName.trim()) return;
+    if (!leagueName.trim() || (isEditingLeague && !activeLeagueId)) return;
 
-    if (isEditingLeague && activeLeagueId) {
+    if (isEditingLeague) {
       await onUpdateLeague(activeLeagueId, {
         name: leagueName.trim(),
         season: leagueSeason.trim(),
         description: leagueDesc.trim(),
       });
-      setIsEditingLeague(false);
     } else {
       await onCreateLeague({
         name: leagueName.trim(),
@@ -46,10 +64,10 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
         is_active: true,
         created_by: effectiveEmail ? effectiveEmail.trim().toLowerCase() : undefined,
       });
-      setLeagueName('');
-      setLeagueSeason('');
-      setLeagueDesc('');
     }
+
+    // Close and clear the form only after the database operation succeeds.
+    closeLeagueForm();
   };
 
   const handleStartEditLeague = (league: League) => {
@@ -58,23 +76,63 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
     setLeagueSeason(league.season || '');
     setLeagueDesc(league.description || '');
     setIsEditingLeague(true);
+    setIsLeagueFormOpen(true);
   };
 
   const handleCancelEdit = () => {
-    setIsEditingLeague(false);
-    setLeagueName('');
-    setLeagueSeason('');
-    setLeagueDesc('');
+    closeLeagueForm();
+  };
+
+  const handleLeagueModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    leagueModalOverlayMouseDownRef.current = e.target === e.currentTarget;
+  };
+
+  const handleLeagueModalMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (leagueModalOverlayMouseDownRef.current && e.target === e.currentTarget) {
+      closeLeagueForm();
+    }
+    leagueModalOverlayMouseDownRef.current = false;
   };
 
   return (
     <div>
-      {/* League Form Card */}
-      <div className="league-card">
-        <h3 className="league-card-title">
-          <i className="fas fa-plus-circle" style={{ color: '#38bdf8' }}></i>
-          <span>{isEditingLeague ? 'แก้ไขข้อมูลลีก' : 'สร้างลีกการแข่งขันใหม่'}</span>
-        </h3>
+      {/* Create/Edit League Modal */}
+      {isLeagueFormOpen && (
+        <div
+          className="league-league-modal-overlay"
+          onMouseDown={handleLeagueModalMouseDown}
+          onMouseUp={handleLeagueModalMouseUp}
+          onKeyDownCapture={(e) => {
+            // Prevent the parent LeagueManagementModal from closing before this modal.
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              closeLeagueForm();
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="league-card league-league-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="league-form-modal-title"
+          >
+            <div className="league-league-modal-header">
+              <h3 id="league-form-modal-title" className="league-card-title">
+                <i className="fas fa-plus-circle" style={{ color: '#38bdf8' }}></i>
+                <span>{isEditingLeague ? 'แก้ไขข้อมูลลีก' : 'สร้างลีกการแข่งขันใหม่'}</span>
+              </h3>
+              <button
+                type="button"
+                className="league-btn-secondary"
+                onClick={closeLeagueForm}
+                autoFocus
+                aria-label="ปิดฟอร์มลีก"
+              >
+                <i className="fas fa-times"></i> ปิด
+              </button>
+            </div>
+
         <form onSubmit={handleSaveLeague}>
           <div className="league-form-grid">
             <div className="league-form-group">
@@ -109,30 +167,32 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
               />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="league-league-modal-actions">
             <button type="submit" className="league-btn-primary" disabled={loading}>
               <i className="fas fa-save"></i>
               <span>{isEditingLeague ? 'บันทึกการแก้ไข' : 'สร้างลีก'}</span>
             </button>
-            {isEditingLeague && (
-              <button
-                type="button"
-                className="league-btn-secondary"
-                onClick={handleCancelEdit}
-              >
-                ยกเลิก
-              </button>
-            )}
+            <button type="button" className="league-btn-secondary" onClick={handleCancelEdit}>
+              ยกเลิก
+            </button>
           </div>
         </form>
       </div>
+        </div>
+      )}
 
       {/* List of Leagues */}
       <div className="league-card">
-        <h3 className="league-card-title">
-          <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
-          <span>รายการลีกทั้งหมดในระบบ</span>
-        </h3>
+        <div className="league-league-list-header">
+          <h3 className="league-card-title">
+            <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
+            <span>รายการลีกทั้งหมดในระบบ</span>
+          </h3>
+          <button type="button" className="league-btn-primary" onClick={handleOpenCreateLeague}>
+            <i className="fas fa-plus"></i>
+            <span>สร้างลีก</span>
+          </button>
+        </div>
         <div className="league-table-responsive">
           <table className="league-data-table">
             <thead>

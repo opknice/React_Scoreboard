@@ -32,6 +32,7 @@ export default function LeagueManagementModal({
   const {
     isConfigured,
     leagues,
+    activeLeague,
     activeLeagueId,
     teams,
     matches,
@@ -45,7 +46,6 @@ export default function LeagueManagementModal({
     deleteTeam,
     uploadTeamLogo,
     createMatch,
-    createMatchesBatch,
     updateMatch,
     deleteMatch,
     clearMatches,
@@ -211,11 +211,11 @@ export default function LeagueManagementModal({
           {activeTab === 'matches' && (
             <MatchesTab
               activeLeagueId={activeLeagueId}
+              activeLeague={activeLeague}
               teams={teams}
               matches={matches}
               loading={loading}
               onCreateMatch={createMatch}
-              onCreateMatchesBatch={createMatchesBatch}
               onUpdateMatch={updateMatch}
               onDeleteMatch={deleteMatch}
               onClearMatches={clearMatches}

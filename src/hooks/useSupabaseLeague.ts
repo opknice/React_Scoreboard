@@ -314,19 +314,6 @@ export function useSupabaseLeague(
     }
   }, [notify]);
 
-  const createMatchesBatch = useCallback(async (batch: Omit<Match, 'id' | 'created_at' | 'updated_at'>[]) => {
-    try {
-      const created = await LeagueService.createMatchesBatch(batch);
-      setMatches((prev) => [...prev, ...created].sort((a, b) => a.match_number - b.match_number));
-      window.dispatchEvent(new CustomEvent('supabase_league_changed'));
-      notify?.(`เพิ่มตารางแข่ง ${created.length} แมตช์เรียบร้อยแล้ว`, 'success');
-      return created;
-    } catch (err: any) {
-      notify?.(`เพิ่มตารางแข่งไม่สำเร็จ: ${err.message}`, 'error');
-      throw err;
-    }
-  }, [notify]);
-
   const updateMatch = useCallback(async (id: string, updates: Partial<Match>) => {
     try {
       const updated = await LeagueService.updateMatch(id, updates);
@@ -390,7 +377,6 @@ export function useSupabaseLeague(
     deleteTeam,
     uploadTeamLogo,
     createMatch,
-    createMatchesBatch,
     updateMatch,
     deleteMatch,
     clearMatches,

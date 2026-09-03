@@ -33,7 +33,9 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const [teamColor2, setTeamColor2] = useState('#000000');
   const [teamLogoUrl, setTeamLogoUrl] = useState('');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isTeamFormOpen, setIsTeamFormOpen] = useState(false);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const teamModalOverlayMouseDownRef = useRef(false);
 
   const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,6 +65,25 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
     }
   };
 
+  const resetTeamForm = () => {
+    setTeamName('');
+    setTeamShortName('');
+    setTeamColor1('#ffffff');
+    setTeamColor2('#000000');
+    setTeamLogoUrl('');
+    setEditingTeamId(null);
+  };
+
+  const closeTeamForm = () => {
+    setIsTeamFormOpen(false);
+    resetTeamForm();
+  };
+
+  const handleOpenCreateTeam = () => {
+    resetTeamForm();
+    setIsTeamFormOpen(true);
+  };
+
   const handleSaveTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamName.trim() || !activeLeagueId) return;
@@ -75,7 +96,6 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
         color_secondary: teamColor2,
         logo_url: teamLogoUrl.trim(),
       });
-      setEditingTeamId(null);
     } else {
       await onCreateTeam({
         league_id: activeLeagueId,
@@ -87,11 +107,8 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
       });
     }
 
-    setTeamName('');
-    setTeamShortName('');
-    setTeamColor1('#ffffff');
-    setTeamColor2('#000000');
-    setTeamLogoUrl('');
+    // Close and clear the form only after the database operation succeeds.
+    closeTeamForm();
   };
 
   const handleStartEditTeam = (team: Team) => {
@@ -101,25 +118,62 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
     setTeamColor1(team.color_primary || '#ffffff');
     setTeamColor2(team.color_secondary || '#000000');
     setTeamLogoUrl(team.logo_url || '');
+    setIsTeamFormOpen(true);
   };
 
   const handleCancelEditTeam = () => {
-    setEditingTeamId(null);
-    setTeamName('');
-    setTeamShortName('');
-    setTeamColor1('#ffffff');
-    setTeamColor2('#000000');
-    setTeamLogoUrl('');
+    closeTeamForm();
+  };
+
+  const handleTeamModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    teamModalOverlayMouseDownRef.current = e.target === e.currentTarget;
+  };
+
+  const handleTeamModalMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (teamModalOverlayMouseDownRef.current && e.target === e.currentTarget) {
+      closeTeamForm();
+    }
+    teamModalOverlayMouseDownRef.current = false;
   };
 
   return (
     <div>
-      {/* Team Form Card */}
-      <div className="league-card">
-        <h3 className="league-card-title">
+      {/* Add/Edit Team Modal */}
+      {isTeamFormOpen && (
+        <div
+          className="league-team-modal-overlay"
+          onMouseDown={handleTeamModalMouseDown}
+          onMouseUp={handleTeamModalMouseUp}
+          onKeyDownCapture={(e) => {
+            // Prevent the parent LeagueManagementModal from closing before this modal.
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              closeTeamForm();
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="league-card league-team-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="league-team-modal-title"
+          >
+            <div className="league-team-modal-header">
+              <h3 id="league-team-modal-title" className="league-card-title">
           <i className="fas fa-user-plus" style={{ color: '#38bdf8' }}></i>
           <span>{editingTeamId ? 'แก้ไขข้อมูลทีม' : 'เพิ่มทีมใหม่ในลีกนี้'}</span>
-        </h3>
+              </h3>
+              <button
+                type="button"
+                className="league-btn-secondary"
+                onClick={closeTeamForm}
+                autoFocus
+                aria-label="ปิดฟอร์มทีม"
+              >
+                <i className="fas fa-times"></i> ปิด
+              </button>
+            </div>
         <form onSubmit={handleSaveTeam}>
           <div className="league-form-grid">
             <div className="league-form-group">
@@ -178,9 +232,9 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
 
           {/* Logo Upload / URL */}
           <div className="league-form-grid" style={{ alignItems: 'center' }}>
-            <div className="league-form-group" style={{ gridColumn: 'span 2' }}>
+            <div className="league-form-group league-team-logo-field">
               <label>โลโก้ทีม (URL ภาพ หรืออัปโหลดไฟล์ตรงเข้า Supabase Storage)</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="league-team-logo-input-row">
                 <input
                   type="text"
                   className="league-form-input"
@@ -193,7 +247,6 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
                   className="league-btn-secondary"
                   onClick={() => logoFileInputRef.current?.click()}
                   disabled={isUploadingLogo}
-                  style={{ whiteSpace: 'nowrap' }}
                 >
                   <i className={`fas ${isUploadingLogo ? 'fa-spinner fa-spin' : 'fa-upload'}`}></i>
                   <span>{isUploadingLogo ? 'กำลังอัปโหลด...' : 'อัปโหลดภาพ'}</span>
@@ -218,28 +271,39 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button type="submit" className="league-btn-primary" disabled={loading}>
+          <div className="league-team-modal-actions">
+            <button type="submit" className="league-btn-primary" disabled={loading || isUploadingLogo}>
               <i className="fas fa-save"></i>
               <span>{editingTeamId ? 'บันทึกการแก้ไข' : 'เพิ่มทีม'}</span>
             </button>
-            {editingTeamId && (
-              <button type="button" className="league-btn-secondary" onClick={handleCancelEditTeam}>
-                ยกเลิก
-              </button>
-            )}
+            <button type="button" className="league-btn-secondary" onClick={handleCancelEditTeam}>
+              ยกเลิก
+            </button>
           </div>
         </form>
       </div>
+        </div>
+      )}
 
       {/* Teams Cards Grid */}
       <div className="league-card">
-        <h3 className="league-card-title">
-          <i className="fas fa-shield-alt" style={{ color: '#10b981' }}></i>
-          <span>รายชื่อทีมในลีกนี้ ({teams.length} ทีม)</span>
-        </h3>
+        <div className="league-team-list-header">
+          <h3 className="league-card-title">
+            <i className="fas fa-shield-alt" style={{ color: '#10b981' }}></i>
+            <span>รายชื่อทีมในลีกนี้ ({teams.length} ทีม)</span>
+          </h3>
+          <button
+            type="button"
+            className="league-btn-primary"
+            onClick={handleOpenCreateTeam}
+            disabled={!activeLeagueId || loading}
+          >
+            <i className="fas fa-user-plus"></i>
+            <span>เพิ่มทีม</span>
+          </button>
+        </div>
         {teams.length === 0 ? (
-          <p style={{ color: '#64748b', fontSize: '0.88rem' }}>ยังไม่มีทีมในลีกนี้ เพิ่มทีมแรกของคุณด้านบน</p>
+          <p style={{ color: '#64748b', fontSize: '0.88rem' }}>ยังไม่มีทีมในลีกนี้ กดปุ่ม “เพิ่มทีม” เพื่อเพิ่มทีมแรก</p>
         ) : (
           <div className="league-teams-grid">
             {teams.map((t) => (

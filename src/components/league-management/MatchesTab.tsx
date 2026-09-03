@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
-import type { Team, Match } from '../../config/supabaseClient';
+import React, { useMemo, useRef, useState } from 'react';
+import type { League, Team, Match } from '../../config/supabaseClient';
 import { getTodayDateString, formatToDateInput } from './leagueDateUtils';
+import { getNextMatchNumber, isUnplayedMatch } from './leagueMatchUtils';
+import LeagueDatabaseModal from './LeagueDatabaseModal';
+import LeagueDatePicker from './LeagueDatePicker';
 
 export interface MatchesTabProps {
   activeLeagueId: string;
+  activeLeague: League | null;
   teams: Team[];
   matches: Match[];
   loading: boolean;
   onCreateMatch: (data: Omit<Match, 'id' | 'created_at' | 'updated_at'>) => Promise<Match | null>;
-  onCreateMatchesBatch: (matchesData: Omit<Match, 'id' | 'created_at' | 'updated_at'>[]) => Promise<Match[]>;
   onUpdateMatch: (matchId: string, updates: Partial<Match>) => Promise<Match | null>;
   onDeleteMatch: (matchId: string) => Promise<void> | void;
   onClearMatches: () => Promise<void> | void;
@@ -18,11 +21,11 @@ export interface MatchesTabProps {
 
 export const MatchesTab: React.FC<MatchesTabProps> = ({
   activeLeagueId,
+  activeLeague,
   teams,
   matches,
   loading,
   onCreateMatch,
-  onCreateMatchesBatch,
   onUpdateMatch,
   onDeleteMatch,
   onClearMatches,
@@ -31,7 +34,6 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
 }) => {
   const [showMatchForm, setShowMatchForm] = useState<boolean>(false);
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
-  const [matchNumber, setMatchNumber] = useState<number>(matches.length + 1);
   const [matchTeamAId, setMatchTeamAId] = useState<string>('');
   const [matchTeamBId, setMatchTeamBId] = useState<string>('');
   const [matchLabel1, setMatchLabel1] = useState<string>('รอบแรก');
@@ -41,12 +43,17 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
   const [matchStatus, setMatchStatus] = useState<'scheduled' | 'in_progress' | 'finished' | 'postponed'>('scheduled');
   const [matchScoreA, setMatchScoreA] = useState<number>(0);
   const [matchScoreB, setMatchScoreB] = useState<number>(0);
+  const matchModalOverlayMouseDownRef = useRef(false);
+  const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
+
+  const unplayedMatches = useMemo(
+    () => matches.filter(isUnplayedMatch),
+    [matches]
+  );
 
   const resetMatchForm = () => {
     setEditingMatchId(null);
     setShowMatchForm(false);
-    const nextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
-    setMatchNumber(nextNum);
     setMatchTeamAId('');
     setMatchTeamBId('');
     setMatchLabel1('รอบแรก');
@@ -73,12 +80,11 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
     const teamAName = teamA ? teamA.name : 'Team A';
     const teamBName = teamB ? teamB.name : 'Team B';
 
-    const defaultNextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
+    const nextMatchNumber = getNextMatchNumber(matches);
     const finalDate = matchDate.trim() ? matchDate.trim() : null;
 
     if (editingMatchId) {
       await onUpdateMatch(editingMatchId, {
-        match_number: matchNumber,
         team_a_id: matchTeamAId || null,
         team_b_id: matchTeamBId || null,
         team_a_name: teamAName,
@@ -95,7 +101,8 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
     } else {
       await onCreateMatch({
         league_id: activeLeagueId,
-        match_number: matchNumber || defaultNextNum,
+        // Match numbers are generated internally and are not exposed in the UI.
+        match_number: nextMatchNumber,
         team_a_id: matchTeamAId || null,
         team_b_id: matchTeamBId || null,
         team_a_name: teamAName,
@@ -115,7 +122,6 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
   const handleStartEditMatch = (match: Match) => {
     setEditingMatchId(match.id);
     setShowMatchForm(true);
-    setMatchNumber(match.match_number);
     setMatchTeamAId(match.team_a_id || '');
     setMatchTeamBId(match.team_b_id || '');
     setMatchLabel1(match.label1 || '');
@@ -131,76 +137,59 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
     resetMatchForm();
   };
 
-  const handleGenerateRoundRobin = async () => {
-    if (teams.length < 2) {
-      alert('ต้องมีอย่างน้อย 2 ทีมเพื่อสร้างตารางแข่งขัน');
-      return;
+  const handleMatchModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    matchModalOverlayMouseDownRef.current = e.target === e.currentTarget;
+  };
+
+  const handleMatchModalMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (matchModalOverlayMouseDownRef.current && e.target === e.currentTarget) {
+      resetMatchForm();
     }
-
-    const confirmGen = window.confirm(`คุณต้องการสร้างตารางการแข่งขันพบกันหมดจาก ${teams.length} ทีมใช่หรือไม่?`);
-    if (!confirmGen) return;
-
-    const newMatches: Omit<Match, 'id' | 'created_at' | 'updated_at'>[] = [];
-    let matchCounter = matches.length > 0 ? Math.max(...matches.map((m) => m.match_number)) + 1 : 1;
-
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        newMatches.push({
-          league_id: activeLeagueId,
-          match_number: matchCounter++,
-          team_a_id: teams[i].id,
-          team_b_id: teams[j].id,
-          team_a_name: teams[i].name,
-          team_b_name: teams[j].name,
-          score_a: 0,
-          score_b: 0,
-          status: 'scheduled',
-          label1: 'รอบแรก',
-          label2: `คู่ที่ ${newMatches.length + 1}`,
-          label3: 'สนาม 1',
-          match_date: null,
-        });
-      }
-    }
-
-    await onCreateMatchesBatch(newMatches);
+    matchModalOverlayMouseDownRef.current = false;
   };
 
   return (
     <div>
-      {/* Form for Adding / Editing Match (Collapsible) */}
+      {/* Form for Adding / Editing Match */}
       {(showMatchForm || editingMatchId) && (
         <div
-          className="league-card league-form-slide-down"
-          style={{ border: '1px solid rgba(56, 189, 248, 0.3)', background: 'rgba(15, 23, 42, 0.85)', marginBottom: '20px' }}
+          className="league-match-modal-overlay"
+          onMouseDown={handleMatchModalMouseDown}
+          onMouseUp={handleMatchModalMouseUp}
+          onKeyDownCapture={(e) => {
+            // Prevent the parent LeagueManagementModal from closing on Escape first.
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              resetMatchForm();
+            }
+          }}
+          role="presentation"
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 className="league-card-title" style={{ margin: 0 }}>
-              <i className="fas fa-futbol" style={{ color: '#38bdf8' }}></i>
-              <span>{editingMatchId ? 'แก้ไขแมตช์การแข่งขัน' : 'เพิ่มคู่การแข่งขันใหม่'}</span>
-            </h3>
-            <button
-              type="button"
-              className="league-btn-secondary"
-              onClick={handleCancelEditMatch}
-              style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-            >
-              <i className="fas fa-times"></i> ปิดฟอร์ม
-            </button>
-          </div>
+          <div
+            className="league-card league-match-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="league-match-modal-title"
+          >
+            <div className="league-match-modal-header">
+              <h3 id="league-match-modal-title" className="league-card-title" style={{ margin: 0 }}>
+                <i className="fas fa-futbol" style={{ color: '#38bdf8' }}></i>
+                <span>{editingMatchId ? 'แก้ไขแมตช์การแข่งขัน' : 'เพิ่มคู่การแข่งขันใหม่'}</span>
+              </h3>
+              <button
+                type="button"
+                className="league-btn-secondary"
+                onClick={handleCancelEditMatch}
+                autoFocus
+                style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                aria-label="ปิดฟอร์มแมตช์"
+              >
+                <i className="fas fa-times"></i> ปิดฟอร์ม
+              </button>
+            </div>
 
-          <form onSubmit={handleSaveMatch}>
+            <form onSubmit={handleSaveMatch}>
             <div className="league-form-grid">
-              <div className="league-form-group">
-                <label>ลำดับแมตช์ (Match No.) *</label>
-                <input
-                  type="number"
-                  className="league-form-input"
-                  value={matchNumber}
-                  onChange={(e) => setMatchNumber(parseInt(e.target.value, 10) || 1)}
-                  required
-                />
-              </div>
               <div className="league-form-group">
                 <label>ทีม A (เหย้า) *</label>
                 <select
@@ -241,15 +230,13 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                   onChange={(e) => setMatchStatus(e.target.value as 'scheduled' | 'in_progress' | 'finished' | 'postponed')}
                 >
                   <option value="scheduled">รอแข่งขัน (Scheduled)</option>
-                  <option value="in_progress">กำลังแข่งขัน (Live)</option>
-                  <option value="finished">จบการแข่งขัน (Finished)</option>
                 </select>
               </div>
             </div>
 
             <div className="league-form-grid">
               <div className="league-form-group">
-                <label>ป้าย 1: รอบการแข่งขัน (Round)</label>
+                <label>ป้าย 1: </label>
                 <input
                   type="text"
                   className="league-form-input"
@@ -259,7 +246,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                 />
               </div>
               <div className="league-form-group">
-                <label>ป้าย 2: สัปดาห์ / วันแข่ง (Week/Day)</label>
+                <label>ป้าย 2: </label>
                 <input
                   type="text"
                   className="league-form-input"
@@ -269,7 +256,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                 />
               </div>
               <div className="league-form-group">
-                <label>ป้าย 3: สนามแข่งขัน (Field / Pitch)</label>
+                <label>ป้าย 3: </label>
                 <input
                   type="text"
                   className="league-form-input"
@@ -279,37 +266,14 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                 />
               </div>
               <div className="league-form-group">
-                <label>📅 วันที่แข่งขัน (Match Date)</label>
-                <input
-                  type="date"
-                  className="league-form-input"
+                <LeagueDatePicker
                   value={matchDate}
-                  onChange={(e) => setMatchDate(e.target.value)}
+                  onChange={setMatchDate}
+                  label="วันที่แข่งขัน (Match Date)"
+                  helperText="ใช้จัดกลุ่มแมตช์ตามวันที่ในหน้า Overlay / OBS"
                 />
-                <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
-                  ใช้จัดกลุ่มแมตช์ตามวันที่ในหน้า Overlay / OBS
-                </span>
               </div>
-              <div className="league-form-group">
-                <label>ผลสกอร์ปัจจุบัน (Score A - Score B)</label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    className="league-form-input"
-                    value={matchScoreA}
-                    onChange={(e) => setMatchScoreA(parseInt(e.target.value, 10) || 0)}
-                    style={{ textAlign: 'center' }}
-                  />
-                  <span style={{ fontWeight: 700 }}>-</span>
-                  <input
-                    type="number"
-                    className="league-form-input"
-                    value={matchScoreB}
-                    onChange={(e) => setMatchScoreB(parseInt(e.target.value, 10) || 0)}
-                    style={{ textAlign: 'center' }}
-                  />
-                </div>
-              </div>
+
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
@@ -321,7 +285,8 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                 ยกเลิก
               </button>
             </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
@@ -330,7 +295,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
           <h3 className="league-card-title" style={{ margin: 0 }}>
             <i className="fas fa-list" style={{ color: '#f59e0b' }}></i>
-            <span>ตารางการแข่งขันทั้งหมด ({matches.length} แมตช์)</span>
+            <span>คู่ที่ยังไม่ได้แข่งขัน ({unplayedMatches.length} คู่)</span>
           </h3>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -354,12 +319,13 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
             <button
               type="button"
               className="league-btn-secondary"
-              onClick={handleGenerateRoundRobin}
+              onClick={() => setIsDatabaseModalOpen(true)}
+              disabled={!activeLeague}
               style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-              title="สร้างตารางแข่งขันแบบพบกันหมดให้อัตโนมัติ"
+              title="แสดงข้อมูลการแข่งขันทั้งหมดของลีกนี้"
             >
-              <i className="fas fa-magic" style={{ color: '#f59e0b' }}></i>
-              <span>สร้างตารางพบกันหมด</span>
+              <i className="fas fa-database" style={{ color: '#38bdf8' }}></i>
+              <span>จัดการการแข่งขันทั้งหมด</span>
             </button>
 
             {matches.length > 0 && (
@@ -382,7 +348,6 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
           <table className="league-data-table">
             <thead>
               <tr>
-                <th style={{ width: '60px', textAlign: 'center' }}>ลำดับ</th>
                 <th>คู่แข่งขัน (ทีม A vs ทีม B)</th>
                 <th style={{ textAlign: 'center' }}>สกอร์</th>
                 <th>รอบ / สัปดาห์ / สนาม</th>
@@ -391,10 +356,10 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
               </tr>
             </thead>
             <tbody>
-              {matches.length === 0 ? (
+              {unplayedMatches.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
-                    <div>ยังไม่มีตารางแข่งขันในลีกนี้</div>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
+                    <div>ไม่มีคู่แข่งขันที่รอการแข่งขันในลีกนี้</div>
                     <button
                       type="button"
                       className="league-btn-primary"
@@ -409,11 +374,8 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                   </td>
                 </tr>
               ) : (
-                matches.map((m) => (
+                unplayedMatches.map((m) => (
                   <tr key={m.id}>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#38bdf8' }}>
-                      #{m.match_number}
-                    </td>
                     <td>
                       <span style={{ fontWeight: 600, color: '#f8fafc' }}>{m.team_a_name}</span>
                       <span style={{ margin: '0 8px', color: '#64748b' }}>vs</span>
@@ -438,7 +400,13 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <span className={`status-badge ${m.status}`}>
-                        {m.status === 'scheduled' ? 'รอแข่ง' : m.status === 'in_progress' ? 'กำลังแข่ง' : 'จบแล้ว'}
+                        {m.status === 'scheduled'
+                          ? 'รอแข่ง'
+                          : m.status === 'in_progress'
+                            ? 'กำลังแข่ง'
+                            : m.status === 'postponed'
+                              ? 'เลื่อนแข่ง'
+                              : 'จบแล้ว'}
                       </span>
                     </td>
                     <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -468,7 +436,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
                         type="button"
                         className="league-btn-icon"
                         onClick={() => {
-                          if (window.confirm(`ลบแมตช์ที่ ${m.match_number}?`)) onDeleteMatch(m.id);
+                          if (window.confirm('ลบการแข่งขันนี้ใช่หรือไม่?')) onDeleteMatch(m.id);
                         }}
                         title="ลบ"
                       >
@@ -482,6 +450,17 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
           </table>
         </div>
       </div>
+
+      <LeagueDatabaseModal
+        isOpen={isDatabaseModalOpen}
+        league={activeLeague}
+        teams={teams}
+        matches={matches}
+        loading={loading}
+        onUpdateMatch={onUpdateMatch}
+        onDeleteMatch={onDeleteMatch}
+        onClose={() => setIsDatabaseModalOpen(false)}
+      />
     </div>
   );
 };
