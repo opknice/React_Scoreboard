@@ -61,7 +61,7 @@ export function cropMetadataToJson(crop: CropMetadata): Json {
   };
 }
 
-/** Matches the legacy Firebase/localStorage team-key format without importing Firebase code. */
+/** Matches the legacy localStorage team-key format without importing persistence code. */
 export function normalizeLegacyTeamKey(teamName: string): string {
   return String(teamName || '')
     .trim()

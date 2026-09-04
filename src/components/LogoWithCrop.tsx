@@ -10,6 +10,7 @@ interface LogoWithCropProps {
   url: string;
   crop: CropMetadata | null;
   alt?: string;
+  className?: string;
   style?: React.CSSProperties;
   onError?: () => void;
 }
@@ -18,6 +19,7 @@ export default function LogoWithCrop({
   url,
   crop,
   alt = 'Logo',
+  className,
   style,
   onError,
 }: LogoWithCropProps) {
@@ -77,6 +79,7 @@ export default function LogoWithCrop({
   return (
     <canvas
       ref={canvasRef}
+      className={className}
       style={{
         width: '100%',
         height: '100%',

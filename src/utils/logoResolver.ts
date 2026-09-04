@@ -1,51 +1,13 @@
-import { ref, onValue, update } from 'firebase/database';
-import type { Database } from 'firebase/database';
-
-// Global cache for team logos loaded from Firebase Realtime DB (teams/ node)
-const globalTeamsCache: Record<string, string> = {};
-
-/**
- * Normalizes team name to a clean lookup key
- */
-export function normalizeTeamKey(teamName: string): string {
-  return String(teamName || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_\-.()[\]/\\]+/g, '');
-}
-
-/**
- * Updates the global teams cache with logo URLs
- */
-export function updateGlobalTeamsCache(teamsData: Record<string, any>) {
-  if (!teamsData) return;
-  Object.keys(teamsData).forEach((key) => {
-    const item = teamsData[key];
-    const teamName = typeof item === 'object' && item !== null ? item.name || key : key;
-    const logoUrl = typeof item === 'object' && item !== null ? item.logo || item.url || '' : String(item || '');
-    const cleanKey = normalizeTeamKey(teamName);
-    if (logoUrl) {
-      globalTeamsCache[cleanKey] = logoUrl;
-    } else {
-      delete globalTeamsCache[cleanKey];
-    }
-  });
-}
-
-/** Replaces the cache so removed/blank Firebase entries cannot stay visible. */
-export function replaceGlobalTeamsCache(teamsData: Record<string, any> | null | undefined) {
-  Object.keys(globalTeamsCache).forEach((key) => delete globalTeamsCache[key]);
-  if (teamsData) updateGlobalTeamsCache(teamsData);
-}
+import type { CropMetadata } from '../types/teamLogo';
+import type { Json } from '../types/supabase';
 
 /**
  * Utility function to resolve team logo URLs consistently across all components.
- * 
+ *
  * Fallback priority:
  * 1. Full Cloud URL (http:// or https://)
- * 2. Lookup in Global Teams Cache (loaded from Firebase Realtime DB `teams/` node)
- * 3. Custom local folder path (Development mode with logoFolderPath)
- * 4. Deployed public logos folder (/logos/${fileName})
+ * 2. Custom local folder path (Development mode with logoFolderPath)
+ * 3. Deployed public logos folder (/logos/${fileName})
  */
 export function getLogoSrc(
   logoIdentifier?: string | null,
@@ -65,17 +27,7 @@ export function getLogoSrc(
     return secondary;
   }
 
-  // 3. Lookup in global Firebase teams cache
-  if (secondary) {
-    const cachedByTeam = globalTeamsCache[normalizeTeamKey(secondary)];
-    if (cachedByTeam) return cachedByTeam;
-  }
-  if (primary) {
-    const cachedByPrimary = globalTeamsCache[normalizeTeamKey(primary)];
-    if (cachedByPrimary) return cachedByPrimary;
-  }
-
-  // 4. Ensure filename extension for static/local resolving
+  // 3. Ensure filename extension for static/local resolving
   const targetName = primary || secondary;
   if (!targetName) return '';
 
@@ -84,117 +36,49 @@ export function getLogoSrc(
     fileName = `${fileName}.png`;
   }
 
-  // 5. Development mode with custom local folder
+  // 4. Development mode with custom local folder
   const isDev = import.meta.env?.DEV;
   if (isDev && logoFolderPath) {
     return `/api/logo?path=${encodeURIComponent(logoFolderPath)}&file=${encodeURIComponent(fileName)}`;
   }
 
-  // 6. Default public logos folder
+  // 5. Default public logos folder
   return `/logos/${encodeURIComponent(fileName)}`;
 }
 
-/**
- * Helper to extract team logo URL or filename from a Firebase match object,
- * checking multiple common field names (logoA, logo_a, logoUrlA, logo1, urlA, etc.)
- * and falling back to global teams cache if empty.
- */
-export function extractMatchLogo(match: any, teamSide: 'A' | 'B'): string {
-  if (!match) return '';
-  const teamName = teamSide === 'A' ? match.teamA : match.teamB;
-
-  let logo = '';
-  if (teamSide === 'A') {
-    logo = (
-      match.logoA ||
-      match.logo_a ||
-      match.logoUrlA ||
-      match.logo_url_a ||
-      match.logo1 ||
-      match.urlA ||
-      match.url_a ||
-      ''
-    ).toString().trim();
-  } else {
-    logo = (
-      match.logoB ||
-      match.logo_b ||
-      match.logoUrlB ||
-      match.logo_url_b ||
-      match.logo2 ||
-      match.urlB ||
-      match.url_b ||
-      ''
-    ).toString().trim();
-  }
-
-  if (logo && (logo.startsWith('http://') || logo.startsWith('https://'))) {
-    return logo;
-  }
-
-  if (teamName) {
-    const cached = globalTeamsCache[normalizeTeamKey(teamName)];
-    if (cached) return cached;
-  }
-
-  return logo;
+export interface TeamLogoRecord {
+  id: string;
+  name: string;
+  logo_url?: string | null;
+  crop_metadata?: Json | null;
+  crop?: CropMetadata | null;
 }
 
-/**
- * Listens to Firebase Realtime Database `teams` node and updates cache
- */
-export function listenToFirebaseTeams(
-  db: Database,
-  onUpdate?: (teamsMap: Record<string, { name: string; logo: string }>) => void
-) {
-  try {
-    const teamsRef = ref(db, 'teams');
-    return onValue(teamsRef, (snapshot) => {
-      const val = snapshot.val() as Record<string, any> | null;
-      replaceGlobalTeamsCache(val);
-      if (onUpdate) {
-        const parsedMap: Record<string, { name: string; logo: string }> = {};
-        Object.keys(val || {}).forEach((k) => {
-          const item = val?.[k];
-          if (typeof item === 'object' && item !== null) {
-            parsedMap[k] = { name: item.name || k, logo: item.logo || item.url || '' };
-          } else {
-            parsedMap[k] = { name: k, logo: String(item || '') };
-          }
-        });
-        onUpdate(parsedMap);
-      }
-    });
-  } catch (err) {
-    console.error('Failed to listen to Firebase teams:', err);
-    return () => { };
-  }
+function normalizeTeamName(teamName: string): string {
+  return teamName.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }
 
-/**
- * Batch saves team logo mappings to Firebase Realtime Database under `teams/`
- */
-export async function saveTeamsToFirebase(
-  db: Database,
-  teamsMap: Record<string, { name: string; logo: string }>
-) {
-  const teamsRef = ref(db, 'teams');
-  const updates: Record<string, any> = {};
+/** Resolves a Supabase team logo by stable ID first, then normalized name. */
+export function findTeamLogoRecord(
+  teams: readonly TeamLogoRecord[],
+  teamId?: string | null,
+  teamName?: string | null,
+): TeamLogoRecord | undefined {
+  const byId = teamId ? teams.find((team) => team.id === teamId) : undefined;
+  if (byId) return byId;
 
-  Object.values(teamsMap).forEach(({ name, logo }) => {
-    if (!name) return;
-    const key = normalizeTeamKey(name);
-    updates[key] = {
-      name: name.trim(),
-      logo: (logo || '').trim(),
-      updatedAt: new Date().toISOString()
-    };
-  });
+  const normalizedName = teamName ? normalizeTeamName(teamName) : '';
+  if (!normalizedName) return undefined;
 
-  if (Object.keys(updates).length > 0) {
-    await update(teamsRef, updates);
-    updateGlobalTeamsCache(updates);
-  }
+  return teams.find((team) => normalizeTeamName(team.name) === normalizedName);
+}
+
+export function resolveTeamLogo(
+  teams: readonly TeamLogoRecord[],
+  teamId?: string | null,
+  teamName?: string | null,
+): string {
+  return findTeamLogoRecord(teams, teamId, teamName)?.logo_url || '';
 }
 
 /**

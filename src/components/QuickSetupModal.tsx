@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
 import type { Team } from '../config/supabaseClient';
 import {
   TEAM_NAME_FONT_OPTIONS,
@@ -44,11 +43,8 @@ interface QuickSetupModalProps {
   isOpen: boolean;
   teams: Team[];
   onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
-  targets: FirebaseSaveTarget[];
-  selectedTargetId: string;
   tickerSpeed: number;
   closeLabel: string;
-  onTargetChange: (targetId: string) => void;
   onTickerSpeedChange: (speed: number) => void;
   teamNameSettings: TeamNameBrowserSettings;
   teamNameUrls: { A: string; B: string };
@@ -75,7 +71,6 @@ interface QuickSetupModalProps {
   onQuickAddTeamNames: () => void;
   onOpenObsSetup: () => void;
   onCopyOverlay: (viewType: string, standaloneFile?: string) => void;
-  onOpenDatabase: () => void;
   onOpenLeagueManager?: () => void;
   onClose: () => void;
 }
@@ -84,11 +79,8 @@ export default function QuickSetupModal({
   isOpen,
   teams,
   onUpdateTeam,
-  targets,
-  selectedTargetId,
   tickerSpeed,
   closeLabel,
-  onTargetChange,
   onTickerSpeedChange,
   teamNameSettings,
   teamNameUrls,
@@ -115,7 +107,6 @@ export default function QuickSetupModal({
   onQuickAddTeamNames,
   onOpenObsSetup,
   onCopyOverlay,
-  onOpenDatabase,
   onOpenLeagueManager,
   onClose,
 }: QuickSetupModalProps) {
@@ -204,13 +195,6 @@ export default function QuickSetupModal({
       <div className="modal-content" onClick={(event) => event.stopPropagation()}>
         <h3><i className="fas fa-sliders"></i> Quick Setup</h3>
         <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>คัดลอก Overlay URL ไปใส่เป็น Browser Source ใน OBS Studio</p>
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', fontWeight: 600, marginBottom: '6px' }}>เลือกลีกฟุตบอล:</label>
-          <select style={{ width: '100%' }} value={selectedTargetId} onChange={(event) => onTargetChange(event.target.value)}>
-            {targets.length === 0 ? <option value="">⚠️ โหลดไฟล์ Excel ก่อน</option> : targets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
-          </select>
-        </div>
-
         <div className="quick-setup-panel quick-setup-panel--team-name">
           <button
             type="button"
@@ -748,9 +732,6 @@ export default function QuickSetupModal({
               <i className="fas fa-trophy"></i> 🏆 จัดการฐานข้อมูลลีก & ตารางแข่ง (Supabase)
             </button>
           )}
-          <button className="btn-secondary" style={{ background: '#8b5cf6', borderColor: '#8b5cf6' }} onClick={onOpenDatabase}>
-            <i className="fas fa-database"></i> จัดการฐานข้อมูล (Firebase)
-          </button>
         </div>
         <div style={{ marginTop: '16px', textAlign: 'right' }}><button className="btn-secondary" onClick={onClose}>{closeLabel}</button></div>
       </div>

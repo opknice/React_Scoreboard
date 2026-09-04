@@ -1,22 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import {
-  equalTo,
-  getDatabase,
-  limitToLast,
-  onValue,
-  orderByChild,
-  query,
-  ref,
-  type Query,
-} from 'firebase/database';
-import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
-import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { findTeamLogoRecord, getLogoSrc } from '../utils/logoResolver';
 import { useDisableZoom } from '../hooks/useDisableZoom';
 import { filterFinishedMatches } from '../utils/finishedMatch';
 import { calculateFinishedStandings } from '../utils/standingsCalculator';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
+import { parseCropMetadata } from '../types/teamLogo';
+import OverlayLogo from './OverlayLogo';
+import { limitOverlayItems, parseOverlayLimit } from '../utils/overlayQuery';
 
 const getLocalTodayString = (): string => {
   const now = new Date();
@@ -49,9 +41,8 @@ export default function OverlayContainer() {
   const speed = searchParams.get('speed') || '75';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
+  const resultLimit = parseOverlayLimit(limitParam);
 
-  // Decode Firebase configuration
-  const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
   const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
   const standingsRows = useMemo(
     () => calculateFinishedStandings(matches, registeredTeams),
@@ -61,130 +52,101 @@ export default function OverlayContainer() {
   // Initialize and load data
   useEffect(() => {
     let isCancelled = false;
-    let firebaseCleanup: (() => void) | null = null;
+    let latestRequestId = 0;
+    let refreshTimer: number | null = null;
+    let supabaseChannel: RealtimeChannel | null = null;
+
+    const scheduleRealtimeRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void loadFromSupabase();
+      }, 150);
+    };
 
     const loadFromSupabase = async () => {
+      const requestId = ++latestRequestId;
       try {
         const { LeagueService } = await import('../services/leagueService');
-        const { isSupabaseConfigured } = await import('../config/supabaseClient');
-        if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
-          const [supabaseMatches, supabaseTeams] = await Promise.all([
-            LeagueService.getMatchesByLeague(leagueId),
-            LeagueService.getTeamsByLeague(leagueId),
-          ]);
-          if (isCancelled) return true;
-
-          const teamsById = new Map(supabaseTeams.map((team) => [team.id, team]));
-          const formatted = supabaseMatches.map((m) => {
-            const teamAObj = m.team_a_id ? teamsById.get(m.team_a_id) : undefined;
-            const teamBObj = m.team_b_id ? teamsById.get(m.team_b_id) : undefined;
-            const dateStr = m.match_date
-              ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '')
-              : '';
-            return {
-              id: m.id,
-              teamA: m.team_a_name,
-              teamB: m.team_b_name,
-              scoreA: m.score_a || 0,
-              scoreB: m.score_b || 0,
-              logoA: teamAObj?.logo_url || '',
-              logoB: teamBObj?.logo_url || '',
-              roundLabel: m.label1 || m.label2 || '',
-              round: m.label1 || '',
-              week: m.label2 || '',
-              date: dateStr,
-              status: m.status,
-            };
-          });
-          setRegisteredTeams(supabaseTeams.map((team) => ({
-            id: team.id,
-            name: team.name,
-            logo: team.logo_url || '',
-          })));
-          setMatches(formatted);
-          setLoading(false);
-          return true;
-        }
-      } catch (error: unknown) {
-        console.warn('Supabase fetch failed in OverlayContainer, falling back to Firebase:', error);
-      }
-      return false;
-    };
-
-    const initializeDataSource = async () => {
-      const loaded = await loadFromSupabase();
-      if (isCancelled || loaded) return;
-
-      if (!firebaseConfig) {
-        setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database (กรุณาใช้ URL ที่สร้างจาก Control Panel)');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const appName = `overlay-${leagueId.replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}`;
-        const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
-        const db = getDatabase(app);
-        const baseRef = ref(db, 'matches');
-
-        // Build Query
-        const selectedDate = dateParam === 'today' ? getLocalTodayString() : dateParam && dateParam !== 'all' ? dateParam : '';
-        let matchesQuery: Query = baseRef;
-
-        if (view === 'ticker' && selectedDate) {
-          matchesQuery = query(baseRef, orderByChild('date'), equalTo(selectedDate));
-        } else if (view === 'results' && limitParam) {
-          const limitVal = parseInt(limitParam, 10);
-          if (Number.isFinite(limitVal) && limitVal > 0) {
-            matchesQuery = query(baseRef, limitToLast(limitVal));
-          }
+        const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
+        if (!isSupabaseConfigured() || !supabase || !leagueId || leagueId === 'excel') {
+          throw new Error('ไม่พบ League ID หรือการตั้งค่า Supabase');
         }
 
-        const unsubTeams = listenToFirebaseTeams(db, (teamsMap) => {
-          if (isCancelled) return;
-          setRegisteredTeams(Object.entries(teamsMap).map(([id, team]) => ({
-            id,
-            name: team.name,
-            logo: team.logo,
-          })));
+        const [supabaseMatches, supabaseTeams] = await Promise.all([
+          LeagueService.getMatchesByLeague(leagueId),
+          LeagueService.getTeamsByLeague(leagueId),
+        ]);
+        if (isCancelled || requestId !== latestRequestId) return;
+
+        const formatted = supabaseMatches.map((m) => {
+          const teamA = findTeamLogoRecord(supabaseTeams, m.team_a_id, m.team_a_name);
+          const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
+          const dateStr = m.match_date
+            ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '')
+            : '';
+          return {
+            id: m.id,
+            teamA: m.team_a_name,
+            teamB: m.team_b_name,
+            scoreA: m.score_a || 0,
+            scoreB: m.score_b || 0,
+            logoA: teamA?.logo_url || '',
+            logoB: teamB?.logo_url || '',
+            cropA: parseCropMetadata(teamA?.crop_metadata),
+            cropB: parseCropMetadata(teamB?.crop_metadata),
+            roundLabel: m.label1 || m.label2 || '',
+            round: m.label1 || '',
+            week: m.label2 || '',
+            date: dateStr,
+            status: m.status,
+          };
         });
+        setRegisteredTeams(supabaseTeams.map((team) => ({
+          id: team.id,
+          name: team.name,
+          logo: team.logo_url || '',
+          crop: parseCropMetadata(team.crop_metadata),
+        })));
+        setMatches(formatted);
+        setErrorMsg('');
+        setLoading(false);
 
-        const unsubscribe = onValue(
-          matchesQuery,
-          (snapshot) => {
-            if (isCancelled) return;
-            const items: OverlayMatch[] = [];
-            snapshot.forEach((child) => {
-              items.push({ id: child.key, ...child.val() });
-            });
-            setMatches(items);
-            setLoading(false);
-          },
-          (err) => {
-            if (isCancelled) return;
-            setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
-            setLoading(false);
-          }
-        );
-
-        firebaseCleanup = () => {
-          unsubscribe();
-          unsubTeams();
-        };
+        if (!supabaseChannel) {
+          supabaseChannel = supabase
+            .channel(`public:overlay_${leagueId}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
+              scheduleRealtimeRefresh,
+            )
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
+              scheduleRealtimeRefresh,
+            )
+            .subscribe();
+        }
       } catch (error: unknown) {
-        if (isCancelled) return;
-        setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${getErrorMessage(error)}`);
+        if (isCancelled || requestId !== latestRequestId) return;
+        setErrorMsg(`โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ${getErrorMessage(error)}`);
         setLoading(false);
       }
     };
 
-    void initializeDataSource();
+    void loadFromSupabase();
 
     return () => {
       isCancelled = true;
-      firebaseCleanup?.();
+      latestRequestId += 1;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      if (supabaseChannel) {
+        void import('../config/supabaseClient').then(({ supabase }) => {
+          if (supabase && supabaseChannel) void supabase.removeChannel(supabaseChannel);
+        });
+      }
     };
-  }, [dateParam, firebaseConfig, leagueId, limitParam, searchParams, view]);
+  }, [dateParam, leagueId, limitParam, view]);
 
   if (loading) {
     return (
@@ -207,25 +169,9 @@ export default function OverlayContainer() {
 
   // Finished matches drive both the table and every result-based view.
   // Helper for rendering logos
-  const renderLogo = (logoIdentifier: string | undefined, teamName: string, className = 'overlay-logo') => {
+  const renderLogo = (logoIdentifier: string | undefined, teamName: string, className = 'overlay-logo', crop?: OverlayMatch['cropA']) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-
-    return (
-      <img
-        key={`${logoSrc}-${teamName}`}
-        className={className}
-        src={logoSrc}
-        alt={teamName}
-        onError={(e) => {
-          const target = e.target as HTMLImageElement;
-          if (defaultLogo && target.src !== defaultLogo) {
-            target.src = defaultLogo;
-          } else {
-            target.style.display = 'none';
-          }
-        }}
-      />
-    );
+    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className={className} crop={crop} />;
   };
 
   const resultClass = (self: number, opponent: number) => {
@@ -270,7 +216,7 @@ export default function OverlayContainer() {
               <tr key={row.team}>
                 <td>{index + 1}</td>
                 <td className="overlay-team-cell">
-                  {renderLogo(row.logo, row.team, 'overlay-logo')}
+                  {renderLogo(row.logo, row.team, 'overlay-logo', row.crop)}
                   {row.team}
                 </td>
                 <td>{row.P}</td>
@@ -296,8 +242,9 @@ export default function OverlayContainer() {
     const todayStr = getLocalTodayString();
     const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
+    const limited = limitOverlayItems(filtered, resultLimit);
 
-    if (filtered.length === 0) {
+    if (limited.length === 0) {
       return (
         <div className="overlay-status">
           {selectedDate ? `ยังไม่มีข้อมูลการแข่งขันสำหรับวันที่ ${selectedDate}` : 'ยังไม่มีข้อมูลการแข่งขัน'}
@@ -307,7 +254,7 @@ export default function OverlayContainer() {
 
     // Group by Date and Week
     const groups: Record<string, any[]> = {};
-    filtered.forEach((match) => {
+    limited.forEach((match) => {
       const date = match.date || '';
       let week = match.week || match.matchday || match.round || '1';
 
@@ -369,13 +316,13 @@ export default function OverlayContainer() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${resultClass(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(extractMatchLogo(m, 'A'), m.teamA, 'overlay-logo')}
+                          {renderLogo(m.logoA || '', m.teamA, 'overlay-logo', m.cropA)}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${resultClass(scoreB, scoreA)}`}>
-                          {renderLogo(extractMatchLogo(m, 'B'), m.teamB, 'overlay-logo')}
+                          {renderLogo(m.logoB || '', m.teamB, 'overlay-logo', m.cropB)}
                           <span>{m.teamB}</span>
                         </div>
                       </div>
@@ -394,8 +341,9 @@ export default function OverlayContainer() {
     const todayStr = getLocalTodayString();
     const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
+    const limited = limitOverlayItems(filtered, resultLimit);
 
-    if (filtered.length === 0) {
+    if (limited.length === 0) {
       return (
         <div className="overlay-status" style={{ padding: '8px 16px', fontSize: '0.9rem', color: '#94a3b8' }}>
           ยังไม่มีข้อมูลการแข่งขันสำหรับวันที่ {selectedDate || todayStr}
@@ -414,15 +362,15 @@ export default function OverlayContainer() {
             paddingLeft: '100%'
           } as any}
         >
-          {filtered.map((m) => (
+          {limited.map((m) => (
             <React.Fragment key={m.id}>
-              {renderLogo(extractMatchLogo(m, 'A'), m.teamA, 'overlay-logo-small')}
+              {renderLogo(m.logoA || '', m.teamA, 'overlay-logo-small', m.cropA)}
               <span>{m.teamA}</span>
               <span className="overlay-ticker-score">
                 {m.scoreA} - {m.scoreB}
               </span>
               <span>{m.teamB}</span>
-              {renderLogo(extractMatchLogo(m, 'B'), m.teamB, 'overlay-logo-small')}
+              {renderLogo(m.logoB || '', m.teamB, 'overlay-logo-small', m.cropB)}
               <span style={{ fontSize: '1.5rem', color: '#9ca3af' }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
             </React.Fragment>
           ))}
@@ -522,7 +470,7 @@ export default function OverlayContainer() {
                       <tr key={row.team}>
                         <td style={{ textAlign: 'center' }}>{index + 1}</td>
                         <td className="team-cell">
-                          {renderLogo(row.team, 'logo')}
+                          {renderLogo(row.logo, row.team, 'overlay-logo', row.crop)}
                           <span>{row.team}</span>
                         </td>
                         <td style={{ textAlign: 'center' }}>{row.P}</td>
@@ -556,13 +504,13 @@ export default function OverlayContainer() {
                       <div key={match.id} className="match-card">
                         <div className={`match-team left ${resultClass(scoreA, scoreB).replace('overlay-', '')}`}>
                           <span>{match.teamA}</span>
-                          {renderLogo(match.teamA, 'logo')}
+                          {renderLogo(match.logoA || '', match.teamA, 'overlay-logo', match.cropA)}
                         </div>
                         <div className="match-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`match-team right ${resultClass(scoreB, scoreA).replace('overlay-', '')}`}>
-                          {renderLogo(match.teamB, 'logo')}
+                          {renderLogo(match.logoB || '', match.teamB, 'overlay-logo', match.cropB)}
                           <span>{match.teamB}</span>
                         </div>
                       </div>

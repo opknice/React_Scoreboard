@@ -1,9 +1,11 @@
 import { filterFinishedMatches } from './finishedMatch';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
+import type { CropMetadata } from '../types/teamLogo';
 
 export interface CalculatedStanding {
   team: string;
   logo: string;
+  crop?: CropMetadata | null;
   P: number;
   W: number;
   D: number;
@@ -22,6 +24,7 @@ const createEmptyStanding = (team: OverlayTeam): MutableStanding => ({
   teamId: team.id,
   team: team.name,
   logo: team.logo || '',
+  crop: team.crop || null,
   P: 0,
   W: 0,
   D: 0,
@@ -63,6 +66,8 @@ export const calculateFinishedStandings = (
     const b = stats[teamB];
     if (!a.logo && match.logoA) a.logo = match.logoA;
     if (!b.logo && match.logoB) b.logo = match.logoB;
+    if (!a.crop && match.cropA) a.crop = match.cropA;
+    if (!b.crop && match.cropB) b.crop = match.cropB;
 
     a.P += 1;
     b.P += 1;

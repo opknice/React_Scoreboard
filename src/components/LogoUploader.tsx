@@ -1,13 +1,13 @@
-// Cloudinary Logo Uploader (Unsigned Upload - No API Secret needed)
 import React, { useState } from 'react';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '../constants/uploadConfig';
 import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
 
 interface LogoUploaderProps {
-  onUploadSuccess?: (fileName: string, url: string, targetTeam?: 'A' | 'B' | 'none') => void;
+  uploadLogo: (file: File, fileName: string) => Promise<string>;
+  onUploadSuccess?: (fileName: string, url: string, targetTeam?: 'A' | 'B' | 'none') => Promise<void> | void;
 }
 
-export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
+export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [targetTeam, setTargetTeam] = useState<'A' | 'B' | 'none'>('none');
   const [uploading, setUploading] = useState(false);
@@ -17,10 +17,6 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
   const [uploadedUrl, setUploadedUrl] = useState<string>('');
 
   const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage, loading: quotaLoading } = useImageUploadQuota();
-
-  // Cloudinary config (public info - safe to expose)
-  const CLOUD_NAME = 'vayh51zb';
-  const UPLOAD_PRESET = 'logo_upload'; // You'll create this in next step
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -40,7 +36,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
         return;
       }
 
-      // Validate file size (2MB for Cloudinary)
+      // Keep the same client-side size guard used by the Supabase upload flow.
       if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
         const sizeInMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
         setError(`ไฟล์ใหญ่เกิน ${MAX_FILE_SIZE_MB}MB (ขนาดปัจจุบัน ${sizeInMB}MB)`);
@@ -81,28 +77,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
     setMessage('');
 
     try {
-      // Create form data
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', UPLOAD_PRESET);
-      formData.append('folder', 'logos'); // Optional: organize in folder
-
-      // Upload to Cloudinary
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-        {
-          method: 'POST',
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'Upload failed');
-      }
-
-      const data = await response.json();
-      const imageUrl = data.secure_url;
+      const imageUrl = await uploadLogo(file, file.name);
 
       await incrementUploadCount();
 
@@ -112,17 +87,12 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       setPreviewUrl('');
 
       if (onUploadSuccess) {
-        onUploadSuccess(file.name, imageUrl, targetTeam);
+        await onUploadSuccess?.(file.name, imageUrl, targetTeam);
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload error:', err);
-
-      if (err.message.includes('Invalid upload preset')) {
-        setError(`❌ ยังไม่ได้ตั้งค่า Upload Preset - กรุณาดูคำแนะนำด้านล่าง`);
-      } else {
-        setError(`❌ เกิดข้อผิดพลาด: ${err.message}`);
-      }
+      setError(`❌ เกิดข้อผิดพลาด: ${err instanceof Error ? err.message : 'ไม่สามารถอัปโหลดรูปภาพได้'}`);
     } finally {
       setUploading(false);
     }
@@ -136,7 +106,7 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       backgroundColor: '#1a1a1a',
       marginTop: '20px'
     }}>
-      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Cloudinary - ฟรี 25GB)</h3>
+      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Supabase Storage)</h3>
 
       {/* Quota Banner */}
       <div style={{
@@ -284,33 +254,11 @@ export default function LogoUploader({ onUploadSuccess }: LogoUploaderProps) {
       )}
 
       <div style={{
-        marginTop: '15px',
-        padding: '12px',
-        backgroundColor: '#1a1a2e',
-        borderRadius: '4px',
-        fontSize: '12px',
-        color: '#aaa',
-        borderLeft: '3px solid #ff9800'
-      }}>
-        <strong style={{ color: '#ff9800' }}>⚠️ ขั้นตอนสำคัญ:</strong><br />
-        ต้องสร้าง <strong>Upload Preset</strong> ก่อนใช้งาน:<br />
-        <ol style={{ marginLeft: '20px', marginTop: '8px', marginBottom: 0 }}>
-          <li>ไปที่ <a href="https://console.cloudinary.com/settings/upload" target="_blank" style={{ color: '#64b5f6' }}>Cloudinary Settings</a></li>
-          <li>เลื่อนลงมาที่ <strong>Upload presets</strong></li>
-          <li>คลิก <strong>Add upload preset</strong></li>
-          <li>ตั้งชื่อ: <code style={{ backgroundColor: '#2a2a2a', padding: '2px 6px', borderRadius: '3px' }}>logo_upload</code></li>
-          <li>เปลี่ยน Signing Mode เป็น: <strong>Unsigned</strong></li>
-          <li>Folder: <code style={{ backgroundColor: '#2a2a2a', padding: '2px 6px', borderRadius: '3px' }}>logos</code></li>
-          <li>คลิก <strong>Save</strong></li>
-        </ol>
-      </div>
-
-      <div style={{
         marginTop: '10px',
         fontSize: '12px',
         color: '#888'
       }}>
-        💡 <strong>ข้อดี:</strong> ฟรี 25GB, CDN เร็ว, Image optimization อัตโนมัติ
+        💡 รูปภาพจะถูกเก็บใน Supabase Storage และใช้ URL เดียวกันทุก browser/OBS
       </div>
     </div>
   );

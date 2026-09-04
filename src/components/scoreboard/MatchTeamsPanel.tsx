@@ -16,7 +16,6 @@ export interface MatchTeamsPanelProps {
   editNameAVal: string;
   editNameBVal: string;
   hasSupabaseTeams: boolean;
-  teamsCacheVersion: number;
   resetLabel: string;
   onAddGoal: (team: 'A' | 'B') => void;
   onMinusScore: (team: 'A' | 'B') => void;
@@ -65,7 +64,6 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
   editNameAVal,
   editNameBVal,
   hasSupabaseTeams,
-  teamsCacheVersion,
   resetLabel,
   onAddGoal,
   onMinusScore,
@@ -143,7 +141,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
           >
             {logoA || nameA ? (
               <img
-                key={`${logoA}-${nameA}-${teamsCacheVersion}`}
+                key={`${logoA}-${nameA}`}
                 src={getLogoSrc(logoA, nameA)}
                 alt=""
                 onError={(e) => {
@@ -257,7 +255,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
           >
             {logoB || nameB ? (
               <img
-                key={`${logoB}-${nameB}-${teamsCacheVersion}`}
+                key={`${logoB}-${nameB}`}
                 src={getLogoSrc(logoB, nameB)}
                 alt=""
                 onError={(e) => {

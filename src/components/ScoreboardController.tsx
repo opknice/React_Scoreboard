@@ -1,12 +1,10 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
 import { onAuthStateChange, logoutUser, isSuperAdmin } from '../services/supabaseAuthService';
 import { useTimer } from '../hooks/useTimer';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 import { useAutoMacros } from '../hooks/useAutoMacros';
-import { useScoreboardFirebase } from '../hooks/useScoreboardFirebase';
 import { useScoreboardObsConnection } from '../hooks/useScoreboardObsConnection';
 import {
   broadcastScoreboardButton,
@@ -18,9 +16,7 @@ import {
 } from '../hooks/useScoreboardChannels';
 import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
 import { useAutoObsSourceSync } from '../hooks/useAutoObsSourceSync';
-import { useScoreboardDatabase } from '../hooks/useScoreboardDatabase';
 import { translations } from '../constants/translations';
-import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
 import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
@@ -55,9 +51,6 @@ import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
 
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
-const TeamLogosManagerModal = lazy(() => import('./TeamLogosManagerModal'));
-const DatabaseMatchesModal = lazy(() => import('./DatabaseMatchesModal'));
-const EditDatabaseMatchModal = lazy(() => import('./EditDatabaseMatchModal'));
 const ScoreboardInfoModals = lazy(() => import('./ScoreboardInfoModals'));
 const QuickSetupModal = lazy(() => import('./QuickSetupModal'));
 const ObsSetupModal = lazy(() => import('./ObsSetupModal'));
@@ -105,13 +98,8 @@ export default function ScoreboardController() {
   const [currentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
   const [logoFolderPath, setLogoFolderPath] = useState<string>(() => localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
   const [matchIdInput, setMatchIdInput] = useState<number>(1);
-  const [firebaseTargets] = useState<FirebaseSaveTarget[]>([]);
   const [teamColorsMemory, setTeamColorsMemory] = useState<Record<string, { color1: string; color2: string }>>(() => {
     const saved = localStorage.getItem('teamColors');
-    return saved ? JSON.parse(saved) : {};
-  });
-  const [teamLogosMemory, setTeamLogosMemory] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('teamLogos');
     return saved ? JSON.parse(saved) : {};
   });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -135,22 +123,6 @@ export default function ScoreboardController() {
       // ignore if auth not initialized
     }
   }, []);
-
-  const saveTeamLogo = useCallback((teamName: string, url: string) => {
-    if (!teamName || !url) return;
-    const cleanKey = teamName.trim().toLowerCase();
-    setTeamLogosMemory((prev) => {
-      const updated = { ...prev, [cleanKey]: url };
-      localStorage.setItem('teamLogos', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  const getTeamLogo = useCallback((teamName: string) => {
-    if (!teamName) return '';
-    const cleanKey = teamName.trim().toLowerCase();
-    return teamLogosMemory[cleanKey] || '';
-  }, [teamLogosMemory]);
 
   const {
     nameA, setNameA,
@@ -180,7 +152,6 @@ export default function ScoreboardController() {
   // Modals Visibility
   const {
     showSettingsModal, setShowSettingsModal,
-    showDatabaseModal, setShowDatabaseModal,
     showHelpModal, setShowHelpModal,
     showPenaltyModal, setShowPenaltyModal,
     showVarReplayV2Modal, setShowVarReplayV2Modal,
@@ -192,10 +163,8 @@ export default function ScoreboardController() {
     showChangelogModal, setShowChangelogModal,
     showTeamSelectModal, setShowTeamSelectModal,
     showAutoMacrosModal, setShowAutoMacrosModal,
-    showTeamLogosManagerModal, setShowTeamLogosManagerModal,
     showOBSSetupModal, setShowOBSSetupModal,
   } = useScoreboardModalState();
-  const [teamsCacheVersion, setTeamsCacheVersion] = useState<number>(0);
   const [tickerSpeed, setTickerSpeed] = useState<number>(() => parseInt(localStorage.getItem('tickerSpeed') || '75', 10));
   const [teamNameSettings, setTeamNameSettings] = useState<TeamNameBrowserSettings>(() => {
     try {
@@ -259,7 +228,6 @@ export default function ScoreboardController() {
   const [detailsTemplate, setDetailsTemplate] = useState<string>(() => localStorage.getItem('detailsText') || '');
 
   // Database Viewer States
-  const [selectedQuickLeagueId, setSelectedQuickLeagueId] = useState<string>('');
 
   // Toast States
   const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
@@ -289,12 +257,6 @@ export default function ScoreboardController() {
   }, [logoSettings]);
 
   const trans = translations[currentLang] || translations.en;
-
-  const { activeDb, getOrCreateFirebaseApp } = useScoreboardFirebase({
-    targets: firebaseTargets,
-    selectedTargetId: selectedQuickLeagueId,
-    onTeamsUpdated: () => setTeamsCacheVersion((previous) => previous + 1),
-  });
 
   // --- Toast Function ---
   const triggerToast = useCallback((message: string, type = 'info') => {
@@ -435,15 +397,31 @@ export default function ScoreboardController() {
     }
   }, [obs, logoSettings, triggerToast]);
 
-  const database = useScoreboardDatabase({
-    activeDb,
-    targets: firebaseTargets,
-    selectedTargetId: selectedQuickLeagueId,
-    notify: triggerToast,
-  });
-
   const activeUserEmail = currentUser?.email || authAccess?.email || '';
   const supabaseLeague = useSupabaseLeague(triggerToast, activeUserEmail);
+  const {
+    teams: supabaseTeams,
+    updateTeam: updateSupabaseTeam,
+    uploadTeamLogo,
+  } = supabaseLeague;
+  const saveTeamLogo = useCallback(async (teamName: string, url: string): Promise<boolean> => {
+    const normalizedName = teamName.trim().toLowerCase();
+    const cleanUrl = url.trim();
+    if (!normalizedName) return false;
+
+    const team = supabaseTeams.find((item) => item.name.trim().toLowerCase() === normalizedName);
+    if (!team) {
+      triggerToast(`ไม่พบทีม "${teamName}" ในลีก Supabase ปัจจุบัน`, 'warning');
+      return false;
+    }
+
+    try {
+      await updateSupabaseTeam(team.id, { logo_url: cleanUrl });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [supabaseTeams, triggerToast, updateSupabaseTeam]);
   const {
     activeLeagueId: activeSupabaseLeagueId,
     refreshLeagueDetails,
@@ -457,11 +435,6 @@ export default function ScoreboardController() {
   useEffect(() => {
     setSelectedLeagueIdToLoad(supabaseLeague.activeLeagueId || '');
   }, [supabaseLeague.activeLeagueId]);
-
-  // Compute list of unique team names from Supabase teams
-  const allUniqueTeams = useMemo(() => {
-    return supabaseLeague.teams.map((t) => t.name).filter(Boolean);
-  }, [supabaseLeague.teams]);
 
   // --- 2-Step Setup Onboarding Gate Checks ---
   const isStep1Complete = videoFolder.isConnected;
@@ -518,9 +491,6 @@ export default function ScoreboardController() {
   });
 
   const scoreboardStatePayload = useMemo(() => {
-    // Logo resolution reads an external cache; the version is an intentional
-    // cache-busting input even though it is not part of the emitted payload.
-    void teamsCacheVersion;
     const normalizedNameA = nameA.trim().toLowerCase();
     const normalizedNameB = nameB.trim().toLowerCase();
     const teamA = supabaseLeague.teams.find((team) => team.name.trim().toLowerCase() === normalizedNameA);
@@ -553,7 +523,6 @@ export default function ScoreboardController() {
     scoreA,
     scoreB,
     supabaseLeague.teams,
-    teamsCacheVersion,
   ]);
 
   // Keep the persistent score Browser Source synchronized, including after
@@ -677,7 +646,7 @@ export default function ScoreboardController() {
   const applyTeamFromSupabase = (team: SelectableTeam, target: 'A' | 'B') => {
     const primaryColor = team.color_primary || '#ffffff';
     const secondaryColor = team.color_secondary || '#000000';
-    const logoSrc = team.logo_url || getTeamLogo(team.name) || team.name;
+    const logoSrc = team.logo_url || team.name;
 
     if (target === 'A') {
       setNameA(team.name);
@@ -800,8 +769,8 @@ export default function ScoreboardController() {
     setMatchIdInput(match.match_number);
 
     // Resolve logos from Supabase teams > saved logos > team name
-    const resolvedLogoA = teamAObj?.logo_url || getTeamLogo(teamAName) || teamAName;
-    const resolvedLogoB = teamBObj?.logo_url || getTeamLogo(teamBName) || teamBName;
+    const resolvedLogoA = teamAObj?.logo_url || teamAName;
+    const resolvedLogoB = teamBObj?.logo_url || teamBName;
     setLogoA(resolvedLogoA);
     setLogoB(resolvedLogoB);
 
@@ -856,7 +825,6 @@ export default function ScoreboardController() {
     setScoreA,
     setScoreB,
     getTeamColors,
-    getTeamLogo,
     logoFolderPath,
     obs,
     timerResetToZero,
@@ -1002,40 +970,6 @@ export default function ScoreboardController() {
     setScoreB(0);
     triggerToast(trans.toastScoreReset, 'info');
   }, [setScoreA, setScoreB, trans.toastScoreReset, triggerToast]);
-
-  // --- Save match results to Firebase ---
-  const handleSaveMatchToFirebase = (target: FirebaseSaveTarget) => {
-    const confirmSave = window.confirm(`${target.name} แน่นะ !! ??`);
-    if (!confirmSave) return;
-
-    try {
-      const app = getOrCreateFirebaseApp(target);
-      const db = getDatabase(app);
-      const matchesRef = ref(db, 'matches');
-
-      const matchData = {
-        teamA: nameA.replace(/<br\s*\/?>/gi, ' '),
-        teamB: nameB.replace(/<br\s*\/?>/gi, ' '),
-        logoA: logoA || '',
-        logoB: logoB || '',
-        scoreA: parseInt(String(scoreA), 10),
-        scoreB: parseInt(String(scoreB), 10),
-        roundLabel: label2,
-        date: new Date().toISOString().slice(0, 10),
-        url: ''
-      };
-
-      push(matchesRef, matchData)
-        .then(() => {
-          triggerToast(`บันทึกคะแนน ${target.name} เรียบร้อยแล้ว`, 'success');
-        })
-        .catch((err) => {
-          triggerToast('บันทึกไม่สำเร็จ: ' + err.message, 'error');
-        });
-    } catch (err: any) {
-      triggerToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
-    }
-  };
 
   // --- Save match results to Supabase ---
   const handleSaveMatchToSupabase = async (): Promise<boolean> => {
@@ -1205,59 +1139,24 @@ export default function ScoreboardController() {
       .catch(() => triggerToast(trans.toastCopyFailed, 'error'));
   };
 
-  // --- Copy URLs helper for overlays ---
-  const getOverlaySearchBase64 = (target: FirebaseSaveTarget) => {
-    const encoded = btoa(JSON.stringify(target.firebaseConfig))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/g, '');
-    return encoded;
-  };
-
   const handleCopyOverlayUrl = (viewType: string, standaloneFile = '') => {
     const host = window.location.origin;
-    let urlString = '';
-
-    // 1. Check if Supabase league is active
-    if (supabaseLeague.activeLeagueId) {
-      const leagueId = supabaseLeague.activeLeagueId;
-      const leagueTitle = encodeURIComponent(supabaseLeague.activeLeague?.name || 'League');
-
-      if (standaloneFile === 'league-table' || viewType === 'table') {
-        urlString = `${host}/league-table?league=${leagueId}&title=${leagueTitle}`;
-      } else if (standaloneFile === 'all-scores' || viewType === 'results') {
-        urlString = `${host}/all-scores?league=${leagueId}&title=${leagueTitle}`;
-      } else if (standaloneFile === 'all-score-combined' || viewType === 'combined') {
-        urlString = `${host}/all-score-combined?league=${leagueId}&title=${leagueTitle}`;
-      } else {
-        urlString = `${host}/overlay?league=${leagueId}&view=${viewType}&title=${leagueTitle}`;
-        if (viewType === 'ticker') {
-          urlString += `&date=today&speed=${tickerSpeed}`;
-        }
-      }
-
-      navigator.clipboard
-        .writeText(urlString)
-        .then(() => triggerToast('✓ คัดลอก URL เรียบร้อยแล้ว (Supabase)', 'success'))
-        .catch(() => triggerToast(trans.toastCopyFailed, 'error'));
+    const leagueId = supabaseLeague.activeLeagueId;
+    if (!leagueId) {
+      triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ Supabase ก่อนคัดลอก URL', 'error');
       return;
     }
 
-    // 2. Fallback to Firebase
-    const target = firebaseTargets.find((t) => t.id === selectedQuickLeagueId) || firebaseTargets[0];
-    if (!target) {
-      triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ (Supabase / Excel) ก่อนคัดลอก URL', 'error');
-      return;
-    }
-
+    const leagueTitle = encodeURIComponent(supabaseLeague.activeLeague?.name || 'League');
+    let urlString: string;
     if (standaloneFile === 'league-table' || viewType === 'table') {
-      urlString = `${host}/league-table?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+      urlString = `${host}/league-table?league=${leagueId}&title=${leagueTitle}`;
     } else if (standaloneFile === 'all-scores' || viewType === 'results') {
-      urlString = `${host}/all-scores?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+      urlString = `${host}/all-scores?league=${leagueId}&title=${leagueTitle}`;
     } else if (standaloneFile === 'all-score-combined' || viewType === 'combined') {
-      urlString = `${host}/all-score-combined?league=${target.id}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+      urlString = `${host}/all-score-combined?league=${leagueId}&title=${leagueTitle}`;
     } else {
-      urlString = `${host}/overlay?league=${target.id}&view=${viewType}&title=${encodeURIComponent(target.name)}&fb=${getOverlaySearchBase64(target)}`;
+      urlString = `${host}/overlay?league=${leagueId}&view=${viewType}&title=${leagueTitle}`;
       if (viewType === 'ticker') {
         urlString += `&date=today&speed=${tickerSpeed}`;
       }
@@ -1265,7 +1164,7 @@ export default function ScoreboardController() {
 
     navigator.clipboard
       .writeText(urlString)
-      .then(() => triggerToast(trans.toastCopied, 'success'))
+      .then(() => triggerToast('✓ คัดลอก URL เรียบร้อยแล้ว (Supabase)', 'success'))
       .catch(() => triggerToast(trans.toastCopyFailed, 'error'));
   };
 
@@ -1740,7 +1639,6 @@ export default function ScoreboardController() {
             editNameAVal={editNameAVal}
             editNameBVal={editNameBVal}
             hasSupabaseTeams={supabaseLeague.teams.length > 0}
-            teamsCacheVersion={teamsCacheVersion}
             resetLabel={trans.reset}
             onAddGoal={handleAddGoal}
             onMinusScore={handleMinusScore}
@@ -1766,7 +1664,7 @@ export default function ScoreboardController() {
           />
 
           {/* Match save triggers dynamically */}
-          {/* Match save triggers dynamically (Supabase & Firebase) */}
+          {/* Match save triggers dynamically (Supabase) */}
           <div className="card" style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px' }}>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
@@ -1839,11 +1737,6 @@ export default function ScoreboardController() {
                 </button>
               )}
 
-              {firebaseTargets.map((target) => (
-                <button key={target.id} className="btn-secondary" onClick={() => handleSaveMatchToFirebase(target)} style={{ fontSize: '0.85rem' }}>
-                  <i className="fas fa-fire"></i> บันทึกไปยัง Firebase ({target.name})
-                </button>
-              ))}
             </div>
           </div>
 
@@ -1918,7 +1811,7 @@ export default function ScoreboardController() {
                 <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
               </h3>
               <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>
-                {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Cloudinary / Firebase หรือใส่ URL โลโก้ของทีม مباشرة'}
+                {trans.logoPathDesc || 'อัปโหลดโลโก้ผ่าน Supabase Storage หรือใส่ URL โลโก้ของทีม مباشرة'}
               </p>
 
               {/* Direct URL Inputs for Team A and Team B */}
@@ -1931,13 +1824,12 @@ export default function ScoreboardController() {
                     <input
                       type="text"
                       style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
-                      placeholder="https://res.cloudinary.com/..."
+                      placeholder="https://..."
                       value={logoA}
                       onChange={(e) => {
-                        const val = e.target.value;
-                        setLogoA(val);
-                        if (val.startsWith('http')) saveTeamLogo(nameA, val);
+                        setLogoA(e.target.value);
                       }}
+                      onBlur={() => { void saveTeamLogo(nameA, logoA); }}
                     />
                     <button
                       className="btn-secondary"
@@ -1946,8 +1838,8 @@ export default function ScoreboardController() {
                           const text = await navigator.clipboard.readText();
                           if (text) {
                             setLogoA(text);
-                            saveTeamLogo(nameA, text);
-                            triggerToast('วาง URL ให้ Team A เรียบร้อย', 'success');
+                            const saved = await saveTeamLogo(nameA, text);
+                            if (saved) triggerToast('วาง URL ให้ Team A และบันทึก Supabase เรียบร้อย', 'success');
                           }
                         } catch {
                           triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
@@ -1967,13 +1859,12 @@ export default function ScoreboardController() {
                     <input
                       type="text"
                       style={{ flex: 1, padding: '8px', borderRadius: '4px', backgroundColor: '#2a2a2a', border: '1px solid #444', color: '#fff' }}
-                      placeholder="https://res.cloudinary.com/..."
+                      placeholder="https://..."
                       value={logoB}
                       onChange={(e) => {
-                        const val = e.target.value;
-                        setLogoB(val);
-                        if (val.startsWith('http')) saveTeamLogo(nameB, val);
+                        setLogoB(e.target.value);
                       }}
+                      onBlur={() => { void saveTeamLogo(nameB, logoB); }}
                     />
                     <button
                       className="btn-secondary"
@@ -1982,8 +1873,8 @@ export default function ScoreboardController() {
                           const text = await navigator.clipboard.readText();
                           if (text) {
                             setLogoB(text);
-                            saveTeamLogo(nameB, text);
-                            triggerToast('วาง URL ให้ Team B เรียบร้อย', 'success');
+                            const saved = await saveTeamLogo(nameB, text);
+                            if (saved) triggerToast('วาง URL ให้ Team B และบันทึก Supabase เรียบร้อย', 'success');
                           }
                         } catch {
                           triggerToast('อ่านคลิปบอร์ดล้มเหลว', 'error');
@@ -2054,36 +1945,28 @@ export default function ScoreboardController() {
 
               {/* Logo Uploader Component */}
               <LogoUploader
-                onUploadSuccess={(fileName, url, targetTeam) => {
+                uploadLogo={uploadTeamLogo}
+                onUploadSuccess={async (fileName, url, targetTeam) => {
                   triggerToast(`✅ อัปโหลด ${fileName} สำเร็จ!`, 'success');
                   if (targetTeam === 'B') {
+                    const saved = await saveTeamLogo(nameB, url);
+                    if (!saved) return;
                     setLogoB(url);
-                    saveTeamLogo(nameB, url);
                     obs.setImage('logo_team_b', url, logoFolderPath);
-                    triggerToast(`ตั้งค่าโลโก้ Team B (${nameB}) เป็นรูปภาพ Cloud แล้ว`, 'info');
+                    triggerToast(`ตั้งค่าโลโก้ Team B (${nameB}) ใน Supabase แล้ว`, 'info');
                   } else {
+                    if (targetTeam === 'none') return;
+                    const saved = await saveTeamLogo(nameA, url);
+                    if (!saved) return;
                     setLogoA(url);
-                    saveTeamLogo(nameA, url);
                     obs.setImage('logo_team_a', url, logoFolderPath);
-                    triggerToast(`ตั้งค่าโลโก้ Team A (${nameA}) เป็นรูปภาพ Cloud แล้ว`, 'info');
+                    triggerToast(`ตั้งค่าโลโก้ Team A (${nameA}) ใน Supabase แล้ว`, 'info');
                   }
                 }}
               />
             </div>
           </div>
         )}
-
-        {/* --- Batch Team Logos Manager Modal --- */}
-        {showTeamLogosManagerModal && <TeamLogosManagerModal
-          isOpen={showTeamLogosManagerModal}
-          onClose={() => setShowTeamLogosManagerModal(false)}
-          teamList={allUniqueTeams}
-          db={activeDb}
-          leagueName={supabaseLeague.activeLeague?.name || 'Football League'}
-          logoFolderPath={logoFolderPath}
-          onLogoFolderPathChange={setLogoFolderPath}
-          onToast={triggerToast}
-        />}
 
         {showPresetTimeModal && <PresetTimeModal
           isOpen={showPresetTimeModal}
@@ -2116,11 +1999,8 @@ export default function ScoreboardController() {
           isOpen={showQuickSetupModal}
           teams={supabaseLeague.teams}
           onUpdateTeam={supabaseLeague.updateTeam}
-          targets={firebaseTargets}
-          selectedTargetId={selectedQuickLeagueId}
           tickerSpeed={tickerSpeed}
           closeLabel={trans.close}
-          onTargetChange={setSelectedQuickLeagueId}
           onTickerSpeedChange={(speed) => {
             setTickerSpeed(speed);
             localStorage.setItem('tickerSpeed', String(speed));
@@ -2157,15 +2037,6 @@ export default function ScoreboardController() {
             setShowQuickSetupModal(false);
             setShowLeagueManagementModal(true);
           }}
-          onOpenDatabase={() => {
-            if (!selectedQuickLeagueId) {
-              triggerToast('กรุณาเลือกลีกก่อน', 'error');
-              return;
-            }
-            setShowQuickSetupModal(false);
-            setShowDatabaseModal(true);
-            database.loadMatches();
-          }}
           onClose={() => setShowQuickSetupModal(false)}
         />}
 
@@ -2176,28 +2047,6 @@ export default function ScoreboardController() {
           onClose={() => setShowOBSSetupModal(false)}
         />}
 
-        {showDatabaseModal && <DatabaseMatchesModal
-          isOpen={showDatabaseModal}
-          isLoading={database.isLoading}
-          matches={database.matches}
-          searchTerm={database.searchTerm}
-          dateFilter={database.dateFilter}
-          onSearchChange={database.setSearchTerm}
-          onDateFilterChange={database.setDateFilter}
-          onRefresh={database.loadMatches}
-          onEdit={database.openEdit}
-          onDelete={database.deleteMatch}
-          onCopyTableUrl={() => handleCopyOverlayUrl('table', 'league-table')}
-          onCopyResultsUrl={() => handleCopyOverlayUrl('results', 'all-scores')}
-          onClose={() => setShowDatabaseModal(false)}
-          closeLabel={trans.close}
-        />}
-        {database.editingMatch && <EditDatabaseMatchModal
-          match={database.editingMatch}
-          onSave={database.saveEditedMatch}
-          onClose={database.closeEdit}
-          saveLabel={trans.save}
-        />}
 
         {(showHelpModal || showDonateModal || showChangelogModal) && <ScoreboardInfoModals
           trans={trans}

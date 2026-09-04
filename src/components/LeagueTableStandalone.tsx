@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSearchParams } from 'react-router-dom';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, onValue } from 'firebase/database';
-import { getLogoSrc, listenToFirebaseTeams } from '../utils/logoResolver';
-import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
+import { findTeamLogoRecord, getLogoSrc } from '../utils/logoResolver';
 import { useDisableZoom } from '../hooks/useDisableZoom';
 import { calculateFinishedStandings } from '../utils/standingsCalculator';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
+import { parseCropMetadata } from '../types/teamLogo';
+import OverlayLogo from './OverlayLogo';
 
 export default function LeagueTableStandalone() {
   useDisableZoom();
@@ -24,7 +23,6 @@ export default function LeagueTableStandalone() {
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
 
-  const firebaseConfig = useMemo(() => parseFirebaseConfigFromSearchParams(searchParams), [searchParams]);
   const standingsRows = useMemo(
     () => calculateFinishedStandings(matches, registeredTeams),
     [matches, registeredTeams],
@@ -33,131 +31,84 @@ export default function LeagueTableStandalone() {
   useEffect(() => {
     let isCancelled = false;
     let supabaseChannel: RealtimeChannel | null = null;
-    let firebaseCleanup: (() => void) | null = null;
 
-    // 1. Try Supabase first if configured and leagueId looks like a Supabase ID / not 'excel'
     const loadFromSupabase = async () => {
       try {
         const { LeagueService } = await import('../services/leagueService');
         const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
-        if (isSupabaseConfigured() && leagueId && leagueId !== 'excel') {
-          const [supabaseMatches, supabaseTeams] = await Promise.all([
-            LeagueService.getMatchesByLeague(leagueId),
-            LeagueService.getTeamsByLeague(leagueId),
-          ]);
-          if (isCancelled) return true;
-          // Map to match structure expected by calculateStandings
-          const formatted = supabaseMatches.map((m) => {
-            const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
-            const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
-            return {
-              id: m.id,
-              teamA: m.team_a_name,
-              teamB: m.team_b_name,
-              scoreA: m.score_a,
-              scoreB: m.score_b,
-              status: m.status,
-              logoA: teamAObj?.logo_url || '',
-              logoB: teamBObj?.logo_url || '',
-            };
-          });
-          setRegisteredTeams(supabaseTeams.map((team) => ({
-            id: team.id,
-            name: team.name,
-            logo: team.logo_url || '',
-          })));
-          setMatches(formatted);
-          setLoading(false);
-
-          // Setup Realtime subscription for automatic updates on OBS
-          if (!supabaseChannel && supabase) {
-            supabaseChannel = supabase
-              .channel(`public:league_table_${leagueId}`)
-              .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
-                () => {
-                  void loadFromSupabase();
-                }
-              )
-              .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
-                () => {
-                  void loadFromSupabase();
-                }
-              )
-              .subscribe();
-          }
-
-          return true;
+        if (!isSupabaseConfigured() || !leagueId || leagueId === 'excel') {
+          throw new Error('ไม่พบ League ID หรือการตั้งค่า Supabase');
         }
-      } catch (err: any) {
-        console.warn('Supabase fetch failed in LeagueTableStandalone, trying Firebase fallback:', err);
+
+        const [supabaseMatches, supabaseTeams] = await Promise.all([
+          LeagueService.getMatchesByLeague(leagueId),
+          LeagueService.getTeamsByLeague(leagueId),
+        ]);
+        if (isCancelled) return;
+        // Map to match structure expected by calculateStandings
+        const formatted = supabaseMatches.map((m) => {
+          const teamA = findTeamLogoRecord(supabaseTeams, m.team_a_id, m.team_a_name);
+          const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
+          return {
+            id: m.id,
+            teamA: m.team_a_name,
+            teamB: m.team_b_name,
+            scoreA: m.score_a,
+            scoreB: m.score_b,
+            status: m.status,
+            logoA: teamA?.logo_url || '',
+            logoB: teamB?.logo_url || '',
+            cropA: parseCropMetadata(teamA?.crop_metadata),
+            cropB: parseCropMetadata(teamB?.crop_metadata),
+          };
+        });
+        setRegisteredTeams(supabaseTeams.map((team) => ({
+          id: team.id,
+          name: team.name,
+          logo: team.logo_url || '',
+          crop: parseCropMetadata(team.crop_metadata),
+        })));
+        setMatches(formatted);
+        setLoading(false);
+
+        // Setup Realtime subscription for automatic updates on OBS
+        if (!supabaseChannel && supabase) {
+          supabaseChannel = supabase
+            .channel(`public:league_table_${leagueId}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
+              () => {
+                void loadFromSupabase();
+              }
+            )
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
+              () => {
+                void loadFromSupabase();
+              }
+            )
+            .subscribe();
+        }
+      } catch (err: unknown) {
+        if (isCancelled) return;
+        setErrorMsg(`โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
+        setLoading(false);
       }
-      return false;
     };
 
-    loadFromSupabase().then((loaded) => {
-      if (isCancelled) return;
-      if (loaded) return;
-
-      if (!firebaseConfig) {
-        setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database');
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const appName = `standalone-table-${leagueId}-${Date.now()}`;
-        const app = getApps().some(a => a.name === appName) ? getApp(appName) : initializeApp(firebaseConfig, appName);
-        const db = getDatabase(app);
-        const matchesRef = ref(db, 'matches');
-
-        const unsubTeams = listenToFirebaseTeams(db, (teamsMap) => {
-          setRegisteredTeams(Object.entries(teamsMap).map(([id, team]) => ({
-            id,
-            name: team.name,
-            logo: team.logo,
-          })));
-        });
-
-        const unsubscribe = onValue(
-          matchesRef,
-          (snapshot) => {
-            const items: OverlayMatch[] = [];
-            snapshot.forEach((child) => {
-              items.push({ id: child.key, ...child.val() });
-            });
-            setMatches(items);
-            setLoading(false);
-          },
-          (err) => {
-            setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
-            setLoading(false);
-          }
-        );
-
-        firebaseCleanup = () => {
-          unsubscribe();
-          unsubTeams();
-        };
-      } catch (err: any) {
-        setErrorMsg(`เกิดข้อผิดพลาด: ${err.message}`);
-        setLoading(false);
-      }
-    });
+    void loadFromSupabase();
 
     return () => {
       isCancelled = true;
-      firebaseCleanup?.();
       if (supabaseChannel) {
         void import('../config/supabaseClient').then(({ supabase }) => {
           if (supabase && supabaseChannel) void supabase.removeChannel(supabaseChannel);
         });
       }
     };
-  }, [firebaseConfig, leagueId, searchParams]);
+  }, [leagueId]);
 
   if (loading) {
     return (
@@ -178,25 +129,9 @@ export default function LeagueTableStandalone() {
     );
   }
 
-  const renderLogo = (logoIdentifier: string | undefined, teamName: string) => {
+  const renderLogo = (logoIdentifier: string | undefined, teamName: string, crop?: OverlayMatch['cropA']) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-    
-    return (
-      <img
-        key={`${logoSrc}-${teamName}`}
-        className="overlay-logo"
-        src={logoSrc}
-        alt={teamName}
-        onError={(e) => {
-          const target = e.target as HTMLImageElement;
-          if (defaultLogo && target.src !== defaultLogo) {
-            target.src = defaultLogo;
-          } else {
-            target.style.display = 'none';
-          }
-        }}
-      />
-    );
+    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="overlay-logo" crop={crop} />;
   };
 
   if (standingsRows.length === 0) {
@@ -250,7 +185,7 @@ export default function LeagueTableStandalone() {
                 <tr key={row.team}>
                   <td style={{ fontWeight: 400 }}>{index + 1}</td>
                   <td className="overlay-team-cell">
-                  {renderLogo(row.logo, row.team)}
+                  {renderLogo(row.logo, row.team, row.crop)}
                   {row.team}
                 </td>
                   <td>{row.P}</td>

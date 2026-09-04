@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
-    "firebase": "^12.16.0",
     "obs-websocket-js": "^5.0.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
