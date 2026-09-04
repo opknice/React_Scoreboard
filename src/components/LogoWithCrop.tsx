@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { CropMetadata } from '../utils/logoCropMetadata';
+import type { CropMetadata } from '../types/teamLogo';
 
 interface LogoWithCropProps {
   url: string;
@@ -87,4 +87,3 @@ export default function LogoWithCrop({
     />
   );
 }
-

@@ -39,7 +39,7 @@ export interface Team {
   logo_url?: string | null;
   color_primary: string;
   color_secondary: string;
-  crop_metadata?: Json;
+  crop_metadata?: Json | null;
   created_at?: string;
   updated_at?: string;
 }

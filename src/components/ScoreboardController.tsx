@@ -67,6 +67,7 @@ const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
 const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
 import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
+import { parseCropMetadata } from '../types/teamLogo';
 import { getFirstUnplayedMatch, isUnplayedMatch } from './league-management/leagueMatchUtils';
 import type { SelectableTeam } from './TeamSelectModal';
 import ScoreboardHeader from './scoreboard/ScoreboardHeader';
@@ -520,6 +521,11 @@ export default function ScoreboardController() {
     // Logo resolution reads an external cache; the version is an intentional
     // cache-busting input even though it is not part of the emitted payload.
     void teamsCacheVersion;
+    const normalizedNameA = nameA.trim().toLowerCase();
+    const normalizedNameB = nameB.trim().toLowerCase();
+    const teamA = supabaseLeague.teams.find((team) => team.name.trim().toLowerCase() === normalizedNameA);
+    const teamB = supabaseLeague.teams.find((team) => team.name.trim().toLowerCase() === normalizedNameB);
+
     return {
       scoreA,
       scoreB,
@@ -531,6 +537,8 @@ export default function ScoreboardController() {
       colorA2,
       colorB1,
       colorB2,
+      cropA: parseCropMetadata(teamA?.crop_metadata),
+      cropB: parseCropMetadata(teamB?.crop_metadata),
     };
   }, [
     colorA1,
@@ -544,6 +552,7 @@ export default function ScoreboardController() {
     nameB,
     scoreA,
     scoreB,
+    supabaseLeague.teams,
     teamsCacheVersion,
   ]);
 
@@ -2105,6 +2114,8 @@ export default function ScoreboardController() {
 
         {showQuickSetupModal && <QuickSetupModal
           isOpen={showQuickSetupModal}
+          teams={supabaseLeague.teams}
+          onUpdateTeam={supabaseLeague.updateTeam}
           targets={firebaseTargets}
           selectedTargetId={selectedQuickLeagueId}
           tickerSpeed={tickerSpeed}

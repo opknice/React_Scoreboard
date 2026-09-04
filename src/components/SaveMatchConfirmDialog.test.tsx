@@ -31,7 +31,7 @@ describe('SaveMatchConfirmDialog', () => {
   it('renders independently with its own dialog classes', () => {
     const { baseElement } = renderDialog();
 
-    expect(screen.getByRole('alertdialog').textContent).toContain('บันทึกผล Alpha 2 - 1 Beta');
+    expect(screen.getByRole('alertdialog').textContent).toContain('(Alpha)  2 - 1  (Beta)');
     expect(baseElement.querySelector('.save-match-confirm-overlay')).not.toBeNull();
     expect(baseElement.querySelector('.league-modal-overlay')).toBeNull();
   });

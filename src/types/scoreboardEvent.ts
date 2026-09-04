@@ -1,3 +1,5 @@
+import { isCropMetadata, type CropMetadata } from './teamLogo';
+
 export const SCOREBOARD_EVENT_CHANNEL = 'scoreboard-events';
 export const SCOREBOARD_STATE_STORAGE_KEY = 'scoreboard_live_state_v1';
 
@@ -31,6 +33,9 @@ export interface ScoreboardStateEvent {
   colorA2: string;
   colorB1: string;
   colorB2: string;
+  /** Optional for backwards compatibility with saved browser-source state. */
+  cropA?: CropMetadata | null;
+  cropB?: CropMetadata | null;
   timestamp: number;
 }
 
@@ -89,6 +94,8 @@ export function isScoreboardStateEvent(value: unknown): value is ScoreboardState
     && typeof event.colorA2 === 'string'
     && typeof event.colorB1 === 'string'
     && typeof event.colorB2 === 'string'
+    && (event.cropA === undefined || event.cropA === null || isCropMetadata(event.cropA))
+    && (event.cropB === undefined || event.cropB === null || isCropMetadata(event.cropB))
     && typeof event.timestamp === 'number';
 }
 
@@ -115,4 +122,3 @@ export function isLogoCropUpdatedEvent(value: unknown): value is LogoCropUpdated
   const event = value as Partial<LogoCropUpdatedEvent>;
   return event.type === 'LogoCropUpdated' && typeof event.timestamp === 'number';
 }
-

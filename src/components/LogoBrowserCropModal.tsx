@@ -1,37 +1,29 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { Database } from 'firebase/database';
-import {
-  getCropMetadataFromLocalStorage,
-  saveCropMetadataToLocalStorage,
-  saveCropMetadataToFirebase,
-  removeCropMetadata,
-  type CropMetadata,
-} from '../utils/logoCropMetadata';
-import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
-import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
+import type { Team } from '../config/supabaseClient';
+import { parseCropMetadata, type CropMetadata } from '../types/teamLogo';
+import { getLogoSrc } from '../utils/logoResolver';
 import LogoWithCrop from './LogoWithCrop';
 
 interface LogoBrowserCropModalProps {
   isOpen: boolean;
   onClose: () => void;
-  teamSide: 'A' | 'B';
-  teamName: string;
-  logoUrl: string;
-  db?: Database | null;
+  team: Team;
+  onSave: (crop: CropMetadata) => Promise<void>;
+  onReset: () => Promise<void>;
   onToast?: (message: string, type?: string) => void;
 }
 
 export default function LogoBrowserCropModal({
   isOpen,
   onClose,
-  teamSide,
-  teamName,
-  logoUrl,
-  db,
+  team,
+  onSave,
+  onReset,
   onToast,
 }: LogoBrowserCropModalProps) {
-  const teamKey = normalizeTeamKey(teamName || `Team ${teamSide}`);
+  const teamName = team.name;
+  const logoUrl = team.logo_url || '';
   const [activeUrl, setActiveUrl] = useState<string>(() => logoUrl || getLogoSrc('', teamName));
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
@@ -40,25 +32,23 @@ export default function LogoBrowserCropModal({
   const [baseWidth, setBaseWidth] = useState<number>(500);
   const [baseHeight, setBaseHeight] = useState<number>(500);
   const [customSize, setCustomSize] = useState<number>(0);
+  const [isCropEditing, setIsCropEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [initialOffset, setInitialOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const initialCropRef = useRef<{ originalUrl: string; crop: CropMetadata | null } | null>(null);
-
-  // Load existing crop metadata & URL on modal open + backup initial crop state
+  // Supabase is the source of truth. Opening or cancelling this editor never mutates browser storage.
   useEffect(() => {
     if (!isOpen) return;
 
     setActiveUrl(logoUrl || getLogoSrc('', teamName));
+    const existingCrop = parseCropMetadata(team.crop_metadata);
+    setIsCropEditing(Boolean(existingCrop));
 
-    const existingData = getCropMetadataFromLocalStorage(teamKey);
-    initialCropRef.current = existingData;
-
-    if (existingData?.crop) {
-      const c = existingData.crop;
+    if (existingCrop) {
+      const c = existingCrop;
       setZoom(c.zoom || 1);
       setRotation(c.rotation || 0);
       setOffsetX(c.x || 0);
@@ -66,9 +56,6 @@ export default function LogoBrowserCropModal({
       setBaseWidth(c.width || 500);
       setBaseHeight(c.height || 500);
       setCustomSize(c.customSize || 0);
-      if (existingData.originalUrl) {
-        setActiveUrl(existingData.originalUrl);
-      }
     } else {
       setZoom(1);
       setRotation(0);
@@ -78,7 +65,7 @@ export default function LogoBrowserCropModal({
       setBaseHeight(500);
       setCustomSize(0);
     }
-  }, [isOpen, teamKey, logoUrl, teamName]);
+  }, [isOpen, logoUrl, team.crop_metadata, teamName]);
 
   const currentCrop: CropMetadata = {
     x: offsetX,
@@ -92,43 +79,19 @@ export default function LogoBrowserCropModal({
     ...(customSize > 0 ? { customSize } : {}),
   };
 
-  // Real-time Live Sync: Broadcast crop changes instantly to OBS Browser Source overlay as sliders move
-  useEffect(() => {
-    if (!isOpen) return;
+  // A team without persisted crop metadata starts in contain mode. The crop canvas
+  // becomes active only after the user begins editing or when saved crop exists.
+  const persistedCrop = parseCropMetadata(team.crop_metadata);
+  const previewCrop = persistedCrop || isCropEditing ? currentCrop : null;
 
-    const targetUrl = activeUrl || logoUrl || getLogoSrc('', teamName);
-    if (!targetUrl) return;
-
-    // Reconstruct currentCrop inside the effect so all deps are declared explicitly
-    // (avoids referencing the unstable object identity from the render scope)
-    const liveCrop: CropMetadata = {
-      x: offsetX,
-      y: offsetY,
-      width: baseWidth,
-      height: baseHeight,
-      zoom,
-      rotation,
-      aspectRatio: baseWidth > 0 && baseHeight > 0 ? baseWidth / baseHeight : 1,
-      createdAt: new Date().toISOString(),
-      ...(customSize > 0 ? { customSize } : {}),
-    };
-
-    saveCropMetadataToLocalStorage(teamKey, targetUrl, liveCrop);
-    window.dispatchEvent(new Event('logoCropUpdated'));
-    try {
-      const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
-      bc.postMessage({
-        type: 'LogoCropUpdated',
-        teamKey,
-        timestamp: Date.now(),
-      });
-      bc.close();
-    } catch { }
-  }, [isOpen, teamKey, activeUrl, logoUrl, teamName, offsetX, offsetY, baseWidth, baseHeight, zoom, rotation, customSize]);
+  const beginCropEditing = () => {
+    setIsCropEditing(true);
+  };
 
   // Mouse Dragging on Preview Canvas
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
+    beginCropEditing();
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
     setInitialOffset({ x: offsetX, y: offsetY });
@@ -149,6 +112,7 @@ export default function LogoBrowserCropModal({
   // Mouse Scroll Wheel Zooming on Preview Canvas
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
+    beginCropEditing();
     const step = e.deltaY < 0 ? 0.05 : -0.05;
     setZoom((prev) => Math.max(0.05, Math.min(10, Number((prev + step).toFixed(2)))));
   };
@@ -164,91 +128,27 @@ export default function LogoBrowserCropModal({
 
     setIsSaving(true);
     try {
-      saveCropMetadataToLocalStorage(teamKey, targetUrl, currentCrop);
-
-      try {
-        const existingLogos = JSON.parse(localStorage.getItem('teamLogos') || '{}');
-        existingLogos[teamKey] = targetUrl;
-        localStorage.setItem('teamLogos', JSON.stringify(existingLogos));
-      } catch { }
-
-      try {
-        const currentStateRaw = localStorage.getItem(SCOREBOARD_STATE_STORAGE_KEY);
-        if (currentStateRaw) {
-          const currentState = JSON.parse(currentStateRaw);
-          if (teamSide === 'A') currentState.logoA = targetUrl;
-          if (teamSide === 'B') currentState.logoB = targetUrl;
-          localStorage.setItem(SCOREBOARD_STATE_STORAGE_KEY, JSON.stringify(currentState));
-
-          const bcState = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
-          bcState.postMessage({
-            type: 'ScoreboardState',
-            eventId: `logo_crop_update_${Date.now()}`,
-            ...currentState,
-            timestamp: Date.now(),
-          });
-          bcState.close();
-        }
-      } catch { }
-
-      if (db) {
-        try {
-          await saveCropMetadataToFirebase(db, teamKey, targetUrl, currentCrop);
-        } catch (err) {
-          console.warn('[LogoBrowserCropModal] Firebase save warning:', err);
-        }
-      }
-
-      window.dispatchEvent(new Event('logoCropUpdated'));
-      try {
-        const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
-        bc.postMessage({
-          type: 'LogoCropUpdated',
-          teamKey,
-          timestamp: Date.now(),
-        });
-        bc.close();
-      } catch { }
+      await onSave(currentCrop);
 
       onToast?.(`✅ บันทึก Crop โลโก้ ${teamName} เรียบร้อยแล้ว`, 'success');
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[LogoBrowserCropModal] Save error:', err);
-      onToast?.(`❌ บันทึกไม่สำเร็จ: ${err.message}`, 'error');
+      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+      onToast?.(`❌ บันทึกไม่สำเร็จ: ${message}`, 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleCancel = () => {
-    if (initialCropRef.current) {
-      const backup = initialCropRef.current;
-      if (backup.crop) {
-        saveCropMetadataToLocalStorage(teamKey, backup.originalUrl, backup.crop);
-      } else {
-        removeCropMetadata(db || null, teamKey);
-      }
-    } else {
-      removeCropMetadata(db || null, teamKey);
-    }
-
-    window.dispatchEvent(new Event('logoCropUpdated'));
-    try {
-      const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
-      bc.postMessage({
-        type: 'LogoCropUpdated',
-        teamKey,
-        timestamp: Date.now(),
-      });
-      bc.close();
-    } catch { }
-
     onClose();
   };
 
   const handleReset = async () => {
     try {
-      await removeCropMetadata(db || null, teamKey);
+      setIsSaving(true);
+      await onReset();
       setZoom(1);
       setRotation(0);
       setOffsetX(0);
@@ -257,20 +157,14 @@ export default function LogoBrowserCropModal({
       setBaseHeight(500);
       setCustomSize(0);
 
-      window.dispatchEvent(new Event('logoCropUpdated'));
-      try {
-        const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
-        bc.postMessage({
-          type: 'LogoCropUpdated',
-          teamKey,
-          timestamp: Date.now(),
-        });
-        bc.close();
-      } catch { }
       onToast?.(`🔄 รีเซ็ต Crop โลโก้ ${teamName} เป็นค่าเริ่มต้นแล้ว`, 'info');
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[LogoBrowserCropModal] Reset error:', err);
+      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+      onToast?.(`❌ รีเซ็ตไม่สำเร็จ: ${message}`, 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -318,7 +212,7 @@ export default function LogoBrowserCropModal({
             <span style={{ fontSize: '1.4rem' }}>✂️</span>
             <div>
               <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.15rem', fontWeight: 700, lineHeight: 1.3 }}>
-                ครอบตัดโลโก้: Team {teamSide} ({teamName})
+                ครอบตัดโลโก้: {teamName}
               </h3>
               <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginTop: '2px' }}>
                 ปรับตำแหน่ง ซูม และขนาดแสดงผลใน OBS Browser Source
@@ -363,7 +257,7 @@ export default function LogoBrowserCropModal({
             }}
           >
             {activeUrl ? (
-              <LogoWithCrop url={activeUrl} crop={currentCrop} alt={teamName} />
+              <LogoWithCrop url={activeUrl} crop={previewCrop} alt={teamName} />
             ) : (
               <span style={{ color: '#64748b', fontSize: '13px' }}>ไม่พบรูปภาพโลโก้</span>
             )}
@@ -378,14 +272,14 @@ export default function LogoBrowserCropModal({
           <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
             <button
               type="button"
-              onClick={() => { setOffsetX(0); setOffsetY(0); }}
+              onClick={() => { beginCropEditing(); setOffsetX(0); setOffsetY(0); }}
               style={{ fontSize: '12px', padding: '4px 12px', background: '#1e293b', border: '1px solid #334155', color: '#38bdf8', borderRadius: '4px', cursor: 'pointer' }}
             >
               🎯 จัดกลาง (X:0, Y:0)
             </button>
             <button
               type="button"
-              onClick={() => { setZoom(1); setRotation(0); }}
+              onClick={() => { beginCropEditing(); setZoom(1); setRotation(0); }}
               style={{ fontSize: '12px', padding: '4px 12px', background: '#1e293b', border: '1px solid #334155', color: '#cbd5e1', borderRadius: '4px', cursor: 'pointer' }}
             >
               🔄 รีเซ็ตซูม (1x, 0°)
@@ -403,7 +297,7 @@ export default function LogoBrowserCropModal({
             <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center', minWidth: '200px' }}>
               <button
                 type="button"
-                onClick={() => setZoom((prev) => Math.max(0.05, Number((prev - 0.05).toFixed(2))))}
+                onClick={() => { beginCropEditing(); setZoom((prev) => Math.max(0.05, Number((prev - 0.05).toFixed(2)))); }}
                 style={{ padding: '3px 10px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 -
@@ -414,12 +308,12 @@ export default function LogoBrowserCropModal({
                 max="10"
                 step="0.01"
                 value={zoom}
-                onChange={(e) => setZoom(parseFloat(e.target.value))}
+                onChange={(e) => { beginCropEditing(); setZoom(parseFloat(e.target.value)); }}
                 style={{ flex: 1, accentColor: '#38bdf8' }}
               />
               <button
                 type="button"
-                onClick={() => setZoom((prev) => Math.min(10, Number((prev + 0.05).toFixed(2))))}
+                onClick={() => { beginCropEditing(); setZoom((prev) => Math.min(10, Number((prev + 0.05).toFixed(2)))); }}
                 style={{ padding: '3px 10px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 +
@@ -431,6 +325,7 @@ export default function LogoBrowserCropModal({
                 step="0.1"
                 value={zoom}
                 onChange={(e) => {
+                  beginCropEditing();
                   const val = parseFloat(e.target.value);
                   if (!isNaN(val)) setZoom(Math.max(0.01, Math.min(10, val)));
                 }}
@@ -447,7 +342,7 @@ export default function LogoBrowserCropModal({
             <div style={{ display: 'flex', gap: '6px', flex: 1, alignItems: 'center', minWidth: '200px' }}>
               <button
                 type="button"
-                onClick={() => setRotation((prev) => Math.max(-180, prev - 5))}
+                onClick={() => { beginCropEditing(); setRotation((prev) => Math.max(-180, prev - 5)); }}
                 style={{ padding: '3px 10px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 -
@@ -458,12 +353,12 @@ export default function LogoBrowserCropModal({
                 max="180"
                 step="5"
                 value={rotation}
-                onChange={(e) => setRotation(parseInt(e.target.value, 10))}
+                onChange={(e) => { beginCropEditing(); setRotation(parseInt(e.target.value, 10)); }}
                 style={{ flex: 1, accentColor: '#38bdf8' }}
               />
               <button
                 type="button"
-                onClick={() => setRotation((prev) => Math.min(180, prev + 5))}
+                onClick={() => { beginCropEditing(); setRotation((prev) => Math.min(180, prev + 5)); }}
                 style={{ padding: '3px 10px', background: '#334155', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
               >
                 +
@@ -475,6 +370,7 @@ export default function LogoBrowserCropModal({
                 step="5"
                 value={rotation}
                 onChange={(e) => {
+                  beginCropEditing();
                   const val = parseInt(e.target.value, 10);
                   if (!isNaN(val)) setRotation(Math.max(-180, Math.min(180, val)));
                 }}
@@ -494,7 +390,7 @@ export default function LogoBrowserCropModal({
                   <button
                     key={size}
                     type="button"
-                    onClick={() => setCustomSize(size)}
+                    onClick={() => { beginCropEditing(); setCustomSize(size); }}
                     style={{
                       fontSize: '11px',
                       padding: '3px 8px',
@@ -518,7 +414,7 @@ export default function LogoBrowserCropModal({
                 max="1000"
                 step="5"
                 value={customSize}
-                onChange={(e) => setCustomSize(parseInt(e.target.value, 10))}
+                onChange={(e) => { beginCropEditing(); setCustomSize(parseInt(e.target.value, 10)); }}
                 style={{ flex: 1, accentColor: '#38bdf8' }}
               />
               <input
@@ -528,6 +424,7 @@ export default function LogoBrowserCropModal({
                 value={customSize || ''}
                 placeholder="Default"
                 onChange={(e) => {
+                  beginCropEditing();
                   const val = parseInt(e.target.value, 10);
                   setCustomSize(isNaN(val) ? 0 : Math.max(0, Math.min(1000, val)));
                 }}
@@ -572,4 +469,3 @@ export default function LogoBrowserCropModal({
     document.body
   );
 }
-

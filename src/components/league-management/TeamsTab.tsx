@@ -1,5 +1,12 @@
 import React, { useState, useRef } from 'react';
 import type { Team } from '../../config/supabaseClient';
+import LogoBrowserCropModal from '../LogoBrowserCropModal';
+import {
+  cropMetadataToJson,
+  getLegacyCropRecord,
+  parseCropMetadata,
+  removeLegacyCropRecord,
+} from '../../types/teamLogo';
 
 export interface TeamsTabProps {
   activeLeagueId: string;
@@ -34,6 +41,8 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const [teamLogoUrl, setTeamLogoUrl] = useState('');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isTeamFormOpen, setIsTeamFormOpen] = useState(false);
+  const [cropTeam, setCropTeam] = useState<Team | null>(null);
+  const [migratingTeamId, setMigratingTeamId] = useState<string | null>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const teamModalOverlayMouseDownRef = useRef(false);
 
@@ -125,6 +134,27 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
     closeTeamForm();
   };
 
+  const handleMigrateLegacyCrop = async (team: Team) => {
+    const legacyRecord = getLegacyCropRecord(team.name);
+    if (!legacyRecord?.crop) return;
+
+    const confirmed = window.confirm(
+      `ย้ายค่า Crop เดิมของทีม "${team.name}" ใน browser นี้ไปยัง Supabase?\n\nหลังยืนยัน ระบบจะลบเฉพาะค่า local เดิมของทีมนี้ เมื่อบันทึกสำเร็จ`,
+    );
+    if (!confirmed) return;
+
+    setMigratingTeamId(team.id);
+    try {
+      await onUpdateTeam(team.id, { crop_metadata: cropMetadataToJson(legacyRecord.crop) });
+      removeLegacyCropRecord(team.name);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ';
+      alert(`ย้าย Crop ไม่สำเร็จ: ${message}`);
+    } finally {
+      setMigratingTeamId(null);
+    }
+  };
+
   const handleTeamModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     teamModalOverlayMouseDownRef.current = e.target === e.currentTarget;
   };
@@ -138,6 +168,20 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
 
   return (
     <div>
+      {cropTeam && (
+        <LogoBrowserCropModal
+          isOpen
+          team={cropTeam}
+          onClose={() => setCropTeam(null)}
+          onSave={async (crop) => {
+            await onUpdateTeam(cropTeam.id, { crop_metadata: cropMetadataToJson(crop) });
+          }}
+          onReset={async () => {
+            await onUpdateTeam(cropTeam.id, { crop_metadata: null });
+          }}
+        />
+      )}
+
       {/* Add/Edit Team Modal */}
       {isTeamFormOpen && (
         <div
@@ -306,7 +350,11 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
           <p style={{ color: '#64748b', fontSize: '0.88rem' }}>ยังไม่มีทีมในลีกนี้ กดปุ่ม “เพิ่มทีม” เพื่อเพิ่มทีมแรก</p>
         ) : (
           <div className="league-teams-grid">
-            {teams.map((t) => (
+            {teams.map((t) => {
+              const hasSupabaseCrop = parseCropMetadata(t.crop_metadata) !== null;
+              const hasLegacyCrop = getLegacyCropRecord(t.name)?.crop !== null;
+
+              return (
               <div key={t.id} className="league-team-card">
                 <div className="league-team-logo">
                   {t.logo_url ? (
@@ -329,6 +377,26 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
                 <button
                   type="button"
                   className="league-btn-icon"
+                  onClick={() => setCropTeam(t)}
+                  title={hasSupabaseCrop ? 'แก้ไข Crop โลโก้ที่บันทึกใน Supabase' : 'ตั้งค่า Crop โลโก้ใน Supabase'}
+                  disabled={!t.logo_url}
+                >
+                  <i className="fas fa-crop-alt" style={{ color: hasSupabaseCrop ? '#34d399' : '#fbbf24' }}></i>
+                </button>
+                {hasLegacyCrop && !hasSupabaseCrop && (
+                  <button
+                    type="button"
+                    className="league-btn-icon"
+                    onClick={() => void handleMigrateLegacyCrop(t)}
+                    title="ย้าย Crop เดิมจาก browser นี้ไป Supabase"
+                    disabled={migratingTeamId === t.id}
+                  >
+                    <i className={`fas ${migratingTeamId === t.id ? 'fa-spinner fa-spin' : 'fa-cloud-upload-alt'}`} style={{ color: '#a78bfa' }}></i>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="league-btn-icon"
                   onClick={() => {
                     if (window.confirm(`ลบทีม "${t.name}"?`)) onDeleteTeam(t.id);
                   }}
@@ -337,7 +405,8 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
                   <i className="fas fa-trash" style={{ color: '#ef4444' }}></i>
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

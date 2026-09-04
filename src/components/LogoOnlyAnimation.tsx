@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   isGoalScoredEvent,
-  isLogoCropUpdatedEvent,
   isLogoSettingsUpdatedEvent,
   isScoreboardStateEvent,
   SCOREBOARD_EVENT_CHANNEL,
@@ -15,8 +14,7 @@ import {
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
 import { requestScoreboardState } from '../hooks/useScoreboardChannels';
-import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
-import { getCropMetadataFromLocalStorage, type CropMetadata } from '../utils/logoCropMetadata';
+import { getLogoSrc } from '../utils/logoResolver';
 import { getLogoPresentation } from '../utils/logoBrowserUrl';
 import LogoWithCrop from './LogoWithCrop';
 import type { GoalAnimationSide } from './goalAnimationTemplates';
@@ -28,13 +26,15 @@ interface LogoOnlyAnimationProps {
   overrideBackgroundMode?: 'transparent' | 'normal';
 }
 
-type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB'>;
+type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB' | 'cropA' | 'cropB'>;
 
 const DEFAULT_LOGO_STATE: LogoState = {
   nameA: 'Team A',
   nameB: 'Team B',
   logoA: '',
   logoB: '',
+  cropA: null,
+  cropB: null,
 };
 
 function logoStateFromEvent(event: ScoreboardStateEvent): LogoState {
@@ -43,6 +43,8 @@ function logoStateFromEvent(event: ScoreboardStateEvent): LogoState {
     nameB: event.nameB,
     logoA: event.logoA,
     logoB: event.logoB,
+    cropA: event.cropA ?? null,
+    cropB: event.cropB ?? null,
   };
 }
 
@@ -65,10 +67,6 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
   const [goalTeam, setGoalTeam] = useState<'A' | 'B' | null>(null);
   const [animationKey, setAnimationKey] = useState(0);
   const goalTimerRef = useRef<number | null>(null);
-  const [cropMetadata, setCropMetadata] = useState<{ A: CropMetadata | null; B: CropMetadata | null }>({
-    A: null,
-    B: null,
-  });
   const [liveSettings, setLiveSettings] = useState<LogoBrowserSettings | null>(() => {
     try {
       const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
@@ -97,28 +95,6 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
     };
   }, []);
 
-  // Load crop metadata from localStorage on mount & listen to live crop updates
-  useEffect(() => {
-    const loadCrops = () => {
-      const teamAKey = normalizeTeamKey(logoState.nameA);
-      const teamBKey = normalizeTeamKey(logoState.nameB);
-
-      const cropA = getCropMetadataFromLocalStorage(teamAKey);
-      const cropB = getCropMetadataFromLocalStorage(teamBKey);
-
-      setCropMetadata({
-        A: cropA?.crop || null,
-        B: cropB?.crop || null,
-      });
-    };
-
-    loadCrops();
-    window.addEventListener('logoCropUpdated', loadCrops);
-    return () => {
-      window.removeEventListener('logoCropUpdated', loadCrops);
-    };
-  }, [logoState.nameA, logoState.nameB]);
-
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
 
@@ -142,8 +118,6 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
             setLiveSettings(normalizeLogoBrowserSettings(JSON.parse(saved)));
           }
         } catch { }
-      } else if (isLogoCropUpdatedEvent(event.data)) {
-        window.dispatchEvent(new Event('logoCropUpdated'));
       }
     };
 
@@ -181,13 +155,10 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
   return (
     <div className="logo-only-animation-overlay" aria-label="Team logos display">
       {displays.map((display) => {
-        const teamKey = normalizeTeamKey(display.name);
-        const storedCropRecord = getCropMetadataFromLocalStorage(teamKey);
-        const effectiveLogoUrl = storedCropRecord?.originalUrl || display.logo;
-        const logoSrc = getLogoSrc(effectiveLogoUrl, display.name);
+        const logoSrc = getLogoSrc(display.logo, display.name);
         if (!logoSrc) return null;
 
-        const cropData = storedCropRecord?.crop || (display.team === 'A' ? cropMetadata.A : cropMetadata.B);
+        const cropData = display.team === 'A' ? logoState.cropA : logoState.cropB;
         const presentation = getLogoPresentation(searchParams, display.team);
 
         // Priority: override prop -> team customSize -> URL param -> liveSettings -> presentation fallback
@@ -257,5 +228,4 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
     </div>
   );
 }
-
 

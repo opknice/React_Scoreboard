@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FirebaseSaveTarget } from '../utils/firebaseUrlConfig';
+import type { Team } from '../config/supabaseClient';
 import {
   TEAM_NAME_FONT_OPTIONS,
   TEAM_NAME_MAX_FONT_SIZE,
@@ -18,8 +19,8 @@ import {
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
 import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
-import { getLogoSrc, normalizeTeamKey } from '../utils/logoResolver';
-import { getCropMetadataFromLocalStorage } from '../utils/logoCropMetadata';
+import { getLogoSrc } from '../utils/logoResolver';
+import { cropMetadataToJson, parseCropMetadata } from '../types/teamLogo';
 import LogoWithCrop from './LogoWithCrop';
 import LogoBrowserCropModal from './LogoBrowserCropModal';
 import './QuickSetupModal.css';
@@ -41,6 +42,8 @@ interface FontOption {
 
 interface QuickSetupModalProps {
   isOpen: boolean;
+  teams: Team[];
+  onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
   targets: FirebaseSaveTarget[];
   selectedTargetId: string;
   tickerSpeed: number;
@@ -79,6 +82,8 @@ interface QuickSetupModalProps {
 
 export default function QuickSetupModal({
   isOpen,
+  teams,
+  onUpdateTeam,
   targets,
   selectedTargetId,
   tickerSpeed,
@@ -118,8 +123,8 @@ export default function QuickSetupModal({
   const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
   const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
   const [logoPreviewSide, setLogoPreviewSide] = useState<'A' | 'B' | 'both'>('both');
-  const [cropModalTarget, setCropModalTarget] = useState<{ teamSide: 'A' | 'B'; teamName: string; logoUrl: string } | null>(null);
-  const [matchState, setMatchState] = useState(() => {
+  const [cropModalTeam, setCropModalTeam] = useState<Team | null>(null);
+  const [matchState] = useState(() => {
     try {
       const saved = localStorage.getItem(SCOREBOARD_STATE_STORAGE_KEY);
       if (saved) {
@@ -151,13 +156,10 @@ export default function QuickSetupModal({
     } catch {}
   };
 
-  useEffect(() => {
-    const handleCropUpdate = () => {
-      setMatchState((current) => ({ ...current }));
-    };
-    window.addEventListener('logoCropUpdated', handleCropUpdate);
-    return () => window.removeEventListener('logoCropUpdated', handleCropUpdate);
-  }, []);
+  const getSupabaseTeam = (teamName: string): Team | undefined => {
+    const normalizedName = teamName.trim().toLowerCase();
+    return teams.find((team) => team.name.trim().toLowerCase() === normalizedName);
+  };
 
   const loadLocalFonts = useCallback(async () => {
     const queryLocalFonts = typeof window === 'undefined'
@@ -406,7 +408,7 @@ export default function QuickSetupModal({
                   {(logoPreviewSide === 'both' || logoPreviewSide === 'A') && (() => {
                     const teamName = matchState.nameA;
                     const logoSrc = getLogoSrc(matchState.logoA, teamName);
-                    const cropData = getCropMetadataFromLocalStorage(normalizeTeamKey(teamName))?.crop || null;
+                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.crop_metadata);
                     const basePreviewSize = 55;
                     const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeA / 190))));
 
@@ -444,7 +446,7 @@ export default function QuickSetupModal({
                   {(logoPreviewSide === 'both' || logoPreviewSide === 'B') && (() => {
                     const teamName = matchState.nameB;
                     const logoSrc = getLogoSrc(matchState.logoB, teamName);
-                    const cropData = getCropMetadataFromLocalStorage(normalizeTeamKey(teamName))?.crop || null;
+                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.crop_metadata);
                     const basePreviewSize = 55;
                     const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeB / 190))));
 
@@ -488,7 +490,7 @@ export default function QuickSetupModal({
                 {(['A', 'B'] as const).map((side) => {
                   const sizeKey = side === 'A' ? 'sizeA' : 'sizeB';
                   const teamName = side === 'A' ? matchState.nameA : matchState.nameB;
-                  const logoUrl = getLogoSrc(side === 'A' ? matchState.logoA : matchState.logoB, teamName);
+                  const supabaseTeam = getSupabaseTeam(teamName);
 
                   return (
                     <div key={side} style={{ backgroundColor: '#0f172a', padding: '8px 10px', borderRadius: '6px', border: '1px solid #1e293b' }}>
@@ -518,7 +520,9 @@ export default function QuickSetupModal({
                             type="button"
                             className="btn-secondary"
                             style={{ padding: '2px 6px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
-                            onClick={() => setCropModalTarget({ teamSide: side, teamName, logoUrl })}
+                            onClick={() => supabaseTeam && setCropModalTeam(supabaseTeam)}
+                            disabled={!supabaseTeam?.logo_url}
+                            title={supabaseTeam?.logo_url ? 'ตั้งค่า Crop โลโก้ใน Supabase' : 'เลือกทีมจากลีก Supabase ที่มีโลโก้ก่อน'}
                           >
                             ✂️ Crop
                           </button>
@@ -596,13 +600,17 @@ export default function QuickSetupModal({
             </div>
 
             {/* Logo Browser Crop Modal */}
-            {cropModalTarget && (
+            {cropModalTeam && (
               <LogoBrowserCropModal
-                isOpen={!!cropModalTarget}
-                onClose={() => setCropModalTarget(null)}
-                teamSide={cropModalTarget.teamSide}
-                teamName={cropModalTarget.teamName}
-                logoUrl={cropModalTarget.logoUrl}
+                isOpen
+                onClose={() => setCropModalTeam(null)}
+                team={cropModalTeam}
+                onSave={async (crop) => {
+                  await onUpdateTeam(cropModalTeam.id, { crop_metadata: cropMetadataToJson(crop) });
+                }}
+                onReset={async () => {
+                  await onUpdateTeam(cropModalTeam.id, { crop_metadata: null });
+                }}
               />
             )}
           </div> : null}
