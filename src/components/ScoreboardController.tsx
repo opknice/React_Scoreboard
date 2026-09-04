@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
@@ -227,6 +228,25 @@ export default function ScoreboardController() {
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
   const [showLeagueManagementModal, setShowLeagueManagementModal] = useState<boolean>(false);
   const [leagueModalInitialTab, setLeagueModalInitialTab] = useState<'league' | 'teams' | 'matches'>('matches');
+  const [showConfirmSaveModal, setShowConfirmSaveModal] = useState<boolean>(false);
+
+  // 🔥 Reset flag when modal opens (cleanup for edge case: F5 after selection)
+  useEffect(() => {
+    if (showLeagueManagementModal) {
+      matchLoadedFromModalRef.current = false;
+    }
+  }, [showLeagueManagementModal]);
+
+  // 🔥 P2 Fix: Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (clearTeamDataTimerRef.current !== null) {
+        window.clearTimeout(clearTeamDataTimerRef.current);
+      }
+    };
+  }, []);
+
+  const [isSavingMatch, setIsSavingMatch] = useState<boolean>(false);
 
   // Custom Preset Time Input
   const [customTimeMinutes, setCustomTimeMinutes] = useState<number>(0);
@@ -428,6 +448,8 @@ export default function ScoreboardController() {
   } = supabaseLeague;
   const [selectedLeagueIdToLoad, setSelectedLeagueIdToLoad] = useState<string>(() => supabaseLeague.activeLeagueId || '');
   const autoLoadedLeagueIdRef = useRef<string | null>(null);
+  const matchLoadedFromModalRef = useRef<boolean>(false); // 🔥 Track if user loaded match from modal
+  const clearTeamDataTimerRef = useRef<number | null>(null); // 🔥 P2: Debounce timer for clearTeamData
 
   useEffect(() => {
     setSelectedLeagueIdToLoad(supabaseLeague.activeLeagueId || '');
@@ -668,6 +690,45 @@ export default function ScoreboardController() {
     return m.status === 'finished' || (typeof m.score_a === 'number' && typeof m.score_b === 'number' && (m.score_a > 0 || m.score_b > 0));
   }, []);
 
+  // 🔥 Clear all team data (names, scores, logos, colors) + Sync to OBS
+  // P2 Fix: Add debounce to prevent duplicate calls
+  const clearTeamData = useCallback(() => {
+    // Cancel any pending clear
+    if (clearTeamDataTimerRef.current !== null) {
+      window.clearTimeout(clearTeamDataTimerRef.current);
+    }
+    
+    // Debounce clear by 50ms
+    clearTeamDataTimerRef.current = window.setTimeout(() => {
+      setNameA('');
+      setNameB('');
+      setScoreA(0);
+      setScoreB(0);
+      setLogoA('');
+      setLogoB('');
+      setColorA1('#ffffff');
+      setColorA2('#000000');
+      setColorB1('#ffffff');
+      setColorB2('#000000');
+      
+      // 🔥 P1 Fix: Sync to OBS (Critical - prevent OBS showing stale data)
+      obs.setText('name_team_a', '');
+      obs.setText('name_team_b', '');
+      obs.setImage('logo_team_a', '', logoFolderPath);
+      obs.setImage('logo_team_b', '', logoFolderPath);
+      obs.setSourceColor('Color_Team_A', '#ffffff');
+      obs.setSourceColor('Color_Team_A_2', '#000000');
+      obs.setSourceColor('Color_Team_B', '#ffffff');
+      obs.setSourceColor('Color_Team_B_2', '#000000');
+      
+      clearTeamDataTimerRef.current = null;
+    }, 50);
+  }, [setNameA, setNameB, setScoreA, setScoreB, setLogoA, setLogoB, setColorA1, setColorA2, setColorB1, setColorB2, obs, logoFolderPath]);
+
+  // 🔥 P2 Fix: Stable ref to prevent useEffect re-trigger
+  const clearTeamDataRef = useRef(clearTeamData);
+  clearTeamDataRef.current = clearTeamData;
+
   // --- Pending (Unplayed) matches in active league ---
   const pendingMatches = useMemo(() => {
     return supabaseLeague.matches
@@ -675,8 +736,21 @@ export default function ScoreboardController() {
       .sort((a, b) => a.match_number - b.match_number);
   }, [supabaseLeague.matches, isMatchFinished]);
 
+  // --- Check if there are unplayed matches and any matches at all (optimized with useMemo) ---
+  const hasUnplayedMatches = useMemo(() => pendingMatches.length > 0, [pendingMatches]);
+  const hasAnyMatches = useMemo(() => supabaseLeague.matches.length > 0, [supabaseLeague.matches]);
+
+  // 🔥 Auto-clear team data when no matches or all finished (Hybrid Part A)
+  // P1 Fix: Don't clear during loading to prevent flicker
+  // P2 Fix: Use ref to prevent unnecessary re-triggers
+  useEffect(() => {
+    if (!supabaseLeague.detailsLoading && (!hasAnyMatches || !hasUnplayedMatches)) {
+      clearTeamDataRef.current();
+    }
+  }, [hasAnyMatches, hasUnplayedMatches, supabaseLeague.detailsLoading]);
+
   // --- Load match from Supabase into scoreboard ---
-  const applyMatchFromSupabase = useCallback((match: SupabaseMatch, customTeams?: SupabaseTeam[]) => {
+  const applyMatchFromSupabase = useCallback((match: SupabaseMatch, customTeams?: SupabaseTeam[], fromModal = false) => {
     if (!supabaseLeague.activeLeagueId || match.league_id !== supabaseLeague.activeLeagueId) {
       triggerToast('ข้อมูลแมตช์ไม่ตรงกับ League ปัจจุบัน กรุณารีเฟรชข้อมูลลีกก่อน', 'error');
       return;
@@ -684,6 +758,11 @@ export default function ScoreboardController() {
     if (isMatchFinished(match)) {
       triggerToast(`⚠️ แมตช์ #${match.match_number} (${match.team_a_name} vs ${match.team_b_name}) บันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
       return;
+    }
+
+    // 🔥 Track if match was loaded from modal (user action)
+    if (fromModal) {
+      matchLoadedFromModalRef.current = true;
     }
 
     const availableTeams = customTeams || supabaseLeague.teams;
@@ -947,11 +1026,11 @@ export default function ScoreboardController() {
   };
 
   // --- Save match results to Supabase ---
-  const handleSaveMatchToSupabase = async () => {
+  const handleSaveMatchToSupabase = async (): Promise<boolean> => {
     const activeLeagueId = supabaseLeague.activeLeagueId;
     if (!activeLeagueId) {
       triggerToast('กรุณาสร้างหรือเลือกลีกในระบบ Supabase ก่อนบันทึกผล', 'error');
-      return;
+      return false;
     }
 
     // Do not allow a save while the selected league's latest data is still loading.
@@ -960,7 +1039,7 @@ export default function ScoreboardController() {
       || supabaseLeague.detailsLoadedLeagueId !== activeLeagueId
     ) {
       triggerToast('กำลังโหลดข้อมูล League ปัจจุบัน กรุณารอสักครู่แล้วลองใหม่', 'warning');
-      return;
+      return false;
     }
 
     // 1. Try to find a match only inside the currently selected league.
@@ -980,10 +1059,11 @@ export default function ScoreboardController() {
           status: 'finished',
         });
         triggerToast(`✓ บันทึกผลแมตช์ #${currentMatch.match_number} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
+        return true;
       } catch (err: any) {
         triggerToast(`บันทึกผลไม่สำเร็จ: ${err.message}`, 'error');
+        return false;
       }
-      return;
     }
 
     // 2. If the active league has no matching row, create a new finished match
@@ -1002,10 +1082,96 @@ export default function ScoreboardController() {
         match_date: new Date().toISOString(),
       });
       triggerToast(`✓ สร้างและบันทึกผลแมตช์ #${matchIdInput} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
+      return true;
     } catch (err: unknown) {
       triggerToast(`บันทึกผลไม่สำเร็จ: ${err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'}`, 'error');
+      return false;
     }
   };
+
+  // --- Confirm and Save Match (with Modal confirmation) ---
+  const confirmAndSaveMatch = async () => {
+    setShowConfirmSaveModal(false);
+    setIsSavingMatch(true); // เริ่ม loading
+    
+    try {
+      // บันทึกและรอผลลัพธ์
+      const success = await handleSaveMatchToSupabase();
+      
+      // ถ้าบันทึกสำเร็จ → โหลดแมตช์คู่ถัดไป
+      if (success) {
+        setTimeout(async () => {
+          try {
+            await loadNextPendingMatch();
+          } finally {
+            setIsSavingMatch(false); // หยุด loading
+          }
+        }, 500);
+      } else {
+        setIsSavingMatch(false); // หยุด loading ถ้าบันทึกไม่สำเร็จ
+      }
+    } catch (error) {
+      setIsSavingMatch(false); // หยุด loading ถ้าเกิด error
+      triggerToast('เกิดข้อผิดพลาดในการบันทึกผล', 'error');
+    }
+  };
+
+  // --- Load Next Pending Match (after successful save) ---
+  const loadNextPendingMatch = useCallback(async () => {
+    // 1. Refresh league data to get updated match list
+    await refreshLeagueDetails();
+
+    // 2. รอให้ข้อมูลอัพเดทจริงๆ ด้วย retry logic
+    let retries = 0;
+    const maxRetries = 5;
+    
+    // รอจนกว่า detailsLoading จะเป็น false หรือครบ maxRetries
+    while (supabaseLeague.detailsLoading && retries < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      retries++;
+    }
+    
+    // รอเพิ่มอีก 300ms เพื่อให้ React state อัพเดทแน่นอน
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // 3. กรองแมตช์ที่ยังไม่จบและเรียงลำดับ
+    // ⚠️ สำคัญ: กรอง matchIdInput ออกด้วย เพราะเป็นแมตช์ที่เพิ่งบันทึกไป (แม้ state จะยังไม่อัพเดท)
+    const unplayedMatches = supabaseLeague.matches
+      .filter((m) => !isMatchFinished(m) && m.match_number !== matchIdInput)
+      .sort((a, b) => a.match_number - b.match_number);
+
+    // 4. ถ้าไม่มีแมตช์เหลือ → เคลียร์ข้อมูลและซ่อนปุ่ม (Hybrid Part B)
+    if (unplayedMatches.length === 0) {
+      triggerToast('🎉 บันทึกผลครบทุกคู่แล้ว!', 'success');
+      
+      // 🔥 เคลียร์ข้อมูลทีมทั้งหมด (Silent)
+      clearTeamData();
+      setMatchIdInput(0);
+      
+      return;
+    }
+
+    // 5. หาแมตช์คู่ถัดจากปัจจุบัน
+    // เนื่องจากเรากรอง matchIdInput ออกแล้ว → แมตช์คู่แรกในรายการคือคู่ถัดไป
+    const nextMatch = unplayedMatches[0];
+
+    // 6. โหลดแมตช์นั้นขึ้น Scoreboard
+    if (nextMatch) {
+      applyMatchFromSupabase(nextMatch);
+      triggerToast(`📋 โหลดแมตช์คู่ถัดไป: ${nextMatch.team_a_name} vs ${nextMatch.team_b_name}`, 'info');
+    }
+  }, [
+    supabaseLeague.matches,
+    supabaseLeague.detailsLoading,
+    matchIdInput,
+    isMatchFinished,
+    applyMatchFromSupabase,
+    triggerToast,
+    refreshLeagueDetails,
+    setNameA,
+    setNameB,
+    setMatchIdInput
+  ]);
 
   // --- Copy Details announcement template ---
   const getThaiDateString = () => {
@@ -1446,7 +1612,7 @@ export default function ScoreboardController() {
                   title="รีเฟรชข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
                 >
                   <i className={supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? "fas fa-spinner fa-spin" : "fas fa-sync-alt"}></i>
-                  <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? 'Refreshing ...' : ''}</span>
+                  <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? '' : ''}</span>
                 </button>
 
                 <button
@@ -1477,7 +1643,10 @@ export default function ScoreboardController() {
                       if (num) {
                         setMatchIdInput(num);
                         const matchObj = pendingMatches.find((m) => m.match_number === num);
-                        if (matchObj) applyMatchFromSupabase(matchObj);
+                        if (matchObj) {
+                          matchLoadedFromModalRef.current = true; // 🔥 Track dropdown selection
+                          applyMatchFromSupabase(matchObj);
+                        }
                       }
                     }}
                     title="เลือกคู่แข่งขัน (เฉพาะคู่ที่ยังไม่ได้บันทึกผล)"
@@ -1563,17 +1732,8 @@ export default function ScoreboardController() {
               <span>บันทึกผลการแข่งขัน (Save Match Score):</span>
             </h3>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
-              {supabaseLeague.activeLeague ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleSaveMatchToSupabase}
-                  style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', border: 'none', padding: '10px 22px', fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(5, 150, 105, 0.4)', cursor: 'pointer' }}
-                >
-                  <i className="fas fa-check-circle" style={{ fontSize: '1.1rem', color: '#6ee7b7' }}></i>
-                  <span>💾 บันทึกผลแมตช์ #{matchIdInput} ลง {supabaseLeague.activeLeague.name} ({scoreA} - {scoreB})</span>
-                </button>
-              ) : (
+              {!supabaseLeague.activeLeague ? (
+                // ไม่มีลีก → แสดงปุ่มเลือกลีก
                 <button
                   type="button"
                   className="btn-primary"
@@ -1581,6 +1741,61 @@ export default function ScoreboardController() {
                   style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', padding: '8px 16px', fontWeight: 600 }}
                 >
                   <i className="fas fa-trophy"></i> เลือกลีก Supabase เพื่อเปิดใช้ปุ่มบันทึกผลบอล
+                </button>
+              ) : !hasAnyMatches || !hasUnplayedMatches ? (
+                // ไม่มีคู่แข่งขัน หรือ บันทึกครบทุกคู่แล้ว → ซ่อนปุ่ม (ไม่แสดงอะไร)
+                null
+              ) : !nameA || !nameB ? (
+                // มีคู่รอแข่ง แต่ไม่มีชื่อทีม → แสดงข้อความ
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', padding: '8px' }}>
+                  <i className="fas fa-info-circle" style={{ marginRight: '6px' }}></i>
+                  กรุณาเลือกคู่แข่งขันเพื่อบันทึกผล
+                </span>
+              ) : (
+                // มีทุกอย่างพร้อม → แสดงปุ่มบันทึกผล
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setShowConfirmSaveModal(true)}
+                  disabled={isSavingMatch}
+                  style={{ 
+                    background: isSavingMatch 
+                      ? 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)' 
+                      : 'linear-gradient(135deg, #059669 0%, #047857 100%)', 
+                    border: 'none', 
+                    padding: '10px 22px', 
+                    fontSize: '0.95rem', 
+                    fontWeight: 700, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px', 
+                    boxShadow: isSavingMatch 
+                      ? '0 4px 14px rgba(107, 114, 128, 0.4)' 
+                      : '0 4px 14px rgba(5, 150, 105, 0.4)', 
+                    cursor: isSavingMatch ? 'not-allowed' : 'pointer',
+                    opacity: isSavingMatch ? 0.6 : 1,
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {isSavingMatch ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin" style={{ fontSize: '1.1rem', color: '#d1d5db' }}></i>
+                      <span>กำลังบันทึก...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-check-circle" style={{ fontSize: '1.1rem', color: '#6ee7b7' }}></i>
+                      <span 
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
+                        title={`💾 บันทึกผล ${nameA} ${scoreA} - ${scoreB} ${nameB}`}
+                      >
+                        <span>💾 บันทึกผล</span>
+                        <span>{nameA}</span>
+                        <span style={{ fontWeight: 700 }}>{scoreA} - {scoreB}</span>
+                        <span>{nameB}</span>
+                      </span>
+                    </>
+                  )}
                 </button>
               )}
 
@@ -1992,12 +2207,120 @@ export default function ScoreboardController() {
 
         {showLeagueManagementModal && <LeagueManagementModal
           isOpen={showLeagueManagementModal}
-          onClose={() => setShowLeagueManagementModal(false)}
-          onSelectMatchToScoreboard={applyMatchFromSupabase}
+          onClose={() => {
+            // 🔥 Capture data before closing to avoid stale closure
+            const shouldAutoLoad = !matchLoadedFromModalRef.current;
+            const firstPendingMatch = pendingMatches.length > 0 ? pendingMatches[0] : null;
+            
+            setShowLeagueManagementModal(false);
+            
+            if (!shouldAutoLoad) {
+              // User loaded a match manually from modal, don't override
+              if (import.meta.env.DEV) {
+                console.log('[Modal onClose] User loaded match from modal, skip auto-load');
+              }
+              matchLoadedFromModalRef.current = false; // Reset flag
+              return;
+            }
+            
+            // 🔥 Defer auto-load after modal closes (avoid race condition)
+            if (firstPendingMatch && supabaseLeague.activeLeagueId) {
+              setTimeout(() => {
+                if (import.meta.env.DEV) {
+                  console.log('[Modal onClose] Auto-loading first pending match:', firstPendingMatch.match_number);
+                }
+                applyMatchFromSupabase(firstPendingMatch);
+              }, 100);
+            } else if (pendingMatches.length === 0) {
+              if (import.meta.env.DEV) {
+                console.log('[Modal onClose] No pending matches to auto-load');
+              }
+            }
+          }}
+          onSelectMatchToScoreboard={(match) => {
+            // User manually selected match from modal
+            applyMatchFromSupabase(match, undefined, true);
+          }}
           currentUserEmail={activeUserEmail}
           initialTab={leagueModalInitialTab}
           leagueState={supabaseLeague}
         />}
+
+        {/* Confirmation Modal for Save Match */}
+        {showConfirmSaveModal && createPortal(
+          <div
+            className="league-modal-overlay"
+            style={{ zIndex: 10000 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-save-title"
+          >
+            <div
+              className="league-modal-container"
+              style={{ maxWidth: '500px', animation: 'modalPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            >
+              {/* Header */}
+              <div className="league-modal-header">
+                <h3 id="confirm-save-title" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <i className="fas fa-save" style={{ color: '#38bdf8' }}></i>
+                  <span>ยืนยันการบันทึก</span>
+                </h3>
+                <button className="league-modal-close" onClick={() => setShowConfirmSaveModal(false)}>
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="league-modal-body" style={{ padding: '24px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                  <p style={{ fontSize: '1rem', color: '#cbd5e1', marginBottom: '16px', lineHeight: 1.6 }}>
+                    คุณต้องการบันทึกผลการแข่งขันนี้ใช่หรือไม่?
+                  </p>
+                  <div style={{ 
+                    background: 'rgba(56, 189, 248, 0.1)', 
+                    border: '1px solid rgba(56, 189, 248, 0.3)', 
+                    borderRadius: '12px', 
+                    padding: '16px',
+                    fontSize: '1.1rem',
+                    fontWeight: 700,
+                    color: '#f8fafc'
+                  }}>
+                    💾 บันทึกผล {nameA} {scoreA} - {scoreB} {nameB}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                  <button
+                    className="league-btn-primary"
+                    onClick={confirmAndSaveMatch}
+                    style={{ 
+                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                      padding: '10px 24px',
+                      fontSize: '0.95rem'
+                    }}
+                  >
+                    <i className="fas fa-check"></i>
+                    <span>ยืนยัน</span>
+                  </button>
+                  <button
+                    className="league-btn-danger"
+                    onClick={() => setShowConfirmSaveModal(false)}
+                    style={{
+                      padding: '10px 24px',
+                      fontSize: '0.95rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <i className="fas fa-times"></i>
+                    <span>ยกเลิก</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </Suspense>
     </div>
   );

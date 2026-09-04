@@ -190,9 +190,14 @@ export function useSupabaseLeague(
       if (requestId !== leaguesRequestIdRef.current) return;
       setLeagues(data);
       const currentActive = activeLeagueIdRef.current;
+      
+      // Validate current active league
       if (data.length > 0 && currentActive) {
         const currentValid = data.some((l) => l.id === currentActive);
         if (!currentValid) {
+          if (import.meta.env.DEV) {
+            console.log('[fetchLeagues] Current league invalid, clearing selection');
+          }
           activeLeagueIdRef.current = '';
           setActiveLeagueId('');
         }
@@ -214,7 +219,14 @@ export function useSupabaseLeague(
 
   // Load teams and matches for the active league
   const fetchLeagueDetails = useCallback(async (leagueId: string, silent = false) => {
+    if (import.meta.env.DEV) {
+      console.log('[fetchLeagueDetails] Called with:', { leagueId, silent, activeLeagueIdRef: activeLeagueIdRef.current });
+    }
+    
     if (!isConfigured || !leagueId) {
+      if (import.meta.env.DEV) {
+        console.log('[fetchLeagueDetails] Early return: not configured or no leagueId');
+      }
       detailsRequestIdRef.current += 1;
       setTeams([]);
       setMatches([]);
@@ -226,7 +238,15 @@ export function useSupabaseLeague(
 
     // A delayed refresh for an old league must never touch the active league's
     // state. This is the primary boundary against stale cross-league data.
-    if (activeLeagueIdRef.current !== leagueId) return;
+    if (activeLeagueIdRef.current !== leagueId) {
+      if (import.meta.env.DEV) {
+        console.log('[fetchLeagueDetails] Blocked: activeLeagueIdRef mismatch', { 
+          requested: leagueId, 
+          current: activeLeagueIdRef.current 
+        });
+      }
+      return;
+    }
 
     const requestId = ++detailsRequestIdRef.current;
 
@@ -389,6 +409,9 @@ export function useSupabaseLeague(
 
   // Load teams & matches whenever activeLeagueId changes
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[useEffect activeLeagueId] Triggered:', { activeLeagueId });
+    }
     if (activeLeagueId) {
       void fetchLeagueDetails(activeLeagueId);
     } else {
@@ -401,12 +424,18 @@ export function useSupabaseLeague(
 
   // Change active league
   const selectLeague = useCallback((leagueId: string) => {
+    if (import.meta.env.DEV) {
+      console.log('[selectLeague] Called with:', leagueId);
+    }
     const previousLeagueId = activeLeagueIdRef.current;
     if (previousLeagueId !== leagueId) {
       // Invalidate any in-flight request for the previous league immediately.
       detailsRequestIdRef.current += 1;
     }
     activeLeagueIdRef.current = leagueId;
+    if (import.meta.env.DEV) {
+      console.log('[selectLeague] Updated activeLeagueIdRef.current to:', activeLeagueIdRef.current);
+    }
     setActiveLeagueId(leagueId);
 
     if (previousLeagueId !== leagueId) {

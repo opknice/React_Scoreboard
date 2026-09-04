@@ -152,11 +152,16 @@ export default function LeagueManagementModal({
               onChange={(e) => selectLeague(e.target.value)}
             >
               {leagues.length === 0 && <option value="">(ยังไม่มีลีกในระบบ)</option>}
-              {leagues.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} {l.season ? `(${l.season})` : ''}
-                </option>
-              ))}
+              {leagues.length > 0 && (
+                <>
+                  <option value="" disabled>-- กรุณาเลือกลีก --</option>
+                  {leagues.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} {l.season ? `(${l.season})` : ''}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </div>
 
