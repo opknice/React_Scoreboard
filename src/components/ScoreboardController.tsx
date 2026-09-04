@@ -1,5 +1,4 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { getDatabase, ref, push } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
@@ -66,21 +65,24 @@ const PresetTimeModal = lazy(() => import('./PresetTimeModal'));
 const TeamSelectModal = lazy(() => import('./TeamSelectModal'));
 const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
 const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
-import LeagueManagementModal from './LeagueManagementModal';
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
 import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
-import { getFirstUnplayedMatch } from './league-management/leagueMatchUtils';
+import { getFirstUnplayedMatch, isUnplayedMatch } from './league-management/leagueMatchUtils';
 import type { SelectableTeam } from './TeamSelectModal';
 import ScoreboardHeader from './scoreboard/ScoreboardHeader';
 import ScoreboardSetupWizard from './scoreboard/ScoreboardSetupWizard';
 import MatchTeamsPanel from './scoreboard/MatchTeamsPanel';
+import ScoreboardTimerObsSync from './scoreboard/ScoreboardTimerObsSync';
+import LazyLeagueManagementModal from './scoreboard/LazyLeagueManagementModal';
+import ScoreboardLazyFallback from './scoreboard/ScoreboardLazyFallback';
+import SaveMatchConfirmDialog from './SaveMatchConfirmDialog';
 
 export default function ScoreboardController() {
   const navigate = useNavigate();
   const authAccess = useAuthAccess();
   const [, setTrialClock] = useState(Date.now());
-  const timerHook = useTimer();
-  const { resetToZero: timerResetToZero, pause: timerPause } = timerHook;
+  const timerStore = useTimer();
+  const { resetToZero: timerResetToZero, pause: timerPause } = timerStore;
   // Stable ref so the OBS WebSocket event listener always calls the latest handleHotkeyAction
   // without being re-registered every render (avoids stale closure on hotkeys)
   const hotkeyHandlerRef = useRef<((action: string) => void) | null>(null);
@@ -364,7 +366,7 @@ export default function ScoreboardController() {
         : await service.updateTeamNameBrowserSources(teamNameSettings);
       setTeamNameObsMessage(result.message);
       triggerToast(result.message, 'success');
-    } catch (error) {
+    } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า OBS ได้';
       setTeamNameObsMessage(message);
       triggerToast(message, 'error');
@@ -505,8 +507,6 @@ export default function ScoreboardController() {
     obs,
     scoreA,
     scoreB,
-    formattedTime: timerHook.formattedTime,
-    half: timerHook.half,
   });
 
   useAutoObsSourceSync({
@@ -516,10 +516,11 @@ export default function ScoreboardController() {
     scoreSettings,
   });
 
-  // Keep the persistent score Browser Source synchronized, including after
-  // it is opened or refreshed after the last goal event was sent.
-  useEffect(() => {
-    broadcastScoreboardState({
+  const scoreboardStatePayload = useMemo(() => {
+    // Logo resolution reads an external cache; the version is an intentional
+    // cache-busting input even though it is not part of the emitted payload.
+    void teamsCacheVersion;
+    return {
       scoreA,
       scoreB,
       nameA,
@@ -530,21 +531,29 @@ export default function ScoreboardController() {
       colorA2,
       colorB1,
       colorB2,
-    });
-  }, [colorA1, colorA2, colorB1, colorB2, logoA, logoB, logoFolderPath, nameA, nameB, scoreA, scoreB, teamsCacheVersion]);
-
-  useScoreboardStateResponder({
-    scoreA,
-    scoreB,
-    nameA,
-    nameB,
-    logoA: resolveLogoSrc(logoA, nameA, logoFolderPath),
-    logoB: resolveLogoSrc(logoB, nameB, logoFolderPath),
+    };
+  }, [
     colorA1,
     colorA2,
     colorB1,
     colorB2,
-  });
+    logoA,
+    logoB,
+    logoFolderPath,
+    nameA,
+    nameB,
+    scoreA,
+    scoreB,
+    teamsCacheVersion,
+  ]);
+
+  // Keep the persistent score Browser Source synchronized, including after
+  // it is opened or refreshed after the last goal event was sent.
+  useEffect(() => {
+    broadcastScoreboardState(scoreboardStatePayload);
+  }, [scoreboardStatePayload]);
+
+  useScoreboardStateResponder(scoreboardStatePayload);
 
   // --- Logo Preview Logic ---
   const getLogoSrc = useCallback((logoName: string, teamName?: string) => {
@@ -600,16 +609,16 @@ export default function ScoreboardController() {
   const handleHotkeyAction = (action: string) => {
     switch (action) {
       case 'play1':
-        timerHook.start1();
+        timerStore.start1();
         break;
       case 'halfpause':
-        timerHook.halfpause();
+        timerStore.halfpause();
         break;
       case 'play2':
-        timerHook.start2();
+        timerStore.start2();
         break;
       case 'fullend':
-        timerHook.fulltime();
+        timerStore.fulltime();
         break;
       case 'swap':
         swapTeams();
@@ -627,7 +636,7 @@ export default function ScoreboardController() {
         setScoreB((prev) => Math.max(0, prev - 1));
         break;
       case 'hidetimer':
-        timerHook.pause();
+        timerStore.pause();
         obs.setText('time_counter', '');
         obs.setText('half_text', '');
         break;
@@ -685,11 +694,6 @@ export default function ScoreboardController() {
     triggerToast(`เลือกทีม ${team.name} แล้ว`, 'success');
   };
 
-  // --- Helper: Check if match is finished / has recorded results ---
-  const isMatchFinished = useCallback((m: SupabaseMatch) => {
-    return m.status === 'finished' || (typeof m.score_a === 'number' && typeof m.score_b === 'number' && (m.score_a > 0 || m.score_b > 0));
-  }, []);
-
   // 🔥 Clear all team data (names, scores, logos, colors) + Sync to OBS
   // P2 Fix: Add debounce to prevent duplicate calls
   const clearTeamData = useCallback(() => {
@@ -732,9 +736,9 @@ export default function ScoreboardController() {
   // --- Pending (Unplayed) matches in active league ---
   const pendingMatches = useMemo(() => {
     return supabaseLeague.matches
-      .filter((m) => !isMatchFinished(m))
+      .filter(isUnplayedMatch)
       .sort((a, b) => a.match_number - b.match_number);
-  }, [supabaseLeague.matches, isMatchFinished]);
+  }, [supabaseLeague.matches]);
 
   // --- Check if there are unplayed matches and any matches at all (optimized with useMemo) ---
   const hasUnplayedMatches = useMemo(() => pendingMatches.length > 0, [pendingMatches]);
@@ -755,7 +759,7 @@ export default function ScoreboardController() {
       triggerToast('ข้อมูลแมตช์ไม่ตรงกับ League ปัจจุบัน กรุณารีเฟรชข้อมูลลีกก่อน', 'error');
       return;
     }
-    if (isMatchFinished(match)) {
+    if (!isUnplayedMatch(match)) {
       triggerToast(`⚠️ แมตช์ #${match.match_number} (${match.team_a_name} vs ${match.team_b_name}) บันทึกผลแล้ว ไม่สามารถโหลดได้`, 'warning');
       return;
     }
@@ -829,7 +833,6 @@ export default function ScoreboardController() {
   }, [
     supabaseLeague.activeLeagueId,
     supabaseLeague.teams,
-    isMatchFinished,
     setColorA1,
     setColorA2,
     setColorB1,
@@ -892,7 +895,7 @@ export default function ScoreboardController() {
   // --- Navigate matches by index (prev / next) through pending matches only ---
   const handleNavigateMatch = useCallback((direction: 'prev' | 'next') => {
     const unplayedMatches = supabaseLeague.matches
-      .filter((m) => !isMatchFinished(m))
+      .filter(isUnplayedMatch)
       .sort((a, b) => a.match_number - b.match_number);
     if (!unplayedMatches.length) {
       triggerToast('ไม่มีคู่แข่งขันที่รอแข่งในลีกนี้ (บันทึกผลครบแล้ว)', 'warning');
@@ -914,7 +917,7 @@ export default function ScoreboardController() {
     if (targetMatch) {
       applyMatchFromSupabase(targetMatch);
     }
-  }, [supabaseLeague.matches, matchIdInput, applyMatchFromSupabase, isMatchFinished, triggerToast]);
+  }, [supabaseLeague.matches, matchIdInput, applyMatchFromSupabase, triggerToast]);
 
   const handleRefreshLeague = useCallback(() => {
     if (!activeSupabaseLeagueId) {
@@ -1100,47 +1103,32 @@ export default function ScoreboardController() {
       
       // ถ้าบันทึกสำเร็จ → โหลดแมตช์คู่ถัดไป
       if (success) {
-        setTimeout(async () => {
-          try {
-            await loadNextPendingMatch();
-          } finally {
-            setIsSavingMatch(false); // หยุด loading
-          }
-        }, 500);
-      } else {
-        setIsSavingMatch(false); // หยุด loading ถ้าบันทึกไม่สำเร็จ
+        await loadNextPendingMatch();
       }
-    } catch (error) {
-      setIsSavingMatch(false); // หยุด loading ถ้าเกิด error
+    } catch {
       triggerToast('เกิดข้อผิดพลาดในการบันทึกผล', 'error');
+    } finally {
+      setIsSavingMatch(false);
     }
   };
 
   // --- Load Next Pending Match (after successful save) ---
   const loadNextPendingMatch = useCallback(async () => {
-    // 1. Refresh league data to get updated match list
-    await refreshLeagueDetails();
-
-    // 2. รอให้ข้อมูลอัพเดทจริงๆ ด้วย retry logic
-    let retries = 0;
-    const maxRetries = 5;
-    
-    // รอจนกว่า detailsLoading จะเป็น false หรือครบ maxRetries
-    while (supabaseLeague.detailsLoading && retries < maxRetries) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      retries++;
+    // Use the fresh server result directly. Reading React state after await
+    // would still read this callback's old render snapshot.
+    const refreshedDetails = await refreshLeagueDetails();
+    if (!refreshedDetails) {
+      triggerToast('โหลดข้อมูลลีกล่าสุดไม่สำเร็จ กรุณารีเฟรชแล้วลองอีกครั้ง', 'error');
+      return;
     }
-    
-    // รอเพิ่มอีก 300ms เพื่อให้ React state อัพเดทแน่นอน
-    await new Promise(resolve => setTimeout(resolve, 300));
 
-    // 3. กรองแมตช์ที่ยังไม่จบและเรียงลำดับ
+    // กรองแมตช์ที่ยังไม่จบและเรียงลำดับ
     // ⚠️ สำคัญ: กรอง matchIdInput ออกด้วย เพราะเป็นแมตช์ที่เพิ่งบันทึกไป (แม้ state จะยังไม่อัพเดท)
-    const unplayedMatches = supabaseLeague.matches
-      .filter((m) => !isMatchFinished(m) && m.match_number !== matchIdInput)
+    const unplayedMatches = refreshedDetails.matches
+      .filter((m) => isUnplayedMatch(m) && m.match_number !== matchIdInput)
       .sort((a, b) => a.match_number - b.match_number);
 
-    // 4. ถ้าไม่มีแมตช์เหลือ → เคลียร์ข้อมูลและซ่อนปุ่ม (Hybrid Part B)
+    // ถ้าไม่มีแมตช์เหลือ → เคลียร์ข้อมูลและซ่อนปุ่ม (Hybrid Part B)
     if (unplayedMatches.length === 0) {
       triggerToast('🎉 บันทึกผลครบทุกคู่แล้ว!', 'success');
       
@@ -1151,26 +1139,21 @@ export default function ScoreboardController() {
       return;
     }
 
-    // 5. หาแมตช์คู่ถัดจากปัจจุบัน
+    // หาแมตช์คู่ถัดจากปัจจุบัน
     // เนื่องจากเรากรอง matchIdInput ออกแล้ว → แมตช์คู่แรกในรายการคือคู่ถัดไป
     const nextMatch = unplayedMatches[0];
 
-    // 6. โหลดแมตช์นั้นขึ้น Scoreboard
+    // โหลดแมตช์นั้นขึ้น Scoreboardโดยใช้ทีมจาก response ชุดเดียวกัน
     if (nextMatch) {
-      applyMatchFromSupabase(nextMatch);
+      applyMatchFromSupabase(nextMatch, refreshedDetails.teams);
       triggerToast(`📋 โหลดแมตช์คู่ถัดไป: ${nextMatch.team_a_name} vs ${nextMatch.team_b_name}`, 'info');
     }
   }, [
-    supabaseLeague.matches,
-    supabaseLeague.detailsLoading,
-    matchIdInput,
-    isMatchFinished,
     applyMatchFromSupabase,
-    triggerToast,
+    clearTeamData,
+    matchIdInput,
     refreshLeagueDetails,
-    setNameA,
-    setNameB,
-    setMatchIdInput
+    triggerToast,
   ]);
 
   // --- Copy Details announcement template ---
@@ -1193,6 +1176,7 @@ export default function ScoreboardController() {
 
     const cleanBr = (s: string) => s.replace(/<br\s*\/?>/gi, ' ').replace(/&amp;/g, '&');
     const thaiDate = getThaiDateString();
+    const { formattedTime, half } = timerStore.getSnapshot();
 
     const filled = detailsTemplate
       .replace(/<TeamA>/gi, cleanBr(nameA))
@@ -1200,8 +1184,8 @@ export default function ScoreboardController() {
       .replace(/<score_team_a>/gi, String(scoreA))
       .replace(/<score_team_b>/gi, String(scoreB))
       .replace(/<thai_date>/gi, thaiDate)
-      .replace(/<time_counter>/gi, timerHook.formattedTime)
-      .replace(/<half_text>/gi, timerHook.half)
+      .replace(/<time_counter>/gi, formattedTime)
+      .replace(/<half_text>/gi, half)
       .replace(/<label1>/gi, cleanBr(label1))
       .replace(/<label2>/gi, cleanBr(label2))
       .replace(/<label3>/gi, cleanBr(label3));
@@ -1402,6 +1386,14 @@ export default function ScoreboardController() {
     setShowInstantReplayModal(true);
   }, [setShowInstantReplayModal]);
 
+  const handleCloseVarReplay = useCallback(() => {
+    setShowVarReplayV2Modal(false);
+  }, [setShowVarReplayV2Modal]);
+
+  const handleCloseInstantReplay = useCallback(() => {
+    setShowInstantReplayModal(false);
+  }, [setShowInstantReplayModal]);
+
   const handleNavigateWhitelist = useCallback(() => {
     navigate('/admin/whitelist');
   }, [navigate]);
@@ -1418,6 +1410,10 @@ export default function ScoreboardController() {
   const handleOpenLeagueManagement = useCallback((tab: 'league' | 'teams' | 'matches') => {
     setLeagueModalInitialTab(tab);
     setShowLeagueManagementModal(true);
+  }, []);
+
+  const handlePrefetchLeagueManagement = useCallback(() => {
+    void import('./LeagueManagementModal');
   }, []);
 
   const handleMinusScore = useCallback((team: 'A' | 'B') => {
@@ -1468,6 +1464,38 @@ export default function ScoreboardController() {
     setShowLeagueManagementModal(true);
   }, []);
 
+  const handleSelectMatchFromLeague = useCallback((match: SupabaseMatch) => {
+    applyMatchFromSupabase(match, undefined, true);
+  }, [applyMatchFromSupabase]);
+
+  const handleCloseLeagueManagement = useCallback(() => {
+    // Capture the current pending match before closing. A manual selection
+    // must never be overwritten by the automatic first-pending selection.
+    const shouldAutoLoad = !matchLoadedFromModalRef.current;
+    const firstPendingMatch = pendingMatches[0] ?? null;
+
+    setShowLeagueManagementModal(false);
+
+    if (!shouldAutoLoad) {
+      if (import.meta.env.DEV) {
+        console.log('[Modal onClose] User loaded match from modal, skip auto-load');
+      }
+      matchLoadedFromModalRef.current = false;
+      return;
+    }
+
+    if (firstPendingMatch && supabaseLeague.activeLeagueId) {
+      window.setTimeout(() => {
+        if (import.meta.env.DEV) {
+          console.log('[Modal onClose] Auto-loading first pending match:', firstPendingMatch.match_number);
+        }
+        applyMatchFromSupabase(firstPendingMatch);
+      }, 100);
+    } else if (import.meta.env.DEV) {
+      console.log('[Modal onClose] No pending matches to auto-load');
+    }
+  }, [applyMatchFromSupabase, pendingMatches, supabaseLeague.activeLeagueId]);
+
   const handleStartEditName = useCallback((team: 'A' | 'B') => {
     if (team === 'A') {
       setEditNameAVal(nameA);
@@ -1506,6 +1534,8 @@ export default function ScoreboardController() {
 
   return (
     <div className="container">
+      <ScoreboardTimerObsSync obs={obs} timer={timerStore} />
+
       {/* Toast Notifications */}
       <div className="toast-container">
         {toasts.map((t) => (
@@ -1553,6 +1583,8 @@ export default function ScoreboardController() {
                 <button
                   className="btn-primary btn-sm"
                   onClick={() => setShowLeagueManagementModal(true)}
+                  onFocus={handlePrefetchLeagueManagement}
+                  onPointerEnter={handlePrefetchLeagueManagement}
                   title="จัดการข้อมูลลีก รายชื่อทีม และตารางการแข่งขันผ่าน Supabase"
                   style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', fontWeight: 600 }}
                 >
@@ -1716,7 +1748,7 @@ export default function ScoreboardController() {
           />
 
           <ScoreboardTimerPanel
-            timer={timerHook}
+            timer={timerStore}
             onOpenPresetTime={handleOpenPresetTime}
             onHideTime={handleHideTimer}
             onPenaltyShootout={handleOpenPenaltyShootoutCallback}
@@ -1738,6 +1770,8 @@ export default function ScoreboardController() {
                   type="button"
                   className="btn-primary"
                   onClick={() => setShowLeagueManagementModal(true)}
+                  onFocus={handlePrefetchLeagueManagement}
+                  onPointerEnter={handlePrefetchLeagueManagement}
                   style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', padding: '8px 16px', fontWeight: 600 }}
                 >
                   <i className="fas fa-trophy"></i> เลือกลีก Supabase เพื่อเปิดใช้ปุ่มบันทึกผลบอล
@@ -1848,7 +1882,7 @@ export default function ScoreboardController() {
         </>
       )}
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<ScoreboardLazyFallback />}>
         {showSettingsModal && <ScoreboardSettingsModal
           isOpen={showSettingsModal}
           trans={trans}
@@ -1857,8 +1891,7 @@ export default function ScoreboardController() {
           nameB={nameB}
           scoreA={scoreA}
           scoreB={scoreB}
-          formattedTime={timerHook.formattedTime}
-          half={timerHook.half}
+          timer={timerStore}
           label1={label1}
           label2={label2}
           label3={label3}
@@ -2055,13 +2088,13 @@ export default function ScoreboardController() {
           onMinutesChange={setCustomTimeMinutes}
           onSecondsChange={setCustomTimeSeconds}
           onSetPreset={(minutes) => {
-            timerHook.setCountdownStartTime(minutes * 60);
+            timerStore.setCountdownStartTime(minutes * 60);
             setShowPresetTimeModal(false);
             triggerToast(`ตั้งเวลาครึ่งหลังเป็น ${minutes} นาทีแล้ว`, 'success');
           }}
           onSetCountdown={(totalSeconds, applyNow) => {
-            timerHook.setCountdownStartTime(totalSeconds);
-            if (applyNow) timerHook.setTimerValue(totalSeconds);
+            timerStore.setCountdownStartTime(totalSeconds);
+            if (applyNow) timerStore.setTimerValue(totalSeconds);
             setShowPresetTimeModal(false);
             triggerToast(
               applyNow
@@ -2184,8 +2217,8 @@ export default function ScoreboardController() {
         <ReplayControlModals
           showVarReplayV2={showVarReplayV2Modal}
           showInstantReplay={showInstantReplayModal}
-          onCloseVarReplayV2={() => setShowVarReplayV2Modal(false)}
-          onCloseInstantReplay={() => setShowInstantReplayModal(false)}
+          onCloseVarReplayV2={handleCloseVarReplay}
+          onCloseInstantReplay={handleCloseInstantReplay}
         />
 
         {showPenaltyModal && <PenaltyShootoutModal
@@ -2205,122 +2238,24 @@ export default function ScoreboardController() {
           />
         )}
 
-        {showLeagueManagementModal && <LeagueManagementModal
+        {showLeagueManagementModal && <LazyLeagueManagementModal
           isOpen={showLeagueManagementModal}
-          onClose={() => {
-            // 🔥 Capture data before closing to avoid stale closure
-            const shouldAutoLoad = !matchLoadedFromModalRef.current;
-            const firstPendingMatch = pendingMatches.length > 0 ? pendingMatches[0] : null;
-            
-            setShowLeagueManagementModal(false);
-            
-            if (!shouldAutoLoad) {
-              // User loaded a match manually from modal, don't override
-              if (import.meta.env.DEV) {
-                console.log('[Modal onClose] User loaded match from modal, skip auto-load');
-              }
-              matchLoadedFromModalRef.current = false; // Reset flag
-              return;
-            }
-            
-            // 🔥 Defer auto-load after modal closes (avoid race condition)
-            if (firstPendingMatch && supabaseLeague.activeLeagueId) {
-              setTimeout(() => {
-                if (import.meta.env.DEV) {
-                  console.log('[Modal onClose] Auto-loading first pending match:', firstPendingMatch.match_number);
-                }
-                applyMatchFromSupabase(firstPendingMatch);
-              }, 100);
-            } else if (pendingMatches.length === 0) {
-              if (import.meta.env.DEV) {
-                console.log('[Modal onClose] No pending matches to auto-load');
-              }
-            }
-          }}
-          onSelectMatchToScoreboard={(match) => {
-            // User manually selected match from modal
-            applyMatchFromSupabase(match, undefined, true);
-          }}
+          onClose={handleCloseLeagueManagement}
+          onSelectMatchToScoreboard={handleSelectMatchFromLeague}
           currentUserEmail={activeUserEmail}
           initialTab={leagueModalInitialTab}
           leagueState={supabaseLeague}
         />}
 
-        {/* Confirmation Modal for Save Match */}
-        {showConfirmSaveModal && createPortal(
-          <div
-            className="league-modal-overlay"
-            style={{ zIndex: 10000 }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="confirm-save-title"
-          >
-            <div
-              className="league-modal-container"
-              style={{ maxWidth: '500px', animation: 'modalPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
-            >
-              {/* Header */}
-              <div className="league-modal-header">
-                <h3 id="confirm-save-title" style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <i className="fas fa-save" style={{ color: '#38bdf8' }}></i>
-                  <span>ยืนยันการบันทึก</span>
-                </h3>
-                <button className="league-modal-close" onClick={() => setShowConfirmSaveModal(false)}>
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="league-modal-body" style={{ padding: '24px' }}>
-                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                  <p style={{ fontSize: '1rem', color: '#cbd5e1', marginBottom: '16px', lineHeight: 1.6 }}>
-                    คุณต้องการบันทึกผลการแข่งขันนี้ใช่หรือไม่?
-                  </p>
-                  <div style={{ 
-                    background: 'rgba(56, 189, 248, 0.1)', 
-                    border: '1px solid rgba(56, 189, 248, 0.3)', 
-                    borderRadius: '12px', 
-                    padding: '16px',
-                    fontSize: '1.1rem',
-                    fontWeight: 700,
-                    color: '#f8fafc'
-                  }}>
-                    💾 บันทึกผล {nameA} {scoreA} - {scoreB} {nameB}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                  <button
-                    className="league-btn-primary"
-                    onClick={confirmAndSaveMatch}
-                    style={{ 
-                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                      padding: '10px 24px',
-                      fontSize: '0.95rem'
-                    }}
-                  >
-                    <i className="fas fa-check"></i>
-                    <span>ยืนยัน</span>
-                  </button>
-                  <button
-                    className="league-btn-danger"
-                    onClick={() => setShowConfirmSaveModal(false)}
-                    style={{
-                      padding: '10px 24px',
-                      fontSize: '0.95rem',
-                      fontWeight: 600
-                    }}
-                  >
-                    <i className="fas fa-times"></i>
-                    <span>ยกเลิก</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+        <SaveMatchConfirmDialog
+          isOpen={showConfirmSaveModal}
+          teamAName={nameA}
+          teamBName={nameB}
+          scoreA={scoreA}
+          scoreB={scoreB}
+          onConfirm={confirmAndSaveMatch}
+          onClose={() => setShowConfirmSaveModal(false)}
+        />
       </Suspense>
     </div>
   );

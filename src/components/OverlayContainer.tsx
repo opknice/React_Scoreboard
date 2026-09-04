@@ -1,7 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, onValue, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
+import {
+  equalTo,
+  getDatabase,
+  limitToLast,
+  onValue,
+  orderByChild,
+  query,
+  ref,
+  type Query,
+} from 'firebase/database';
 import { getLogoSrc, extractMatchLogo, listenToFirebaseTeams } from '../utils/logoResolver';
 import { parseFirebaseConfigFromSearchParams } from '../utils/firebaseUrlConfig';
 import { useDisableZoom } from '../hooks/useDisableZoom';
@@ -16,6 +25,10 @@ const getLocalTodayString = (): string => {
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+const getErrorMessage = (error: unknown): string => (
+  error instanceof Error ? error.message : String(error)
+);
 
 export default function OverlayContainer() {
   useDisableZoom();
@@ -47,6 +60,9 @@ export default function OverlayContainer() {
 
   // Initialize and load data
   useEffect(() => {
+    let isCancelled = false;
+    let firebaseCleanup: (() => void) | null = null;
+
     const loadFromSupabase = async () => {
       try {
         const { LeagueService } = await import('../services/leagueService');
@@ -56,9 +72,12 @@ export default function OverlayContainer() {
             LeagueService.getMatchesByLeague(leagueId),
             LeagueService.getTeamsByLeague(leagueId),
           ]);
+          if (isCancelled) return true;
+
+          const teamsById = new Map(supabaseTeams.map((team) => [team.id, team]));
           const formatted = supabaseMatches.map((m) => {
-            const teamAObj = supabaseTeams.find((t) => t.id === m.team_a_id);
-            const teamBObj = supabaseTeams.find((t) => t.id === m.team_b_id);
+            const teamAObj = m.team_a_id ? teamsById.get(m.team_a_id) : undefined;
+            const teamBObj = m.team_b_id ? teamsById.get(m.team_b_id) : undefined;
             const dateStr = m.match_date
               ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '')
               : '';
@@ -86,14 +105,15 @@ export default function OverlayContainer() {
           setLoading(false);
           return true;
         }
-      } catch (err: any) {
-        console.warn('Supabase fetch failed in OverlayContainer, falling back to Firebase:', err);
+      } catch (error: unknown) {
+        console.warn('Supabase fetch failed in OverlayContainer, falling back to Firebase:', error);
       }
       return false;
     };
 
-    loadFromSupabase().then((loaded) => {
-      if (loaded) return;
+    const initializeDataSource = async () => {
+      const loaded = await loadFromSupabase();
+      if (isCancelled || loaded) return;
 
       if (!firebaseConfig) {
         setErrorMsg('ไม่พบข้อมูลลีก หรือการตั้งค่า Database (กรุณาใช้ URL ที่สร้างจาก Control Panel)');
@@ -109,18 +129,19 @@ export default function OverlayContainer() {
 
         // Build Query
         const selectedDate = dateParam === 'today' ? getLocalTodayString() : dateParam && dateParam !== 'all' ? dateParam : '';
-        let q: any = baseRef;
+        let matchesQuery: Query = baseRef;
 
         if (view === 'ticker' && selectedDate) {
-          q = query(baseRef, orderByChild('date'), equalTo(selectedDate));
+          matchesQuery = query(baseRef, orderByChild('date'), equalTo(selectedDate));
         } else if (view === 'results' && limitParam) {
           const limitVal = parseInt(limitParam, 10);
           if (Number.isFinite(limitVal) && limitVal > 0) {
-            q = query(baseRef, limitToLast(limitVal));
+            matchesQuery = query(baseRef, limitToLast(limitVal));
           }
         }
 
         const unsubTeams = listenToFirebaseTeams(db, (teamsMap) => {
+          if (isCancelled) return;
           setRegisteredTeams(Object.entries(teamsMap).map(([id, team]) => ({
             id,
             name: team.name,
@@ -129,8 +150,9 @@ export default function OverlayContainer() {
         });
 
         const unsubscribe = onValue(
-          q,
+          matchesQuery,
           (snapshot) => {
+            if (isCancelled) return;
             const items: OverlayMatch[] = [];
             snapshot.forEach((child) => {
               items.push({ id: child.key, ...child.val() });
@@ -139,20 +161,29 @@ export default function OverlayContainer() {
             setLoading(false);
           },
           (err) => {
+            if (isCancelled) return;
             setErrorMsg(`โหลดข้อมูลล้มเหลว: ${err.message}`);
             setLoading(false);
           }
         );
 
-        return () => {
+        firebaseCleanup = () => {
           unsubscribe();
           unsubTeams();
         };
-      } catch (err: any) {
-        setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${err.message}`);
+      } catch (error: unknown) {
+        if (isCancelled) return;
+        setErrorMsg(`เกิดข้อผิดพลาดในการโหลด: ${getErrorMessage(error)}`);
         setLoading(false);
       }
-    });
+    };
+
+    void initializeDataSource();
+
+    return () => {
+      isCancelled = true;
+      firebaseCleanup?.();
+    };
   }, [dateParam, firebaseConfig, leagueId, limitParam, searchParams, view]);
 
   if (loading) {

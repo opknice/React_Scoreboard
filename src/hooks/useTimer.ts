@@ -1,157 +1,198 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
-export const useTimer = () => {
-  const [timer, setTimer] = useState<number>(0);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [half, setHalf] = useState<string>('1st');
-  const [countdownStartTime, setCountdownStartTimeState] = useState<number>(() => {
+export interface TimerSnapshot {
+  timer: number;
+  isRunning: boolean;
+  half: string;
+  customText: string;
+  countdownStartTime: number;
+  formattedTime: string;
+}
+
+export interface TimerStore {
+  getSnapshot: () => TimerSnapshot;
+  subscribe: (listener: () => void) => () => void;
+  start1: () => void;
+  start2: () => void;
+  pause: () => void;
+  resume: () => void;
+  halfpause: () => void;
+  fulltime: () => void;
+  resetToZero: () => void;
+  setCountdownStartTime: (seconds: number) => void;
+  setTimerValue: (seconds: number) => void;
+  toggleHalf: () => void;
+  setCustomText: (text: string) => void;
+  destroy: () => void;
+}
+
+function normalizeSeconds(seconds: number): number {
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : 0;
+}
+
+function formatTimer(timer: number, customText: string): string {
+  if (customText) return customText;
+  const minutes = String(Math.floor(timer / 60)).padStart(2, '0');
+  const seconds = String(timer % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+function readCountdownStartTime(): number {
+  try {
     const saved = localStorage.getItem('countdownStartTime');
-    const parsed = saved ? Number.parseInt(saved, 10) : 0;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-  });
-  const [customText, setCustomText] = useState<string>(''); // For special status like 'HT', 'FT', or empty (hidden)
+    return normalizeSeconds(saved ? Number.parseInt(saved, 10) : 0);
+  } catch {
+    return 0;
+  }
+}
 
-  const intervalRef = useRef<number | null>(null);
-  const timerRef = useRef(timer);
-  const baseTimerRef = useRef(timer);
-  const startedAtRef = useRef<number | null>(null);
-  const countdownStartTimeRef = useRef(countdownStartTime);
-
-  useEffect(() => {
-    countdownStartTimeRef.current = countdownStartTime;
-  }, [countdownStartTime]);
-
-  const syncTimer = useCallback(() => {
-    if (startedAtRef.current === null) return;
-    const nextTimer = baseTimerRef.current + Math.floor((Date.now() - startedAtRef.current) / 1000);
-    if (nextTimer === timerRef.current) return;
-    timerRef.current = nextTimer;
-    setTimer(nextTimer);
-  }, []);
-
-  useEffect(() => {
-    if (isRunning) {
-      intervalRef.current = window.setInterval(syncTimer, 1000);
-    } else {
-      if (intervalRef.current !== null) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (intervalRef.current !== null) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [isRunning, syncTimer]);
-
-  const start1 = useCallback(() => {
-    setHalf('1st');
-    setCustomText('');
-    baseTimerRef.current = 0;
-    timerRef.current = 0;
-    setTimer(0);
-    startedAtRef.current = Date.now();
-    setIsRunning(true);
-  }, []);
-
-  const start2 = useCallback(() => {
-    const startVal = countdownStartTimeRef.current;
-    setHalf('2nd');
-    setCustomText('');
-    baseTimerRef.current = startVal;
-    timerRef.current = startVal;
-    setTimer(startVal);
-    startedAtRef.current = Date.now();
-    setIsRunning(true);
-  }, []);
-
-  const pause = useCallback(() => {
-    syncTimer();
-    baseTimerRef.current = timerRef.current;
-    startedAtRef.current = null;
-    setIsRunning(false);
-  }, [syncTimer]);
-
-  const resume = useCallback(() => {
-    setCustomText('');
-    baseTimerRef.current = timerRef.current;
-    startedAtRef.current = Date.now();
-    setIsRunning(true);
-  }, []);
-
-  const halfpause = useCallback(() => {
-    syncTimer();
-    baseTimerRef.current = timerRef.current;
-    startedAtRef.current = null;
-    setIsRunning(false);
-    setHalf('');
-    setCustomText('HT');
-  }, [syncTimer]);
-
-  const fulltime = useCallback(() => {
-    syncTimer();
-    baseTimerRef.current = timerRef.current;
-    startedAtRef.current = null;
-    setIsRunning(false);
-    setHalf('');
-    setCustomText('FT');
-  }, [syncTimer]);
-
-  const resetToZero = useCallback(() => {
-    startedAtRef.current = null;
-    baseTimerRef.current = 0;
-    timerRef.current = 0;
-    setIsRunning(false);
-    setCustomText('');
-    setTimer(0);
-  }, []);
-
-  const setCountdownStartTime = useCallback((seconds: number) => {
-    const nextSeconds = Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : 0;
-    setCountdownStartTimeState(nextSeconds);
-    countdownStartTimeRef.current = nextSeconds;
-    localStorage.setItem('countdownStartTime', nextSeconds.toString());
-  }, []);
-
-  const setTimerValue = useCallback((seconds: number) => {
-    const nextSeconds = Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : 0;
-    timerRef.current = nextSeconds;
-    baseTimerRef.current = nextSeconds;
-    if (startedAtRef.current !== null) startedAtRef.current = Date.now();
-    setTimer(nextSeconds);
-  }, []);
-
-  const toggleHalf = useCallback(() => {
-    setCustomText('');
-    setHalf((prev) => (prev === '1st' ? '2nd' : '1st'));
-  }, []);
-
-  const formattedTime = useMemo(() => {
-    if (customText) return customText;
-    const m = String(Math.floor(timer / 60)).padStart(2, '0');
-    const s = String(timer % 60).padStart(2, '0');
-    return `${m}:${s}`;
-  }, [timer, customText]);
-
-  return {
-    timer,
-    isRunning,
-    half,
-    customText,
+export function createTimerStore(): TimerStore {
+  const listeners = new Set<() => void>();
+  const countdownStartTime = readCountdownStartTime();
+  let snapshot: TimerSnapshot = {
+    timer: 0,
+    isRunning: false,
+    half: '1st',
+    customText: '',
     countdownStartTime,
-    formattedTime,
-    start1,
-    start2,
-    pause,
-    resume,
-    halfpause,
-    fulltime,
-    resetToZero,
-    setCountdownStartTime,
-    setTimerValue,
-    toggleHalf,
-    setCustomText,
+    formattedTime: '00:00',
   };
-};
+  let baseTimer = 0;
+  let startedAt: number | null = null;
+  let intervalId: number | null = null;
+
+  const emit = () => listeners.forEach((listener) => listener());
+
+  const updateSnapshot = (patch: Partial<TimerSnapshot>) => {
+    const next = { ...snapshot, ...patch };
+    next.formattedTime = formatTimer(next.timer, next.customText);
+    if (
+      next.timer === snapshot.timer
+      && next.isRunning === snapshot.isRunning
+      && next.half === snapshot.half
+      && next.customText === snapshot.customText
+      && next.countdownStartTime === snapshot.countdownStartTime
+      && next.formattedTime === snapshot.formattedTime
+    ) {
+      return;
+    }
+    snapshot = next;
+    emit();
+  };
+
+  const clearTicker = () => {
+    if (intervalId === null) return;
+    window.clearInterval(intervalId);
+    intervalId = null;
+  };
+
+  const syncTimer = () => {
+    if (startedAt === null) return;
+    const nextTimer = baseTimer + Math.floor((Date.now() - startedAt) / 1_000);
+    if (nextTimer !== snapshot.timer) updateSnapshot({ timer: nextTimer });
+  };
+
+  const startTicker = () => {
+    clearTicker();
+    intervalId = window.setInterval(syncTimer, 1_000);
+  };
+
+  const stopAtCurrentTime = () => {
+    syncTimer();
+    baseTimer = snapshot.timer;
+    startedAt = null;
+    clearTicker();
+  };
+
+  const store: TimerStore = {
+    getSnapshot: () => snapshot,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    start1: () => {
+      baseTimer = 0;
+      startedAt = Date.now();
+      updateSnapshot({ timer: 0, half: '1st', customText: '', isRunning: true });
+      startTicker();
+    },
+    start2: () => {
+      baseTimer = snapshot.countdownStartTime;
+      startedAt = Date.now();
+      updateSnapshot({
+        timer: baseTimer,
+        half: '2nd',
+        customText: '',
+        isRunning: true,
+      });
+      startTicker();
+    },
+    pause: () => {
+      stopAtCurrentTime();
+      updateSnapshot({ isRunning: false });
+    },
+    resume: () => {
+      baseTimer = snapshot.timer;
+      startedAt = Date.now();
+      updateSnapshot({ customText: '', isRunning: true });
+      startTicker();
+    },
+    halfpause: () => {
+      stopAtCurrentTime();
+      updateSnapshot({ isRunning: false, half: '', customText: 'HT' });
+    },
+    fulltime: () => {
+      stopAtCurrentTime();
+      updateSnapshot({ isRunning: false, half: '', customText: 'FT' });
+    },
+    resetToZero: () => {
+      startedAt = null;
+      baseTimer = 0;
+      clearTicker();
+      updateSnapshot({ timer: 0, isRunning: false, customText: '' });
+    },
+    setCountdownStartTime: (seconds) => {
+      const nextSeconds = normalizeSeconds(seconds);
+      updateSnapshot({ countdownStartTime: nextSeconds });
+      try {
+        localStorage.setItem('countdownStartTime', nextSeconds.toString());
+      } catch {
+        // Storage can be unavailable in restricted OBS browser contexts.
+      }
+    },
+    setTimerValue: (seconds) => {
+      const nextSeconds = normalizeSeconds(seconds);
+      baseTimer = nextSeconds;
+      if (startedAt !== null) startedAt = Date.now();
+      updateSnapshot({ timer: nextSeconds });
+    },
+    toggleHalf: () => {
+      updateSnapshot({
+        customText: '',
+        half: snapshot.half === '1st' ? '2nd' : '1st',
+      });
+    },
+    setCustomText: (text) => updateSnapshot({ customText: text }),
+    destroy: () => {
+      clearTicker();
+      listeners.clear();
+    },
+  };
+
+  return store;
+}
+
+/** Creates one stable timer store without subscribing the owner component. */
+export function useTimer(): TimerStore {
+  const storeRef = useRef<TimerStore | null>(null);
+  if (storeRef.current === null) storeRef.current = createTimerStore();
+  const store = storeRef.current;
+
+  useEffect(() => () => store.destroy(), [store]);
+  return store;
+}
+
+/** Subscribes only the component that needs live timer values. */
+export function useTimerSnapshot(store: TimerStore): TimerSnapshot {
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}

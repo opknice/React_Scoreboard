@@ -18,7 +18,7 @@ export type VarReplayV2State = {
 };
 
 export type VarReplayV2Message =
-  | { type: 'file'; data: ArrayBuffer; mime: string; name: string; state?: VarReplayV2State }
+  | { type: 'file'; data: Blob | ArrayBuffer; mime: string; name: string; state?: VarReplayV2State }
   | { type: 'request-sync' }
   | { type: 'command'; action: 'play' | 'pause' | 'seek' | 'set-marker' | 'clear-markers' | 'set-speed' | 'set-loop' | 'set-transform'; value?: number | VarReplayV2Transform; marker?: 'A' | 'B'; enabled?: boolean; smooth?: boolean }
   | {

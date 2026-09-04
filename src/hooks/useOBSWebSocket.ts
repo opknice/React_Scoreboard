@@ -1,7 +1,40 @@
-import { useState, useRef, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import OBSWebSocket from 'obs-websocket-js';
+import type { OBSRequestTypes, OBSResponseTypes } from 'obs-websocket-js';
+import { createLatestAsyncByKeyQueue } from '../utils/latestAsyncByKey';
 
-export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEvent?: (eventType: string, eventData: any) => void) => {
+type OBSForwardedEvent = 'CustomEvent' | 'ReplayBufferSaved';
+type OBSForwardedEventData = Record<string, unknown>;
+
+export interface OBSWebSocketApi {
+  isConnected: boolean;
+  connect: (
+    url?: string,
+    password?: string,
+    maxRetries?: number,
+    isAutomaticReconnect?: boolean,
+  ) => Promise<boolean>;
+  disconnect: () => Promise<void>;
+  setText: (sourceName: string, text: string) => Promise<void>;
+  setImage: (sourceName: string, filename: string, logoFolderPath: string) => Promise<void>;
+  setSourceColor: (sourceName: string, hexColor: string) => Promise<void>;
+  setSceneItemEnabled: (sceneName: string, sceneItemId: number, enabled: boolean) => Promise<void>;
+  getSceneItemId: (sceneName: string, sourceName: string) => Promise<number | null>;
+  call: <Type extends keyof OBSRequestTypes>(
+    requestType: Type,
+    requestData?: OBSRequestTypes[Type],
+  ) => Promise<OBSResponseTypes[Type]>;
+  getObsRef: () => OBSWebSocket | null;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export const useOBSWebSocket = (
+  onHotkeyAction?: (action: string) => void,
+  onEvent?: (eventType: OBSForwardedEvent, eventData: OBSForwardedEventData) => void,
+): OBSWebSocketApi => {
   const [isConnected, setIsConnected] = useState(false);
   const obsRef = useRef<OBSWebSocket | null>(null);
   // Track whether we are in the middle of a connect attempt (suppress false ConnectionClosed events)
@@ -17,10 +50,8 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
   // Always hold the latest callback — avoids stale closure when state changes
   const onHotkeyActionRef = useRef(onHotkeyAction);
   const onEventRef = useRef(onEvent);
-  useEffect(() => {
-    onHotkeyActionRef.current = onHotkeyAction;
-    onEventRef.current = onEvent;
-  });
+  onHotkeyActionRef.current = onHotkeyAction;
+  onEventRef.current = onEvent;
 
   // Generation counter: each connect() call gets a unique ID.
   // After every async await, we verify our generation is still current.
@@ -30,8 +61,57 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
   // obs.connect() completes AFTER the component cleanup, leaving two
   // active OBS instances that both fire CustomEvent (causing score +=2).
   const connectGenRef = useRef(0);
+  const textUpdateQueueRef = useRef<ReturnType<
+    typeof createLatestAsyncByKeyQueue<string, string>
+  > | null>(null);
+  if (textUpdateQueueRef.current === null) {
+    textUpdateQueueRef.current = createLatestAsyncByKeyQueue(
+      async (sourceName, text) => {
+        const obs = obsRef.current;
+        if (!obs) return;
+        await obs.call('SetInputSettings', {
+          inputName: sourceName,
+          inputSettings: { text },
+        });
+      },
+      (error, sourceName) => {
+        console.error(`OBS error setting text on source '${sourceName}':`, error);
+      },
+    );
+  }
+  const textUpdateQueue = textUpdateQueueRef.current;
 
-  const connect = async (
+  const disconnect = useCallback(async () => {
+    // Invalidate any in-progress connect() calls.
+    isShuttingDownRef.current = true;
+    connectGenRef.current++;
+    textUpdateQueue.clear();
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    isConnectingRef.current = false;
+
+    const pendingObs = pendingObsRef.current;
+    pendingObsRef.current = null;
+    if (pendingObs) {
+      try { pendingObs.removeAllListeners(); } catch {}
+      try { await pendingObs.disconnect(); } catch {}
+    }
+
+    if (obsRef.current) {
+      try {
+        obsRef.current.removeAllListeners();
+        await obsRef.current.disconnect();
+      } catch {
+        // The socket may already be closed.
+      }
+      obsRef.current = null;
+      setIsConnected(false);
+    }
+  }, [textUpdateQueue]);
+
+  const connect = useCallback(async (
     url = 'ws://localhost:4455',
     password = '',
     maxRetries = 3,
@@ -75,9 +155,13 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
       const obs = new OBSWebSocket();
       pendingObsRef.current = obs;
 
-      obs.on('CustomEvent', (eventData: any) => {
-        const data = eventData.eventData || eventData;
-        const action = data.action;
+      obs.on('CustomEvent', (eventData) => {
+        const wrappedData = eventData as unknown as OBSForwardedEventData;
+        const nestedData = wrappedData.eventData;
+        const data = nestedData && typeof nestedData === 'object'
+          ? nestedData as OBSForwardedEventData
+          : wrappedData;
+        const action = typeof data.action === 'string' ? data.action : undefined;
         console.log('[OBS Hotkey Bridge] Received action:', action);
         // Use ref so we always call the LATEST version of the callback (avoids stale closure)
         if (action && onHotkeyActionRef.current) {
@@ -89,89 +173,13 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
         }
       });
 
-      // Subscribe to all OBS events for logging
-      const eventTypes = [
-        // General events
-        'ExitStarted',
-        'VendorEvent',
-        
-        // Config events
-        'CurrentSceneCollectionChanging',
-        'CurrentSceneCollectionChanged',
-        'SceneCollectionListChanged',
-        'CurrentProfileChanging',
-        'CurrentProfileChanged',
-        'ProfileListChanged',
-        
-        // Scenes events
-        'SceneCreated',
-        'SceneRemoved',
-        'SceneNameChanged',
-        'CurrentProgramSceneChanged',
-        'CurrentPreviewSceneChanged',
-        'SceneListChanged',
-        
-        // Inputs (Sources) events
-        'InputCreated',
-        'InputRemoved',
-        'InputNameChanged',
-        'InputActiveStateChanged',
-        'InputShowStateChanged',
-        'InputMuteStateChanged',
-        'InputVolumeChanged',
-        'InputAudioBalanceChanged',
-        'InputAudioSyncOffsetChanged',
-        'InputAudioTracksChanged',
-        'InputAudioMonitorTypeChanged',
-        'InputVolumeMeters',
-        
-        // Transitions events
-        'CurrentSceneTransitionChanged',
-        'CurrentSceneTransitionDurationChanged',
-        'SceneTransitionStarted',
-        'SceneTransitionEnded',
-        'SceneTransitionVideoEnded',
-        
-        // Filters events
-        'SourceFilterListReindexed',
-        'SourceFilterCreated',
-        'SourceFilterRemoved',
-        'SourceFilterNameChanged',
-        'SourceFilterEnableStateChanged',
-        
-        // Scene Items events
-        'SceneItemCreated',
-        'SceneItemRemoved',
-        'SceneItemListReindexed',
-        'SceneItemEnableStateChanged',
-        'SceneItemLockStateChanged',
-        'SceneItemSelected',
-        'SceneItemTransformChanged',
-        
-        // Outputs events
-        'StreamStateChanged',
-        'RecordStateChanged',
-        'ReplayBufferStateChanged',
-        'VirtualcamStateChanged',
-        'ReplayBufferSaved',
-        
-        // Media Inputs events
-        'MediaInputPlaybackStarted',
-        'MediaInputPlaybackEnded',
-        'MediaInputActionTriggered',
-        
-        // Ui events
-        'StudioModeStateChanged',
-        'ScreenshotSaved'
-      ];
-
-      // Subscribe to all events
-      eventTypes.forEach(eventType => {
-        obs.on(eventType as any, (data: any) => {
-          if (onEventRef.current) {
-            onEventRef.current(eventType, data);
-          }
-        });
+      // Macro subscriptions register their own event listeners. Forward only
+      // the replay event consumed by the video-folder rescan hook here.
+      obs.on('ReplayBufferSaved', (eventData) => {
+        onEventRef.current?.(
+          'ReplayBufferSaved',
+          eventData as unknown as OBSForwardedEventData,
+        );
       });
 
       obs.on('ConnectionClosed', () => {
@@ -242,51 +250,15 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     setIsConnected(false);
     console.error('[OBS Connection] All connection attempts failed:', lastErr);
     throw lastErr;
-  };
+  }, [disconnect]);
 
-  const disconnect = async () => {
-    // Invalidate any in-progress connect() calls
-    isShuttingDownRef.current = true;
-    connectGenRef.current++;
-    if (reconnectTimerRef.current !== null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    isConnectingRef.current = false;
-
-    const pendingObs = pendingObsRef.current;
-    pendingObsRef.current = null;
-    if (pendingObs) {
-      try { pendingObs.removeAllListeners(); } catch {}
-      try { await pendingObs.disconnect(); } catch {}
-    }
-
-    if (obsRef.current) {
-      try {
-        obsRef.current.removeAllListeners();
-        await obsRef.current.disconnect();
-      } catch {
-        // Ignore
-      }
-      obsRef.current = null;
-      setIsConnected(false);
-    }
-  };
-
-  const setText = async (sourceName: string, text: string) => {
+  const setText = useCallback(async (sourceName: string, text: string) => {
     // Check obsRef instead of isConnected state to avoid timing issues
     if (!obsRef.current) return;
-    try {
-      await obsRef.current.call('SetInputSettings', {
-        inputName: sourceName,
-        inputSettings: { text: String(text) }
-      });
-    } catch (err) {
-      console.error(`OBS error setting text on source '${sourceName}':`, err);
-    }
-  };
+    await textUpdateQueue.enqueue(sourceName, String(text));
+  }, [textUpdateQueue]);
 
-  const setImage = async (sourceName: string, filename: string, logoFolderPath: string) => {
+  const setImage = useCallback(async (sourceName: string, filename: string, logoFolderPath: string) => {
     // Check obsRef instead of isConnected state to avoid timing issues
     if (!obsRef.current) return;
     try {
@@ -302,9 +274,9 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     } catch (err) {
       console.error(`OBS error setting image on source '${sourceName}':`, err);
     }
-  };
+  }, []);
 
-  const setSourceColor = async (sourceName: string, hexColor: string) => {
+  const setSourceColor = useCallback(async (sourceName: string, hexColor: string) => {
     // Check obsRef instead of isConnected state to avoid timing issues
     if (!obsRef.current || !hexColor) return;
     try {
@@ -322,9 +294,9 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     } catch (err) {
       console.error(`OBS error setting color on source '${sourceName}':`, err);
     }
-  };
+  }, []);
 
-  const setSceneItemEnabled = async (sceneName: string, sceneItemId: number, enabled: boolean) => {
+  const setSceneItemEnabled = useCallback(async (sceneName: string, sceneItemId: number, enabled: boolean) => {
     // Check obsRef instead of isConnected state to avoid timing issues
     if (!obsRef.current) {
       console.warn(`[OBS] setSceneItemEnabled called but obsRef is null (scene: ${sceneName}, itemId: ${sceneItemId}, enabled: ${enabled})`);
@@ -338,12 +310,12 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
         sceneItemEnabled: enabled
       });
       console.log(`[OBS] ✓ Scene item ${sceneItemId} is now ${enabled ? 'ENABLED' : 'DISABLED'}`);
-    } catch (err: any) {
-      console.error(`[OBS] Error setting scene item enabled:`, err?.message || err);
+    } catch (error: unknown) {
+      console.error('[OBS] Error setting scene item enabled:', getErrorMessage(error));
     }
-  };
+  }, []);
 
-  const getSceneItemId = async (sceneName: string, sourceName: string) => {
+  const getSceneItemId = useCallback(async (sceneName: string, sourceName: string) => {
     // Check obsRef instead of isConnected state to avoid timing issues
     if (!obsRef.current) {
       console.warn(`[OBS] getSceneItemId called but obsRef is null (scene: ${sceneName}, source: ${sourceName})`);
@@ -357,24 +329,27 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
       });
       console.log(`[OBS] Found scene item id: ${response.sceneItemId}`);
       return response.sceneItemId;
-    } catch (err: any) {
-      console.error(`[OBS] Error getting scene item id for "${sourceName}" in scene "${sceneName}":`, err?.message || err);
+    } catch (error: unknown) {
+      console.error(`[OBS] Error getting scene item id for "${sourceName}" in scene "${sceneName}":`, getErrorMessage(error));
       return null;
     }
-  };
+  }, []);
 
   // Raw OBS call method for advanced usage
-  const call = async (requestType: string, requestData?: Record<string, any>): Promise<any> => {
+  const call = useCallback(async <Type extends keyof OBSRequestTypes>(
+    requestType: Type,
+    requestData?: OBSRequestTypes[Type],
+  ): Promise<OBSResponseTypes[Type]> => {
     if (!obsRef.current) {
       throw new Error('OBS is not connected');
     }
-    return await obsRef.current.call(requestType as any, requestData);
-  };
+    return obsRef.current.call(requestType, requestData);
+  }, []);
 
   // Get obsRef for advanced usage (e.g., OBS Setup Service)
-  const getObsRef = () => obsRef.current;
+  const getObsRef = useCallback(() => obsRef.current, []);
 
-  return {
+  return useMemo(() => ({
     isConnected,
     connect,
     disconnect,
@@ -384,6 +359,17 @@ export const useOBSWebSocket = (onHotkeyAction?: (action: string) => void, onEve
     setSceneItemEnabled,
     getSceneItemId,
     call,
-    getObsRef
-  };
+    getObsRef,
+  }), [
+    call,
+    connect,
+    disconnect,
+    getObsRef,
+    getSceneItemId,
+    isConnected,
+    setImage,
+    setSceneItemEnabled,
+    setSourceColor,
+    setText,
+  ]);
 };

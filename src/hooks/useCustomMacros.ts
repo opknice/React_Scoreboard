@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CustomMacro, MacroRuntimeStatus } from '../types/macro';
 import { executeMacroActions as runMacroActions } from '../macros/macroExecutor';
 import { loadCustomMacros, saveCustomMacros } from '../macros/macroStorage';
 import { subscribeToMacroEvents } from '../macros/macroSubscriptions';
+import type { OBSWebSocketApi } from './useOBSWebSocket';
 
 function createDefaultMacro(): Omit<CustomMacro, 'id'> {
   return {
@@ -24,7 +25,9 @@ function createDefaultMacro(): Omit<CustomMacro, 'id'> {
 
 const INITIAL_PRESET_MACROS: CustomMacro[] = [];
 
-export function useCustomMacros(obs: any) {
+export function useCustomMacros(
+  obs: Pick<OBSWebSocketApi, 'getObsRef' | 'isConnected'>,
+) {
   const [macros, setMacros] = useState<CustomMacro[]>(() => loadCustomMacros(INITIAL_PRESET_MACROS));
   const [runtimeStatus, setRuntimeStatus] = useState<Record<string, MacroRuntimeStatus>>({});
   const processingRef = useRef<Record<string, boolean>>({});
@@ -179,7 +182,7 @@ export function useCustomMacros(obs: any) {
     )));
   }, []);
 
-  return {
+  return useMemo(() => ({
     customMacros: macros,
     runtimeStatus,
     addMacro,
@@ -188,5 +191,14 @@ export function useCustomMacros(obs: any) {
     toggleMacro,
     clearMacroLogs,
     runMacro,
-  };
+  }), [
+    addMacro,
+    clearMacroLogs,
+    deleteMacro,
+    macros,
+    runMacro,
+    runtimeStatus,
+    toggleMacro,
+    updateMacro,
+  ]);
 }

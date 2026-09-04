@@ -1,19 +1,9 @@
 import React from 'react';
 import { broadcastScoreboardButton } from '../hooks/useScoreboardChannels';
-
-interface ScoreboardTimerControls {
-  countdownStartTime: number;
-  customText: string;
-  half: string;
-  formattedTime: string;
-  start1: () => void;
-  halfpause: () => void;
-  start2: () => void;
-  fulltime: () => void;
-}
+import { useTimerSnapshot, type TimerStore } from '../hooks/useTimer';
 
 interface ScoreboardTimerPanelProps {
-  timer: ScoreboardTimerControls;
+  timer: TimerStore;
   onOpenPresetTime: () => void;
   onHideTime: () => void;
   onPenaltyShootout: () => void;
@@ -29,6 +19,8 @@ function ScoreboardTimerPanel({
   onOpenVarReplay,
   onOpenInstantReplay,
 }: ScoreboardTimerPanelProps) {
+  const timerState = useTimerSnapshot(timer);
+
   return (
     <div className="card" style={{ padding: '12px 16px' }}>
       <div className="row timer-area-container" style={{ marginBottom: 0 }}>
@@ -48,14 +40,14 @@ function ScoreboardTimerPanel({
               textAlign: 'center',
             }}
           >
-            ปัจจุบัน: {Math.floor(timer.countdownStartTime / 60)} นาที
+            ปัจจุบัน: {Math.floor(timerState.countdownStartTime / 60)} นาที
           </div>
         </div>
 
         <div className="timer-display-area">
           <div className="timer-display">
-            <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>{timer.customText || timer.half || '1st'}</span>{' '}
-            {timer.formattedTime}
+            <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>{timerState.customText || timerState.half || '1st'}</span>{' '}
+            {timerState.formattedTime}
           </div>
           <div className="row center" style={{ marginTop: '4px', gap: '6px', marginBottom: 0 }}>
             <button className="btn-success btn-sm" onClick={() => { timer.start1(); broadcastScoreboardButton('start_timer'); }}>

@@ -27,6 +27,7 @@ export function useAutoObsSourceSync({
   scoreSettings,
   debounceMs = 300,
 }: UseAutoObsSourceSyncOptions) {
+  const { getObsRef, isConnected } = obs;
   const isFirstRenderTeamName = useRef(true);
   const isFirstRenderLogo = useRef(true);
   const isFirstRenderScore = useRef(true);
@@ -38,8 +39,8 @@ export function useAutoObsSourceSync({
       return;
     }
 
-    if (!obs.isConnected) return;
-    const obsRef = obs.getObsRef();
+    if (!isConnected) return;
+    const obsRef = getObsRef();
     if (!obsRef) return;
 
     const timer = setTimeout(() => {
@@ -50,7 +51,7 @@ export function useAutoObsSourceSync({
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [obs, teamNameSettings, debounceMs]);
+  }, [debounceMs, getObsRef, isConnected, teamNameSettings]);
 
   // Auto-sync Logo Browser Sources on settings change
   useEffect(() => {
@@ -59,8 +60,8 @@ export function useAutoObsSourceSync({
       return;
     }
 
-    if (!obs.isConnected) return;
-    const obsRef = obs.getObsRef();
+    if (!isConnected) return;
+    const obsRef = getObsRef();
     if (!obsRef) return;
 
     const timer = setTimeout(() => {
@@ -71,7 +72,7 @@ export function useAutoObsSourceSync({
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [obs, logoSettings, debounceMs]);
+  }, [debounceMs, getObsRef, isConnected, logoSettings]);
 
   // Auto-sync Score Browser Sources on settings change
   useEffect(() => {
@@ -80,8 +81,8 @@ export function useAutoObsSourceSync({
       return;
     }
 
-    if (!obs.isConnected) return;
-    const obsRef = obs.getObsRef();
+    if (!isConnected) return;
+    const obsRef = getObsRef();
     if (!obsRef) return;
 
     const timer = setTimeout(() => {
@@ -92,5 +93,5 @@ export function useAutoObsSourceSync({
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [obs, scoreSettings, debounceMs]);
+  }, [debounceMs, getObsRef, isConnected, scoreSettings]);
 }

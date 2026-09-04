@@ -50,13 +50,18 @@ export function useDisableZoom(lockScale = true) {
 
     // 5. Anti-Zoom DPR Compensation (Cancels OBS CEF Browser Zoom)
     const initialDpr = window.devicePixelRatio || 1;
+    const originalZoom = document.body.style.getPropertyValue('zoom');
+    let lastAppliedZoom = originalZoom;
 
     const handleDprCompensation = () => {
-      if (!lockScale) return;
+      if (!lockScale || document.hidden) return;
       const currentDpr = window.devicePixelRatio || 1;
       if (currentDpr > 0) {
-        const targetZoom = initialDpr / currentDpr;
-        (document.body.style as any).zoom = `${targetZoom}`;
+        const targetZoom = String(initialDpr / currentDpr);
+        // Avoid forcing style recalculation when DPR has not changed.
+        if (targetZoom === lastAppliedZoom) return;
+        document.body.style.setProperty('zoom', targetZoom);
+        lastAppliedZoom = targetZoom;
       }
     };
 
@@ -66,26 +71,33 @@ export function useDisableZoom(lockScale = true) {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('touchstart', handleTouchStart, { passive: false });
     window.addEventListener('resize', handleDprCompensation);
+    document.addEventListener('visibilitychange', handleDprCompensation);
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', handleDprCompensation);
     }
 
-    const interval = setInterval(handleDprCompensation, 300);
+    // Some OBS CEF zoom changes do not emit resize. Keep a low-frequency
+    // fallback, but the cached value prevents repeated DOM writes.
+    const interval = window.setInterval(handleDprCompensation, 1_000);
 
     return () => {
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('resize', handleDprCompensation);
+      document.removeEventListener('visibilitychange', handleDprCompensation);
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', handleDprCompensation);
       }
-      clearInterval(interval);
-      (document.body.style as any).zoom = '';
+      window.clearInterval(interval);
+      if (originalZoom) {
+        document.body.style.setProperty('zoom', originalZoom);
+      } else {
+        document.body.style.removeProperty('zoom');
+      }
       if (metaViewport && originalContent !== null) {
         metaViewport.setAttribute('content', originalContent);
       }
     };
   }, [lockScale]);
 }
-

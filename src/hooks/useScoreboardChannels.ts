@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { MACRO_CHANNELS, postMacroChannelMessage } from '../macros/macroChannels';
 import {
   SCOREBOARD_EVENT_CHANNEL,
@@ -65,18 +65,8 @@ export function broadcastTeamNameAnimationCompleted(eventId: string, team: 'A' |
 }
 
 export function useScoreboardStateResponder(payload: ScoreboardStatePayload): void {
-  const {
-    scoreA,
-    scoreB,
-    nameA,
-    nameB,
-    logoA,
-    logoB,
-    colorA1,
-    colorA2,
-    colorB1,
-    colorB2,
-  } = payload;
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
 
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
@@ -84,18 +74,7 @@ export function useScoreboardStateResponder(payload: ScoreboardStatePayload): vo
     const handleMessage = (event: MessageEvent<unknown>) => {
       if (!event.data || typeof event.data !== 'object') return;
       if ((event.data as { type?: unknown }).type !== 'ScoreboardStateRequest') return;
-      broadcastScoreboardState({
-        scoreA,
-        scoreB,
-        nameA,
-        nameB,
-        logoA,
-        logoB,
-        colorA1,
-        colorA2,
-        colorB1,
-        colorB2,
-      });
+      broadcastScoreboardState(payloadRef.current);
     };
 
     try {
@@ -109,18 +88,7 @@ export function useScoreboardStateResponder(payload: ScoreboardStatePayload): vo
       channel?.removeEventListener('message', handleMessage);
       channel?.close();
     };
-  }, [
-    colorA1,
-    colorA2,
-    colorB1,
-    colorB2,
-    logoA,
-    logoB,
-    nameA,
-    nameB,
-    scoreA,
-    scoreB,
-  ]);
+  }, []);
 }
 
 export function useScoreboardKeyboardBroadcast(): void {

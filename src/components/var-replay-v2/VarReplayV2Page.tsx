@@ -514,7 +514,7 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
   const [error, setError] = useState('');
   const { bindings, bindingByAction, updateBinding, clearBinding, resetBindings } = useReplayKeybindings();
   const actualPreviewUrl = usePreviewObjectUrl(loadedFile);
-  const currentFileRef = useRef<{ data: ArrayBuffer; mime: string; name: string } | null>(null);
+  const currentFileRef = useRef<{ data: Blob; mime: string; name: string } | null>(null);
   const currentStateRef = useRef<VarReplayV2State>(createDefaultReplayState());
   const transformFrameRef = useRef<number | null>(null);
   const pendingTransformRef = useRef<{ transform: VarReplayV2Transform; smooth: boolean } | null>(null);
@@ -601,7 +601,6 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
       setTransform({ zoom: 1, x: 0, y: 0 });
       setLoopEnabled(false);
       setIsPlaying(true);
-      const data = await file.arrayBuffer();
       const initialState: VarReplayV2State = {
         duration: 0,
         currentTime: 0,
@@ -612,7 +611,9 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
         loopEnabled: false,
         transform: { zoom: 1, x: 0, y: 0 },
       };
-      currentFileRef.current = { data, mime: getVideoMimeType(file), name: file.name };
+      // File is structured-cloneable. Sending it directly avoids allocating a
+      // second full-size ArrayBuffer before every replay starts.
+      currentFileRef.current = { data: file, mime: getVideoMimeType(file), name: file.name };
       currentStateRef.current = initialState;
       sendCurrentFile();
     } catch {
@@ -757,7 +758,9 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
       if (loopEnabled && markerA !== null && markerB !== null && video.currentTime > markerB) {
         video.currentTime = markerA;
       }
-      setCurrentTime(video.currentTime);
+      // When the OBS screen is online its throttled status is authoritative.
+      // This avoids two independent timeline updates rerendering the controller.
+      if (!screenReady) setCurrentTime(video.currentTime);
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
@@ -771,7 +774,7 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
     };
-  }, [actualPreviewUrl, loopEnabled, markerA, markerB]);
+  }, [actualPreviewUrl, loopEnabled, markerA, markerB, screenReady]);
 
   const adjustZoom = useCallback((delta: number) => {
     setTransformAndSend({
@@ -946,19 +949,21 @@ function VarReplayV2Screen() {
   const [smoothTransform, setSmoothTransform] = useState(false);
   const [hasVideo, setHasVideo] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [, setCurrentTime] = useState(0);
-  const [, setSpeed] = useState(1);
   const markerARef = useRef<number | null>(null);
   const markerBRef = useRef<number | null>(null);
   const loopEnabledRef = useRef(false);
   const transformTimeoutRef = useRef<number | null>(null);
+  const lastStatusAtRef = useRef(0);
 
   useEffect(() => { markerARef.current = markerA; }, [markerA]);
   useEffect(() => { markerBRef.current = markerB; }, [markerB]);
   useEffect(() => { loopEnabledRef.current = loopEnabled; }, [loopEnabled]);
 
-  const sendStatus = useCallback(() => {
+  const sendStatus = useCallback((force = false) => {
     const video = videoRef.current;
+    const now = performance.now();
+    if (!force && now - lastStatusAtRef.current < 200) return;
+    lastStatusAtRef.current = now;
     send({
       type: 'status',
       ready: true,
@@ -987,7 +992,10 @@ function VarReplayV2Screen() {
       const video = videoRef.current;
       if (message.type === 'file') {
         if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-        const nextUrl = URL.createObjectURL(new Blob([message.data], { type: message.mime }));
+        const videoBlob = message.data instanceof Blob
+          ? message.data
+          : new Blob([message.data], { type: message.mime });
+        const nextUrl = URL.createObjectURL(videoBlob);
         objectUrlRef.current = nextUrl;
         pendingStateRef.current = message.state || null;
         setMarkerA(null);
@@ -997,8 +1005,6 @@ function VarReplayV2Screen() {
         setLoopEnabled(false);
         loopEnabledRef.current = false;
         setTransform({ zoom: 1, x: 0, y: 0 });
-        setCurrentTime(0);
-        setSpeed(1);
         if (message.state) {
           setMarkerA(message.state.markerA);
           setMarkerB(message.state.markerB);
@@ -1007,7 +1013,6 @@ function VarReplayV2Screen() {
           setLoopEnabled(message.state.loopEnabled);
           loopEnabledRef.current = message.state.loopEnabled;
           setTransform(clampTransform(message.state.transform));
-          setSpeed(clamp(message.state.speed, 0.01, 2));
         }
         setVideoUrl(nextUrl);
         setHasVideo(true);
@@ -1038,9 +1043,9 @@ function VarReplayV2Screen() {
           }, 180);
         }
       }
-      window.setTimeout(sendStatus, 0);
+      window.setTimeout(() => sendStatus(true), 0);
     };
-    sendStatus();
+    sendStatus(true);
     // Request after the receiver is attached so an immediate controller response
     // cannot arrive before this Screen has installed its message handler.
     send({ type: 'request-sync' });
@@ -1059,23 +1064,20 @@ function VarReplayV2Screen() {
       const state = pendingStateRef.current;
       if (!state) {
         void video.play().catch(() => undefined);
-        sendStatus();
+        sendStatus(true);
         return;
       }
 
       const nextTime = clamp(state.currentTime, 0, Number.isFinite(video.duration) ? video.duration : state.currentTime);
       video.currentTime = nextTime;
       video.playbackRate = clamp(state.speed, 0.01, 2);
-      setCurrentTime(nextTime);
-      setSpeed(video.playbackRate);
-
       if (state.isPlaying) {
         void video.play().catch(() => undefined);
       } else {
         video.pause();
       }
       pendingStateRef.current = null;
-      sendStatus();
+      sendStatus(true);
     };
 
     video.addEventListener('loadedmetadata', applyStateWhenReady, { once: true });
@@ -1092,7 +1094,7 @@ function VarReplayV2Screen() {
       }
       sendStatus();
     };
-    const onPlayback = () => sendStatus();
+    const onPlayback = () => sendStatus(true);
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('loadedmetadata', onPlayback);
     video.addEventListener('play', onPlayback);

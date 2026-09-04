@@ -73,7 +73,7 @@ export interface UseSupabaseLeagueResult {
   error: string | null;
   selectLeague: (leagueId: string) => void;
   fetchLeagues: (silent?: boolean) => Promise<void>;
-  refreshLeagueDetails: () => Promise<void>;
+  refreshLeagueDetails: () => Promise<LeagueDetailsResult | null>;
   createLeague: (payload: Omit<League, 'id' | 'created_at' | 'updated_at'>) => Promise<League>;
   updateLeague: (id: string, updates: Partial<League>) => Promise<League>;
   deleteLeague: (id: string) => Promise<void>;
@@ -85,6 +85,11 @@ export interface UseSupabaseLeagueResult {
   updateMatch: (id: string, updates: Partial<Match>) => Promise<Match>;
   deleteMatch: (id: string) => Promise<void>;
   clearMatches: () => Promise<void>;
+}
+
+export interface LeagueDetailsResult {
+  teams: Team[];
+  matches: Match[];
 }
 
 let sharedRealtimeChannel: RealtimeChannel | null = null;
@@ -218,7 +223,10 @@ export function useSupabaseLeague(
   }, [isConfigured]);
 
   // Load teams and matches for the active league
-  const fetchLeagueDetails = useCallback(async (leagueId: string, silent = false) => {
+  const fetchLeagueDetails = useCallback(async (
+    leagueId: string,
+    silent = false,
+  ): Promise<LeagueDetailsResult | null> => {
     if (import.meta.env.DEV) {
       console.log('[fetchLeagueDetails] Called with:', { leagueId, silent, activeLeagueIdRef: activeLeagueIdRef.current });
     }
@@ -233,7 +241,7 @@ export function useSupabaseLeague(
       setDetailsLoading(false);
       setDetailsLoadedLeagueId(null);
       if (silent) setRefreshing(false);
-      return;
+      return null;
     }
 
     // A delayed refresh for an old league must never touch the active league's
@@ -245,7 +253,7 @@ export function useSupabaseLeague(
           current: activeLeagueIdRef.current 
         });
       }
-      return;
+      return null;
     }
 
     const requestId = ++detailsRequestIdRef.current;
@@ -277,14 +285,26 @@ export function useSupabaseLeague(
       const scopedMatches = filterRowsByLeague(matchesData, leagueId);
       leagueMemoryCache.write(teamsCacheKey, scopedTeams);
       leagueMemoryCache.write(matchesCacheKey, scopedMatches);
-      if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return;
-      setTeams(scopedTeams);
-      setMatches(scopedMatches);
-      setDetailsLoadedLeagueId(leagueId);
+      if (activeLeagueIdRef.current !== leagueId) return null;
+
+      const result = { teams: scopedTeams, matches: scopedMatches };
+
+      // A newer request for the same league owns the React state commit, but
+      // this response is still valid for its direct caller. This prevents a
+      // manual refresh from reporting failure when a realtime refresh starts
+      // while both requests are sharing the same in-flight server response.
+      if (requestId === detailsRequestIdRef.current) {
+        setTeams(scopedTeams);
+        setMatches(scopedMatches);
+        setDetailsLoadedLeagueId(leagueId);
+      }
+
+      return result;
     } catch (err: unknown) {
-      if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return;
+      if (requestId !== detailsRequestIdRef.current || activeLeagueIdRef.current !== leagueId) return null;
       console.error(`Failed to load details for league ${leagueId}:`, err);
       setError(getErrorMessage(err, 'Failed to load league details'));
+      return null;
     } finally {
       if (requestId === detailsRequestIdRef.current) {
         setDetailsLoading(false);
@@ -630,13 +650,14 @@ export function useSupabaseLeague(
     return LeagueService.calculateStandings(matches, teams);
   }, [matches, teams]);
 
-  const refreshLeagueDetails = useCallback(async () => {
+  const refreshLeagueDetails = useCallback(async (): Promise<LeagueDetailsResult | null> => {
     if (activeLeagueId) {
-      await fetchLeagueDetails(activeLeagueId);
+      return fetchLeagueDetails(activeLeagueId);
     }
+    return null;
   }, [activeLeagueId, fetchLeagueDetails]);
 
-  return {
+  return useMemo<UseSupabaseLeagueResult>(() => ({
     isConfigured,
     leagues,
     activeLeagueId,
@@ -663,5 +684,32 @@ export function useSupabaseLeague(
     updateMatch,
     deleteMatch,
     clearMatches,
-  };
+  }), [
+    activeLeague,
+    activeLeagueId,
+    clearMatches,
+    createLeague,
+    createMatch,
+    createTeam,
+    deleteLeague,
+    deleteMatch,
+    deleteTeam,
+    detailsLoadedLeagueId,
+    detailsLoading,
+    error,
+    fetchLeagues,
+    isConfigured,
+    leagues,
+    loading,
+    matches,
+    refreshLeagueDetails,
+    refreshing,
+    selectLeague,
+    standings,
+    teams,
+    updateLeague,
+    updateMatch,
+    updateTeam,
+    uploadTeamLogo,
+  ]);
 }

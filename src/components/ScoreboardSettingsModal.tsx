@@ -1,13 +1,21 @@
+import { useTimerSnapshot, type TimerStore } from '../hooks/useTimer';
+
+interface ScoreboardSettingsTranslations {
+  settings: string;
+  detailsDesc: string;
+  save: string;
+  close: string;
+}
+
 interface ScoreboardSettingsModalProps {
   isOpen: boolean;
-  trans: any;
+  trans: ScoreboardSettingsTranslations;
   detailsTemplate: string;
   nameA: string;
   nameB: string;
   scoreA: number;
   scoreB: number;
-  formattedTime: string;
-  half: string;
+  timer: TimerStore;
   label1: string;
   label2: string;
   label3: string;
@@ -21,7 +29,8 @@ const TAGS = [
   ['<thai_date>', 'วันที่'], ['<time_counter>', 'เวลา'], ['<half_text>', 'ครึ่งเวลา'], ['<label1>', 'Label 1'], ['<label2>', 'Label 2'], ['<label3>', 'Label 3'],
 ];
 
-export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate, nameA, nameB, scoreA, scoreB, formattedTime, half, label1, label2, label3, onTemplateChange, onSave, onClose }: ScoreboardSettingsModalProps) {
+export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate, nameA, nameB, scoreA, scoreB, timer, label1, label2, label3, onTemplateChange, onSave, onClose }: ScoreboardSettingsModalProps) {
+  const { formattedTime, half } = useTimerSnapshot(timer);
   if (!isOpen) return null;
   return (
     <div className="modal-overlay" onClick={onClose}>

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, memo, Suspense } from 'react';
 
 const VarReplayV2Page = lazy(() => import('./var-replay-v2/VarReplayV2Page'));
 const InstantReplayControl = lazy(() => import('./InstantReplayControl'));
@@ -10,7 +10,7 @@ interface ReplayControlModalsProps {
   onCloseInstantReplay: () => void;
 }
 
-export default function ReplayControlModals({
+function ReplayControlModals({
   showVarReplayV2,
   showInstantReplay,
   onCloseVarReplayV2,
@@ -23,3 +23,5 @@ export default function ReplayControlModals({
     </Suspense>
   );
 }
+
+export default memo(ReplayControlModals);
