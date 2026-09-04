@@ -60,8 +60,8 @@ export default function AllScoreCombinedStandalone() {
             status: m.status,
             logoA: teamA?.logo_url || '',
             logoB: teamB?.logo_url || '',
-            cropA: parseCropMetadata(teamA?.crop_metadata),
-            cropB: parseCropMetadata(teamB?.crop_metadata),
+            cropA: parseCropMetadata(teamA?.overlay_crop_metadata),
+            cropB: parseCropMetadata(teamB?.overlay_crop_metadata),
             round: m.label1 || '',
             week: m.label2 || '',
             date: m.match_date ? (m.match_date.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '') : '',
@@ -71,7 +71,7 @@ export default function AllScoreCombinedStandalone() {
           id: team.id,
           name: team.name,
           logo: team.logo_url || '',
-          crop: parseCropMetadata(team.crop_metadata),
+          crop: parseCropMetadata(team.overlay_crop_metadata),
         })));
         setMatches(formatted);
         setLoading(false);

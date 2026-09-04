@@ -392,7 +392,7 @@ export default function QuickSetupModal({
                   {(logoPreviewSide === 'both' || logoPreviewSide === 'A') && (() => {
                     const teamName = matchState.nameA;
                     const logoSrc = getLogoSrc(matchState.logoA, teamName);
-                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.crop_metadata);
+                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.logo_browser_crop_metadata);
                     const basePreviewSize = 55;
                     const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeA / 190))));
 
@@ -430,7 +430,7 @@ export default function QuickSetupModal({
                   {(logoPreviewSide === 'both' || logoPreviewSide === 'B') && (() => {
                     const teamName = matchState.nameB;
                     const logoSrc = getLogoSrc(matchState.logoB, teamName);
-                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.crop_metadata);
+                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.logo_browser_crop_metadata);
                     const basePreviewSize = 55;
                     const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeB / 190))));
 
@@ -506,7 +506,7 @@ export default function QuickSetupModal({
                             style={{ padding: '2px 6px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
                             onClick={() => supabaseTeam && setCropModalTeam(supabaseTeam)}
                             disabled={!supabaseTeam?.logo_url}
-                            title={supabaseTeam?.logo_url ? 'ตั้งค่า Crop โลโก้ใน Supabase' : 'เลือกทีมจากลีก Supabase ที่มีโลโก้ก่อน'}
+                            title={supabaseTeam?.logo_url ? 'ตั้งค่า Crop โลโก้สำหรับ Logo Browser Source ใน Supabase' : 'เลือกทีมจากลีก Supabase ที่มีโลโก้ก่อน'}
                           >
                             ✂️ Crop
                           </button>
@@ -589,11 +589,13 @@ export default function QuickSetupModal({
                 isOpen
                 onClose={() => setCropModalTeam(null)}
                 team={cropModalTeam}
+                cropMetadata={cropModalTeam.logo_browser_crop_metadata}
+                cropContext="logo-browser"
                 onSave={async (crop) => {
-                  await onUpdateTeam(cropModalTeam.id, { crop_metadata: cropMetadataToJson(crop) });
+                  await onUpdateTeam(cropModalTeam.id, { logo_browser_crop_metadata: cropMetadataToJson(crop) });
                 }}
                 onReset={async () => {
-                  await onUpdateTeam(cropModalTeam.id, { crop_metadata: null });
+                  await onUpdateTeam(cropModalTeam.id, { logo_browser_crop_metadata: null });
                 }}
               />
             )}

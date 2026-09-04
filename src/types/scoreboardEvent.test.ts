@@ -56,7 +56,7 @@ describe('scoreboardEvent', () => {
     expect(isScoreboardStateEvent(validScoreboardState)).toBe(true);
     expect(isScoreboardStateEvent({
       ...validScoreboardState,
-      cropA: {
+      logoBrowserCropA: {
         x: 0, y: 0, width: 500, height: 500, zoom: 1, rotation: 0, aspectRatio: 1, createdAt: '2026-09-04T00:00:00.000Z',
       },
     })).toBe(true);

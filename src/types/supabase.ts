@@ -137,7 +137,8 @@ export type Database = {
           color_primary: string
           color_secondary: string
           created_at: string
-          crop_metadata: Json | null
+          logo_browser_crop_metadata: Json | null
+          overlay_crop_metadata: Json | null
           id: string
           league_id: string
           logo_url: string | null
@@ -149,7 +150,8 @@ export type Database = {
           color_primary?: string
           color_secondary?: string
           created_at?: string
-          crop_metadata?: Json | null
+          logo_browser_crop_metadata?: Json | null
+          overlay_crop_metadata?: Json | null
           id?: string
           league_id: string
           logo_url?: string | null
@@ -161,7 +163,8 @@ export type Database = {
           color_primary?: string
           color_secondary?: string
           created_at?: string
-          crop_metadata?: Json | null
+          logo_browser_crop_metadata?: Json | null
+          overlay_crop_metadata?: Json | null
           id?: string
           league_id?: string
           logo_url?: string | null

@@ -39,7 +39,10 @@ export interface Team {
   logo_url?: string | null;
   color_primary: string;
   color_secondary: string;
-  crop_metadata?: Json | null;
+  /** Crop settings used by the Overlay/OBS scoreboard views. */
+  overlay_crop_metadata?: Json | null;
+  /** Crop settings used by Logo Browser Source and goal animations. */
+  logo_browser_crop_metadata?: Json | null;
   created_at?: string;
   updated_at?: string;
 }

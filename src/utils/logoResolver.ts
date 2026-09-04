@@ -50,7 +50,8 @@ export interface TeamLogoRecord {
   id: string;
   name: string;
   logo_url?: string | null;
-  crop_metadata?: Json | null;
+  overlay_crop_metadata?: Json | null;
+  logo_browser_crop_metadata?: Json | null;
   crop?: CropMetadata | null;
 }
 

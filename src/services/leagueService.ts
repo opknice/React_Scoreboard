@@ -3,7 +3,7 @@ import { retryWithBackoff } from '../utils/retry';
 import { isFinishedMatch } from '../utils/finishedMatch';
 
 const LEAGUE_COLUMNS = 'id, name, slug, season, description, is_active, created_by, settings, created_at, updated_at';
-const TEAM_COLUMNS = 'id, league_id, name, short_name, logo_url, color_primary, color_secondary, crop_metadata, created_at, updated_at';
+const TEAM_COLUMNS = 'id, league_id, name, short_name, logo_url, color_primary, color_secondary, overlay_crop_metadata, logo_browser_crop_metadata, created_at, updated_at';
 const MATCH_COLUMNS = 'id, league_id, match_number, team_a_id, team_b_id, team_a_name, team_b_name, score_a, score_b, status, label1, label2, label3, match_date, created_at, updated_at';
 
 interface SupabaseRequestResult<T> {

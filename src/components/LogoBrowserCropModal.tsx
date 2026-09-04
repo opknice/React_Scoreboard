@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { Team } from '../config/supabaseClient';
+import type { Json } from '../types/supabase';
 import { parseCropMetadata, type CropMetadata } from '../types/teamLogo';
 import { getLogoSrc } from '../utils/logoResolver';
 import LogoWithCrop from './LogoWithCrop';
@@ -9,6 +10,8 @@ interface LogoBrowserCropModalProps {
   isOpen: boolean;
   onClose: () => void;
   team: Team;
+  cropMetadata: Json | null | undefined;
+  cropContext: 'overlay' | 'logo-browser';
   onSave: (crop: CropMetadata) => Promise<void>;
   onReset: () => Promise<void>;
   onToast?: (message: string, type?: string) => void;
@@ -18,6 +21,8 @@ export default function LogoBrowserCropModal({
   isOpen,
   onClose,
   team,
+  cropMetadata,
+  cropContext,
   onSave,
   onReset,
   onToast,
@@ -44,7 +49,7 @@ export default function LogoBrowserCropModal({
     if (!isOpen) return;
 
     setActiveUrl(logoUrl || getLogoSrc('', teamName));
-    const existingCrop = parseCropMetadata(team.crop_metadata);
+    const existingCrop = parseCropMetadata(cropMetadata);
     setIsCropEditing(Boolean(existingCrop));
 
     if (existingCrop) {
@@ -65,7 +70,7 @@ export default function LogoBrowserCropModal({
       setBaseHeight(500);
       setCustomSize(0);
     }
-  }, [isOpen, logoUrl, team.crop_metadata, teamName]);
+  }, [cropMetadata, isOpen, logoUrl, teamName]);
 
   const currentCrop: CropMetadata = {
     x: offsetX,
@@ -81,7 +86,7 @@ export default function LogoBrowserCropModal({
 
   // A team without persisted crop metadata starts in contain mode. The crop canvas
   // becomes active only after the user begins editing or when saved crop exists.
-  const persistedCrop = parseCropMetadata(team.crop_metadata);
+  const persistedCrop = parseCropMetadata(cropMetadata);
   const previewCrop = persistedCrop || isCropEditing ? currentCrop : null;
 
   const beginCropEditing = () => {
@@ -212,10 +217,10 @@ export default function LogoBrowserCropModal({
             <span style={{ fontSize: '1.4rem' }}>✂️</span>
             <div>
               <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.15rem', fontWeight: 700, lineHeight: 1.3 }}>
-                ครอบตัดโลโก้: {teamName}
+                ครอบตัดโลโก้สำหรับ {cropContext === 'overlay' ? 'Overlay/OBS' : 'Logo Browser Source'}: {teamName}
               </h3>
               <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginTop: '2px' }}>
-                ปรับตำแหน่ง ซูม และขนาดแสดงผลใน OBS Browser Source
+                ปรับตำแหน่ง ซูม และขนาดการแสดงผลของส่วนนี้โดยเฉพาะ
               </span>
             </div>
           </div>

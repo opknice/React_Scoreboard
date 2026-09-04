@@ -33,9 +33,9 @@ export interface ScoreboardStateEvent {
   colorA2: string;
   colorB1: string;
   colorB2: string;
-  /** Optional for backwards compatibility with saved browser-source state. */
-  cropA?: CropMetadata | null;
-  cropB?: CropMetadata | null;
+  /** Crop settings used by Logo Browser Source and goal animations. */
+  logoBrowserCropA?: CropMetadata | null;
+  logoBrowserCropB?: CropMetadata | null;
   timestamp: number;
 }
 
@@ -94,8 +94,8 @@ export function isScoreboardStateEvent(value: unknown): value is ScoreboardState
     && typeof event.colorA2 === 'string'
     && typeof event.colorB1 === 'string'
     && typeof event.colorB2 === 'string'
-    && (event.cropA === undefined || event.cropA === null || isCropMetadata(event.cropA))
-    && (event.cropB === undefined || event.cropB === null || isCropMetadata(event.cropB))
+    && (event.logoBrowserCropA === undefined || event.logoBrowserCropA === null || isCropMetadata(event.logoBrowserCropA))
+    && (event.logoBrowserCropB === undefined || event.logoBrowserCropB === null || isCropMetadata(event.logoBrowserCropB))
     && typeof event.timestamp === 'number';
 }
 

@@ -93,8 +93,8 @@ export default function OverlayContainer() {
             scoreB: m.score_b || 0,
             logoA: teamA?.logo_url || '',
             logoB: teamB?.logo_url || '',
-            cropA: parseCropMetadata(teamA?.crop_metadata),
-            cropB: parseCropMetadata(teamB?.crop_metadata),
+            cropA: parseCropMetadata(teamA?.overlay_crop_metadata),
+            cropB: parseCropMetadata(teamB?.overlay_crop_metadata),
             roundLabel: m.label1 || m.label2 || '',
             round: m.label1 || '',
             week: m.label2 || '',
@@ -106,7 +106,7 @@ export default function OverlayContainer() {
           id: team.id,
           name: team.name,
           logo: team.logo_url || '',
-          crop: parseCropMetadata(team.crop_metadata),
+          crop: parseCropMetadata(team.overlay_crop_metadata),
         })));
         setMatches(formatted);
         setErrorMsg('');

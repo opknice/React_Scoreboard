@@ -507,8 +507,8 @@ export default function ScoreboardController() {
       colorA2,
       colorB1,
       colorB2,
-      cropA: parseCropMetadata(teamA?.crop_metadata),
-      cropB: parseCropMetadata(teamB?.crop_metadata),
+      logoBrowserCropA: parseCropMetadata(teamA?.logo_browser_crop_metadata),
+      logoBrowserCropB: parseCropMetadata(teamB?.logo_browser_crop_metadata),
     };
   }, [
     colorA1,

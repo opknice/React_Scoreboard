@@ -14,7 +14,6 @@ export interface MatchesTabProps {
   onCreateMatch: (data: Omit<Match, 'id' | 'created_at' | 'updated_at'>) => Promise<Match | null>;
   onUpdateMatch: (matchId: string, updates: Partial<Match>) => Promise<Match | null>;
   onDeleteMatch: (matchId: string) => Promise<void> | void;
-  onClearMatches: () => Promise<void> | void;
   onSelectMatchToScoreboard?: (match: Match) => void;
   onCloseModal: () => void;
 }
@@ -28,7 +27,6 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
   onCreateMatch,
   onUpdateMatch,
   onDeleteMatch,
-  onClearMatches,
   onSelectMatchToScoreboard,
   onCloseModal,
 }) => {
@@ -313,7 +311,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
               style={{ padding: '6px 12px', fontSize: '0.82rem' }}
             >
               <i className={`fas ${showMatchForm && !editingMatchId ? 'fa-times' : 'fa-plus'}`}></i>
-              <span>{showMatchForm && !editingMatchId ? 'ปิดฟอร์ม' : '➕ เพิ่มคู่การแข่งขัน'}</span>
+              <span>{showMatchForm && !editingMatchId ? 'ปิดฟอร์ม' : ' เพิ่มคู่การแข่งขัน'}</span>
             </button>
 
             <button
@@ -327,20 +325,6 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
               <i className="fas fa-database" style={{ color: '#38bdf8' }}></i>
               <span>จัดการการแข่งขันทั้งหมด</span>
             </button>
-
-            {matches.length > 0 && (
-              <button
-                type="button"
-                className="league-btn-danger"
-                onClick={() => {
-                  if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการล้างตารางการแข่งขันทั้งหมดในลีกนี้?')) {
-                    onClearMatches();
-                  }
-                }}
-              >
-                <i className="fas fa-trash-alt"></i> ล้างตารางแข่ง
-              </button>
-            )}
           </div>
         </div>
 

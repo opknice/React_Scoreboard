@@ -50,7 +50,6 @@ export default function LeagueManagementModal({
     createMatch,
     updateMatch,
     deleteMatch,
-    clearMatches,
   } = leagueState;
 
   const [activeTab, setActiveTab] = useState<'league' | 'teams' | 'matches'>(() => {
@@ -225,7 +224,6 @@ export default function LeagueManagementModal({
               onCreateMatch={createMatch}
               onUpdateMatch={updateMatch}
               onDeleteMatch={deleteMatch}
-              onClearMatches={clearMatches}
               onSelectMatchToScoreboard={onSelectMatchToScoreboard}
               onCloseModal={onClose}
             />

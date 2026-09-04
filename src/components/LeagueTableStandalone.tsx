@@ -58,15 +58,15 @@ export default function LeagueTableStandalone() {
             status: m.status,
             logoA: teamA?.logo_url || '',
             logoB: teamB?.logo_url || '',
-            cropA: parseCropMetadata(teamA?.crop_metadata),
-            cropB: parseCropMetadata(teamB?.crop_metadata),
+            cropA: parseCropMetadata(teamA?.overlay_crop_metadata),
+            cropB: parseCropMetadata(teamB?.overlay_crop_metadata),
           };
         });
         setRegisteredTeams(supabaseTeams.map((team) => ({
           id: team.id,
           name: team.name,
           logo: team.logo_url || '',
-          crop: parseCropMetadata(team.crop_metadata),
+          crop: parseCropMetadata(team.overlay_crop_metadata),
         })));
         setMatches(formatted);
         setLoading(false);

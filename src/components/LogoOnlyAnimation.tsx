@@ -26,15 +26,15 @@ interface LogoOnlyAnimationProps {
   overrideBackgroundMode?: 'transparent' | 'normal';
 }
 
-type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB' | 'cropA' | 'cropB'>;
+type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB' | 'logoBrowserCropA' | 'logoBrowserCropB'>;
 
 const DEFAULT_LOGO_STATE: LogoState = {
   nameA: 'Team A',
   nameB: 'Team B',
   logoA: '',
   logoB: '',
-  cropA: null,
-  cropB: null,
+  logoBrowserCropA: null,
+  logoBrowserCropB: null,
 };
 
 function logoStateFromEvent(event: ScoreboardStateEvent): LogoState {
@@ -43,8 +43,8 @@ function logoStateFromEvent(event: ScoreboardStateEvent): LogoState {
     nameB: event.nameB,
     logoA: event.logoA,
     logoB: event.logoB,
-    cropA: event.cropA ?? null,
-    cropB: event.cropB ?? null,
+    logoBrowserCropA: event.logoBrowserCropA ?? null,
+    logoBrowserCropB: event.logoBrowserCropB ?? null,
   };
 }
 
@@ -158,7 +158,7 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
         const logoSrc = getLogoSrc(display.logo, display.name);
         if (!logoSrc) return null;
 
-        const cropData = display.team === 'A' ? logoState.cropA : logoState.cropB;
+        const cropData = display.team === 'A' ? logoState.logoBrowserCropA : logoState.logoBrowserCropB;
         const presentation = getLogoPresentation(searchParams, display.team);
 
         // Priority: override prop -> team customSize -> URL param -> liveSettings -> presentation fallback
@@ -228,4 +228,3 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
     </div>
   );
 }
-
