@@ -829,7 +829,7 @@ export default function ScoreboardController() {
     obs.setText('label_2', l2);
     obs.setText('label_3', l3);
 
-    triggerToast(`โหลดแมตช์ #${match.match_number} (${teamAName} vs ${teamBName}) จาก Supabase สำเร็จ`, 'success');
+    triggerToast(`(${teamAName} vs ${teamBName}) success`, 'success');
   }, [
     supabaseLeague.activeLeagueId,
     supabaseLeague.teams,
@@ -1589,7 +1589,7 @@ export default function ScoreboardController() {
                   style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', fontWeight: 600 }}
                 >
                   <i className="fas fa-trophy" style={{ fontSize: '0.9rem', color: '#f59e0b' }}></i>
-                  <span>🏆 จัดการลีก</span>
+                  <span>จัดการลีก</span>
                 </button>
 
               </div>
@@ -1614,7 +1614,7 @@ export default function ScoreboardController() {
                     setSelectedLeagueIdToLoad(newId);
                     selectLeague(newId);
                   }}
-                  title="เลือกลีกจากฐานข้อมูล Supabase"
+                  title="เลือกลีก"
                 >
                   <option value="">-- โปรดเลือกลีก --</option>
                   {supabaseLeague.leagues.map((league) => (
@@ -1641,7 +1641,7 @@ export default function ScoreboardController() {
                     padding: '5px 10px',
                     fontSize: '0.8rem',
                   }}
-                  title="รีเฟรชข้อมูลตารางแข่งและรายชื่อทีมของลีกที่เลือก"
+                  title="Refresh.."
                 >
                   <i className={supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? "fas fa-spinner fa-spin" : "fas fa-sync-alt"}></i>
                   <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? '' : ''}</span>
@@ -1681,9 +1681,9 @@ export default function ScoreboardController() {
                         }
                       }
                     }}
-                    title="เลือกคู่แข่งขัน (เฉพาะคู่ที่ยังไม่ได้บันทึกผล)"
+                    title="เลือกคู่แข่งขัน"
                   >
-                    <option value="" disabled>-- เลือกคู่แข่งขัน (รอแข่ง) --</option>
+                    <option value="" disabled>-- เลือกคู่แข่งขัน --</option>
                     {pendingMatches.map((m) => (
                       <option key={m.id} value={m.match_number}>
                         {m.team_a_name} vs {m.team_b_name}
@@ -1759,10 +1759,7 @@ export default function ScoreboardController() {
           {/* Match save triggers dynamically */}
           {/* Match save triggers dynamically (Supabase & Firebase) */}
           <div className="card" style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '1rem', textAlign: 'center', color: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-              <i className="fas fa-save" style={{ color: '#38bdf8' }}></i>
-              <span>บันทึกผลการแข่งขัน (Save Match Score):</span>
-            </h3>
+
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
               {!supabaseLeague.activeLeague ? (
                 // ไม่มีลีก → แสดงปุ่มเลือกลีก
@@ -1821,12 +1818,12 @@ export default function ScoreboardController() {
                       <i className="fas fa-check-circle" style={{ fontSize: '1.1rem', color: '#6ee7b7' }}></i>
                       <span 
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
-                        title={`💾 บันทึกผล ${nameA} ${scoreA} - ${scoreB} ${nameB}`}
+                        title={`💾 บันทึกผล (${nameA})  ${scoreA} - ${scoreB}  (${nameB})`}
                       >
                         <span>💾 บันทึกผล</span>
-                        <span>{nameA}</span>
+                        <span>({nameA}) </span>
                         <span style={{ fontWeight: 700 }}>{scoreA} - {scoreB}</span>
-                        <span>{nameB}</span>
+                        <span> ({nameB})</span>
                       </span>
                     </>
                   )}

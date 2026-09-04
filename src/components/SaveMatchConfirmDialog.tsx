@@ -87,10 +87,8 @@ export default function SaveMatchConfirmDialog({
         </header>
 
         <div className="save-match-confirm-body">
-          <p id={descriptionId}>คุณต้องการบันทึกผลการแข่งขันนี้ใช่หรือไม่?</p>
           <div className="save-match-confirm-summary">
-            <span aria-hidden="true">💾</span>
-            <span>บันทึกผล {teamAName} {scoreA} - {scoreB} {teamBName}</span>
+            <span>({teamAName})  {scoreA} - {scoreB}  ({teamBName})</span>
           </div>
 
           <div className="save-match-confirm-actions">

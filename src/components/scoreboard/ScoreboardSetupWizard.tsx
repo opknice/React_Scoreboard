@@ -146,7 +146,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
               }}
             >
               <span style={{ fontWeight: 700, fontSize: '1rem', color: '#f8fafc' }}>
-                2️⃣ เลือก/สร้างลีกการแข่งขัน (Supabase)
+                2️⃣ เลือก/สร้างลีกการแข่งขัน 
               </span>
               <span
                 style={{
@@ -221,7 +221,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                   }}
                 >
                   <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
-                  <span> จัดการลีก / สลับคู่แข่งขัน</span>
+                  <span>จัดการลีก</span>
                 </button>
                 <button
                   type="button"
@@ -283,7 +283,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                 }}
               >
                 <i className="fas fa-plus-circle"></i>
-                <span>➕ สร้างลีกการแข่งขันใหม่ (Supabase)</span>
+                <span>➕ สร้างลีกการแข่งขันใหม่ </span>
               </button>
             </>
           )}

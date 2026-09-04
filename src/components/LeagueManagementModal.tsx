@@ -169,7 +169,7 @@ export default function LeagueManagementModal({
             className={`league-tab-btn ${activeTab === 'matches' ? 'active' : ''}`}
             onClick={() => setActiveTab('matches')}
           >
-            <i className="fas fa-calendar-alt"></i> ตารางแข่งขัน ({matches.length})
+            <i className="fas fa-calendar-alt"></i> ตารางแข่งขัน
           </button>
           <button
             className={`league-tab-btn ${activeTab === 'teams' ? 'active' : ''}`}
@@ -234,9 +234,6 @@ export default function LeagueManagementModal({
 
         {/* Footer */}
         <div className="league-modal-footer">
-          <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-            ⚡ ข้อมูลทั้งหมดจะถูกซิงค์และบันทึกลง Supabase แบบ Real-time ทันที
-          </span>
           <button className="league-btn-secondary" onClick={onClose}>
             ปิดหน้าต่าง
           </button>
