@@ -1,11 +1,23 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useLayoutEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ObsVideoFolderProvider } from './context/ObsVideoFolderContext';
 import './App.css';
+import AppLoadingShell from './components/AppLoadingShell';
 
-const AuthGuard = lazy(() => import('./components/AuthGuard'));
+let authGuardModulePromise: Promise<typeof import('./components/AuthGuard')> | undefined;
+let scoreboardControllerModulePromise: Promise<typeof import('./components/ScoreboardController')> | undefined;
+
+function loadAuthGuard() {
+  return (authGuardModulePromise ??= import('./components/AuthGuard'));
+}
+
+function loadScoreboardController() {
+  return (scoreboardControllerModulePromise ??= import('./components/ScoreboardController'));
+}
+
+const AuthGuard = lazy(loadAuthGuard);
 const AdminWhitelist = lazy(() => import('./components/AdminWhitelist'));
-const ScoreboardController = lazy(() => import('./components/ScoreboardController'));
+const ScoreboardController = lazy(loadScoreboardController);
 const OverlayContainer = lazy(() => import('./components/OverlayContainer'));
 const AllScoresStandalone = lazy(() => import('./components/AllScoresStandalone'));
 const LeagueTableStandalone = lazy(() => import('./components/LeagueTableStandalone'));
@@ -17,13 +29,58 @@ const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV
 const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
 const TailwindTestPage = lazy(() => import('./pages/TailwindTestPage'));
 
-function App() {
-  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+function isTransparentSurfacePath(pathname: string): boolean {
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+  return /\/(?:overlay|all-scores|league-table|all-score-combined|dots|goal-animation|var-replay(?:-v2)?\/screen|replay\/screen)$/.test(normalizedPath);
+}
+
+function getAppRoutePath(pathname: string): string {
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+  const basePath = import.meta.env.BASE_URL.replace(/\/+$/, '');
+
+  if (
+    basePath
+    && basePath !== '/'
+    && (normalizedPath === basePath || normalizedPath.startsWith(`${basePath}/`))
+  ) {
+    return normalizedPath.slice(basePath.length) || '/';
+  }
+
+  return normalizedPath;
+}
+
+function preloadControllerRoute(): void {
+  if (typeof window === 'undefined' || isTransparentSurfacePath(window.location.pathname)) return;
+
+  const appRoutePath = getAppRoutePath(window.location.pathname);
+  const isControllerRoute = appRoutePath === '/' || appRoutePath === '/controller';
+
+  if (isControllerRoute) {
+    // Start both requests from the same turn. The lazy components reuse the
+    // cached promises below, so rendering does not create another waterfall.
+    void loadAuthGuard();
+    void loadScoreboardController();
+  }
+}
+
+// The controller is the primary authenticated route. Begin fetching its
+// modules as soon as the app entry executes, while public overlay routes keep
+// their smaller route-specific bundles.
+preloadControllerRoute();
+
+function AppRoutes() {
+  const location = useLocation();
+  const transparentSurface = isTransparentSurfacePath(location.pathname);
+
+  useLayoutEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.dataset.surface = transparentSurface ? 'transparent' : 'dark';
+  }, [transparentSurface]);
 
   return (
-    <BrowserRouter basename={basename}>
+    <>
       <ObsVideoFolderProvider>
-        <Suspense fallback={<div className="app-loading">กำลังโหลดหน้าจอ...</div>}>
+        <Suspense fallback={<AppLoadingShell transparent={transparentSurface} />}>
           <Routes>
           {/* Scoreboard Controller (main panel protected by Google Auth + Whitelist) */}
           <Route
@@ -101,6 +158,16 @@ function App() {
           </Routes>
         </Suspense>
       </ObsVideoFolderProvider>
+    </>
+  );
+}
+
+function App() {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+
+  return (
+    <BrowserRouter basename={basename}>
+      <AppRoutes />
     </BrowserRouter>
   );
 }

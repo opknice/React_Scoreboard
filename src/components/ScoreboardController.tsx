@@ -1,21 +1,17 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { lazy, Profiler, Suspense, useState, useEffect, useRef, useCallback, useMemo, type ProfilerOnRenderCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
 import { onAuthStateChange, logoutUser, isSuperAdmin } from '../services/supabaseAuthService';
 import { useTimer } from '../hooks/useTimer';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
 import { useAutoMacros } from '../hooks/useAutoMacros';
-import { useScoreboardObsConnection } from '../hooks/useScoreboardObsConnection';
 import {
   broadcastScoreboardButton,
   useModalControlChannel,
   useScoreboardKeyboardBroadcast,
   broadcastGoalScored,
   broadcastScoreboardState,
-  useScoreboardStateResponder,
 } from '../hooks/useScoreboardChannels';
-import { useScoreboardObsSync } from '../hooks/useScoreboardObsSync';
-import { useAutoObsSourceSync } from '../hooks/useAutoObsSourceSync';
 import { translations } from '../constants/translations';
 import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
@@ -42,7 +38,6 @@ import {
   mergeLeagueDetailLabels,
   parseLeagueDetailLabels,
 } from '../types/leagueDetailLabels';
-import { useLeagueDetailLabelsObsSync } from '../hooks/useLeagueDetailLabelsObsSync';
 import { useLeagueBrowserSourceSettings } from '../hooks/useLeagueBrowserSourceSettings';
 import { getThaiDateString, renderDetailsTemplate } from '../utils/detailsTemplate';
 
@@ -64,10 +59,35 @@ import type { SelectableTeam } from './TeamSelectModal';
 import ScoreboardHeader from './scoreboard/ScoreboardHeader';
 import ScoreboardSetupWizard from './scoreboard/ScoreboardSetupWizard';
 import MatchTeamsPanel from './scoreboard/MatchTeamsPanel';
-import ScoreboardTimerObsSync from './scoreboard/ScoreboardTimerObsSync';
+import ScoreboardObsRuntime from './scoreboard/ScoreboardObsRuntime';
+import ScoreboardControlsBar from './scoreboard/ScoreboardControlsBar';
 import LazyLeagueManagementModal from './scoreboard/LazyLeagueManagementModal';
 import ScoreboardLazyFallback from './scoreboard/ScoreboardLazyFallback';
 import SaveMatchConfirmDialog from './SaveMatchConfirmDialog';
+import UiIcon from './UiIcon';
+
+const controllerProfilerEnabled = import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('perf') === '1';
+
+const reportControllerRender: ProfilerOnRenderCallback = (
+  id,
+  phase,
+  actualDuration,
+  baseDuration,
+  startTime,
+  commitTime,
+) => {
+  if (!controllerProfilerEnabled) return;
+  console.debug('[React Profiler]', {
+    id,
+    phase,
+    actualDuration: Number(actualDuration.toFixed(2)),
+    baseDuration: Number(baseDuration.toFixed(2)),
+    startTime: Number(startTime.toFixed(2)),
+    commitTime: Number(commitTime.toFixed(2)),
+  });
+};
 
 export default function ScoreboardController() {
   const navigate = useNavigate();
@@ -449,32 +469,6 @@ export default function ScoreboardController() {
     onReplay: setShowInstantReplayModal,
   });
 
-  useScoreboardObsConnection({
-    obs,
-    onConnected: () => triggerToast(trans.toastObsSuccess, 'success'),
-    onError: () => triggerToast(trans.toastObsError, 'error'),
-  });
-
-  useScoreboardObsSync({
-    obs,
-    scoreA,
-    scoreB,
-  });
-
-  useLeagueDetailLabelsObsSync({
-    obs,
-    activeLeagueId: activeSupabaseLeagueId,
-    labels: persistedLeagueDetailLabels,
-  });
-
-  useAutoObsSourceSync({
-    obs,
-    teamNameSettings,
-    logoSettings,
-    scoreSettings,
-    activeLeagueId: activeSupabaseLeagueId,
-  });
-
   const scoreboardStatePayload = useMemo(() => {
     const normalizedNameA = nameA.trim().toLowerCase();
     const normalizedNameB = nameB.trim().toLowerCase();
@@ -521,8 +515,6 @@ export default function ScoreboardController() {
   useEffect(() => {
     broadcastScoreboardState(scoreboardStatePayload);
   }, [scoreboardStatePayload]);
-
-  useScoreboardStateResponder(scoreboardStatePayload);
 
   // --- Logo Preview Logic ---
   const getLogoSrc = useCallback((logoName: string, teamName?: string) => {
@@ -1434,9 +1426,46 @@ export default function ScoreboardController() {
     setShowTeamSelectModal(true);
   }, [setShowTeamSelectModal]);
 
+  const handleObsConnected = useCallback(() => {
+    triggerToast(trans.toastObsSuccess, 'success');
+  }, [trans.toastObsSuccess, triggerToast]);
+
+  const handleObsError = useCallback(() => {
+    triggerToast(trans.toastObsError, 'error');
+  }, [trans.toastObsError, triggerToast]);
+
+  const handleOpenLeagueManagementFromControls = useCallback(() => {
+    setShowLeagueManagementModal(true);
+  }, [setShowLeagueManagementModal]);
+
+  const handleSelectLeagueFromControls = useCallback((leagueId: string) => {
+    setSelectedLeagueIdToLoad(leagueId);
+    selectLeague(leagueId);
+  }, [selectLeague]);
+
+  const handleSelectMatchFromControls = useCallback((match: SupabaseMatch) => {
+    setMatchIdInput(match.match_number);
+    matchLoadedFromModalRef.current = true;
+    applyMatchFromSupabase(match);
+  }, [applyMatchFromSupabase]);
+
   return (
-    <div className="container">
-      <ScoreboardTimerObsSync obs={obs} timer={timerStore} />
+    <Profiler id="ScoreboardController" onRender={reportControllerRender}>
+      <div className="container">
+      <ScoreboardObsRuntime
+        obs={obs}
+        timer={timerStore}
+        scoreA={scoreA}
+        scoreB={scoreB}
+        activeLeagueId={activeSupabaseLeagueId}
+        labels={persistedLeagueDetailLabels}
+        teamNameSettings={teamNameSettings}
+        logoSettings={logoSettings}
+        scoreSettings={scoreSettings}
+        scoreboardStatePayload={scoreboardStatePayload}
+        onConnected={handleObsConnected}
+        onError={handleObsError}
+      />
 
       {/* Toast Notifications */}
       <div className="toast-container">
@@ -1477,144 +1506,23 @@ export default function ScoreboardController() {
         />
       ) : (
         <>
-          {/* Controls Bar */}
-          <div className="card" style={{ padding: '8px 12px' }}>
-            <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
-              <div className="row" style={{ marginBottom: 0, gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {/* ปุ่มจัดการลีก - เก็บไว้ที่เดิม */}
-                <button
-                  className="btn-primary btn-sm"
-                  onClick={() => setShowLeagueManagementModal(true)}
-                  onFocus={handlePrefetchLeagueManagement}
-                  onPointerEnter={handlePrefetchLeagueManagement}
-                  title="จัดการข้อมูลลีก รายชื่อทีม และตารางการแข่งขันผ่าน Supabase"
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', fontWeight: 600 }}
-                >
-                  <i className="fas fa-trophy" style={{ fontSize: '0.9rem', color: '#f59e0b' }}></i>
-                  <span>จัดการลีก</span>
-                </button>
-
-              </div>
-
-              <div className="row" style={{ marginBottom: 0, gap: '4px', alignItems: 'center' }}>
-                {/* League Selector Dropdown (ย้ายมาจาก Header) */}
-                <select
-                  style={{
-                    padding: '5px 8px',
-                    fontSize: '0.82rem',
-                    background: '#0f172a',
-                    color: '#38bdf8',
-                    border: '1px solid #334155',
-                    borderRadius: '4px',
-                    minWidth: '100px',
-                    maxWidth: '150px',
-                    fontWeight: 600
-                  }}
-                  value={supabaseLeague.activeLeagueId || selectedLeagueIdToLoad}
-                  onChange={(e) => {
-                    const newId = e.target.value;
-                    setSelectedLeagueIdToLoad(newId);
-                    selectLeague(newId);
-                  }}
-                  title="เลือกลีก"
-                >
-                  <option value="">-- โปรดเลือกลีก --</option>
-                  {supabaseLeague.leagues.map((league) => (
-                    <option key={league.id} value={league.id}>
-                      {league.name} {league.season ? `(${league.season})` : ''}
-                    </option>
-                  ))}
-                </select>
-
-                {/* Refresh league data button (ย้ายมาจาก Header) */}
-                <button
-                  type="button"
-                  className="btn-primary btn-sm"
-                  onClick={handleRefreshLeague}
-                  disabled={!supabaseLeague.activeLeagueId || supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: '#059669',
-                    borderColor: '#059669',
-                    fontWeight: 600,
-                    cursor: supabaseLeague.activeLeagueId && !supabaseLeague.detailsLoading ? 'pointer' : 'not-allowed',
-                    padding: '5px 10px',
-                    fontSize: '0.8rem',
-                  }}
-                  title="Refresh.."
-                >
-                  <i className={supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? "fas fa-spinner fa-spin" : "fas fa-sync-alt"}></i>
-                  <span>{supabaseLeague.loading || supabaseLeague.detailsLoading || supabaseLeague.refreshing ? '' : ''}</span>
-                </button>
-
-                <button
-                  onClick={() => handleNavigateMatch('prev')}
-                  style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
-                  title="แมตช์ก่อนหน้า"
-                >
-                  &lt;
-                </button>
-                
-                {/* Matches Dropdown */}
-                {supabaseLeague.matches.length > 0 && pendingMatches.length > 0 ? (
-                  <select
-                    style={{
-                      padding: '5px 8px',
-                      fontSize: '0.82rem',
-                      background: '#1e293b',
-                      color: '#f8fafc',
-                      border: '1px solid #475569',
-                      borderRadius: '4px',
-                      minWidth: '100px',
-                      maxWidth: '150px',
-                      flex: '1'
-                    }}
-                    value={pendingMatches.some((m) => m.match_number === matchIdInput) ? matchIdInput : ''}
-                    onChange={(e) => {
-                      const num = parseInt(e.target.value, 10);
-                      if (num) {
-                        setMatchIdInput(num);
-                        const matchObj = pendingMatches.find((m) => m.match_number === num);
-                        if (matchObj) {
-                          matchLoadedFromModalRef.current = true; // 🔥 Track dropdown selection
-                          applyMatchFromSupabase(matchObj);
-                        }
-                      }
-                    }}
-                    title="เลือกคู่แข่งขัน"
-                  >
-                    <option value="" disabled>-- เลือกคู่แข่งขัน --</option>
-                    {pendingMatches.map((m) => (
-                      <option key={m.id} value={m.match_number}>
-                        {m.team_a_name} vs {m.team_b_name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span
-                    style={{
-                      fontSize: '0.8rem',
-                      color: '#94a3b8',
-                      fontStyle: 'italic',
-                      padding: '5px 8px'
-                    }}
-                  >
-                    {supabaseLeague.matches.length > 0 ? 'บันทึกผลครบทุกคู่แล้ว ✓' : 'ไม่มีคู่แข่งขัน'}
-                  </span>
-                )}
-                
-                <button
-                  onClick={() => handleNavigateMatch('next')}
-                  style={{ padding: '3px 8px', background: '#333', color: '#fff', borderRadius: '4px', fontSize: '0.8rem', cursor: 'pointer' }}
-                  title="แมตช์ถัดไป"
-                >
-                  &gt;
-                </button>
-              </div>
-            </div>
-          </div>
+          <ScoreboardControlsBar
+            leagues={supabaseLeague.leagues}
+            activeLeagueId={supabaseLeague.activeLeagueId || ''}
+            selectedLeagueId={selectedLeagueIdToLoad}
+            loading={supabaseLeague.loading}
+            detailsLoading={supabaseLeague.detailsLoading}
+            refreshing={supabaseLeague.refreshing}
+            matches={supabaseLeague.matches}
+            pendingMatches={pendingMatches}
+            matchIdInput={matchIdInput}
+            onOpenLeagueManagement={handleOpenLeagueManagementFromControls}
+            onPrefetchLeagueManagement={handlePrefetchLeagueManagement}
+            onSelectLeague={handleSelectLeagueFromControls}
+            onRefreshLeague={handleRefreshLeague}
+            onNavigateMatch={handleNavigateMatch}
+            onSelectMatch={handleSelectMatchFromControls}
+          />
 
           {/* Team score and editor panel (Memoized) */}
           <MatchTeamsPanel
@@ -1672,7 +1580,7 @@ export default function ScoreboardController() {
                   onPointerEnter={handlePrefetchLeagueManagement}
                   style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', padding: '8px 16px', fontWeight: 600 }}
                 >
-                  <i className="fas fa-trophy"></i> เลือกลีก Supabase เพื่อเปิดใช้ปุ่มบันทึกผลบอล
+                  <UiIcon name="trophy" /> เลือกลีก Supabase เพื่อเปิดใช้ปุ่มบันทึกผลบอล
                 </button>
               ) : !hasAnyMatches || !hasUnplayedMatches ? (
                 // ไม่มีคู่แข่งขัน หรือ บันทึกครบทุกคู่แล้ว → ซ่อนปุ่ม (ไม่แสดงอะไร)
@@ -1680,7 +1588,7 @@ export default function ScoreboardController() {
               ) : !nameA || !nameB ? (
                 // มีคู่รอแข่ง แต่ไม่มีชื่อทีม → แสดงข้อความ
                 <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', padding: '8px' }}>
-                  <i className="fas fa-info-circle" style={{ marginRight: '6px' }}></i>
+                  <UiIcon name="info" style={{ marginRight: '6px' }} />
                   กรุณาเลือกคู่แข่งขันเพื่อบันทึกผล
                 </span>
               ) : (
@@ -1711,12 +1619,12 @@ export default function ScoreboardController() {
                 >
                   {isSavingMatch ? (
                     <>
-                      <i className="fas fa-spinner fa-spin" style={{ fontSize: '1.1rem', color: '#d1d5db' }}></i>
+                      <UiIcon name="spinner" style={{ fontSize: '1.1rem', color: '#d1d5db' }} />
                       <span>กำลังบันทึก...</span>
                     </>
                   ) : (
                     <>
-                      <i className="fas fa-check-circle" style={{ fontSize: '1.1rem', color: '#6ee7b7' }}></i>
+                      <UiIcon name="check" style={{ fontSize: '1.1rem', color: '#6ee7b7' }} />
                       <span 
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
                         title={`💾 บันทึกผล (${nameA})  ${scoreA} - ${scoreB}  (${nameB})`}
@@ -1738,19 +1646,19 @@ export default function ScoreboardController() {
           <div className="card">
             <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
               <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
-                <i className="fas fa-sliders"></i>
+                <UiIcon name="sliders" />
                 <span>Quick Setup</span>
               </button>
               <button className="btn-primary" title="Auto Macros" onClick={() => setShowAutoMacrosModal(true)}>
-                <i className="fas fa-magic"></i>
+                <UiIcon name="magic" />
                 <span>Auto Macros</span>
               </button>
               <button className="btn-primary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
-                <i className="fas fa-cog"></i>
+                <UiIcon name="settings" />
                 <span>{trans.settings}</span>
               </button>
               <button className="btn-danger" title="คัดลอกข้อความ" onClick={copyDetailsToClipboard}>
-                <i className="fas fa-copy"></i>
+                <UiIcon name="copy" />
                 <span>คัดลอกข้อความ</span>
               </button>
             </div>
@@ -2131,6 +2039,7 @@ export default function ScoreboardController() {
           onClose={() => setShowConfirmSaveModal(false)}
         />
       </Suspense>
-    </div>
+      </div>
+    </Profiler>
   );
 }

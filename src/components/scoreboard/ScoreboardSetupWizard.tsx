@@ -1,5 +1,6 @@
 import React from 'react';
 import type { League } from '../../config/supabaseClient';
+import UiIcon from '../UiIcon';
 
 export interface ScoreboardSetupWizardProps {
   isStep1Complete: boolean;
@@ -51,7 +52,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
             gap: '8px',
           }}
         >
-          <i className="fas fa-rocket"></i> เริ่มต้นตั้งค่าใช้งาน Scoreboard Controller
+          <UiIcon name="rocket" /> เริ่มต้นตั้งค่าใช้งาน Scoreboard Controller
         </h2>
         <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>
           กรุณาทำตามขั้นตอน <strong>2 ข้อแรก</strong> ด้านล่างให้ครบเพื่อปลดล็อกแผงควบคุมหลัก
@@ -220,7 +221,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                     cursor: 'pointer',
                   }}
                 >
-                  <i className="fas fa-trophy" style={{ color: '#f59e0b' }}></i>
+                  <UiIcon name="trophy" style={{ color: '#f59e0b' }} />
                   <span>จัดการลีก</span>
                 </button>
                 <button
@@ -241,7 +242,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                     cursor: 'pointer',
                   }}
                 >
-                  <i className="fas fa-plus-circle"></i>
+                  <UiIcon name="plusCircle" />
                   <span> สร้างลีกใหม่</span>
                 </button>
               </div>
@@ -282,7 +283,7 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
                   cursor: 'pointer',
                 }}
               >
-                <i className="fas fa-plus-circle"></i>
+                <UiIcon name="plusCircle" />
                 <span>➕ สร้างลีกการแข่งขันใหม่ </span>
               </button>
             </>

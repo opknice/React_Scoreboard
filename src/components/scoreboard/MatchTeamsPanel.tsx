@@ -1,4 +1,5 @@
 import React from 'react';
+import UiIcon from '../UiIcon';
 
 export interface MatchTeamsPanelProps {
   scoreA: number;
@@ -150,6 +151,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
               />
             ) : null}
             <div className="logo-initials">{getTeamInitials(nameA)}</div>
+            <span className="logo-upload-icon" aria-hidden="true"><UiIcon name="camera" /></span>
           </div>
 
           <div className="name-control-area">
@@ -174,7 +176,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
                     style={{ flex: 1, maxWidth: '90px' }}
                     onClick={() => onStartEditName('A')}
                   >
-                    <i className="fas fa-pencil-alt"></i>
+                    <UiIcon name="pencil" />
                   </button>
                   {hasSupabaseTeams && (
                     <button
@@ -183,7 +185,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
                       title="เลือกทีมจากรายชื่อใน Supabase"
                       onClick={() => onOpenTeamSelect('A')}
                     >
-                      <i className="fas fa-users"></i>
+                      <UiIcon name="users" />
                     </button>
                   )}
                 </div>
@@ -207,14 +209,14 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
             onClick={onSwapTeams}
             style={{ height: '42px', width: '42px', borderRadius: '50%', fontSize: '1.1rem' }}
           >
-            <i className="fas fa-exchange-alt"></i>
+            <UiIcon name="exchange" />
           </button>
           <button
             className="btn-secondary"
             onClick={onResetScore}
             style={{ borderRadius: '20px', fontSize: '0.75rem' }}
           >
-            <i className="fas fa-sync-alt"></i>
+            <UiIcon name="sync" />
             <span>{resetLabel}</span>
           </button>
         </div>
@@ -264,6 +266,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
               />
             ) : null}
             <div className="logo-initials">{getTeamInitials(nameB)}</div>
+            <span className="logo-upload-icon" aria-hidden="true"><UiIcon name="camera" /></span>
           </div>
 
           <div className="name-control-area">
@@ -288,7 +291,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
                     style={{ flex: 1, maxWidth: '90px' }}
                     onClick={() => onStartEditName('B')}
                   >
-                    <i className="fas fa-pencil-alt"></i>
+                    <UiIcon name="pencil" />
                   </button>
                   {hasSupabaseTeams && (
                     <button
@@ -297,7 +300,7 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
                       title="เลือกทีมจากรายชื่อใน Supabase"
                       onClick={() => onOpenTeamSelect('B')}
                     >
-                      <i className="fas fa-users"></i>
+                      <UiIcon name="users" />
                     </button>
                   )}
                 </div>

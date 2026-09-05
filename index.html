@@ -6,13 +6,36 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Football Scoreboard Controller</title>
-  <!-- FontAwesome for Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <!-- Set the first-paint surface before React/CSS modules are available. -->
+  <style>
+    html, body { background: #0f1115; }
+    html[data-surface="transparent"],
+    html[data-surface="transparent"] body { background: transparent !important; }
+  </style>
+  <script>
+    (() => {
+      const path = window.location.pathname.replace(/\/+$/, '') || '/';
+      const transparent = /\/(?:overlay|all-scores|league-table|all-score-combined|dots|goal-animation|var-replay(?:-v2)?\/screen|replay\/screen)$/.test(path);
+      if (transparent) document.documentElement.dataset.surface = 'transparent';
+    })();
+  </script>
+  <!-- Keep the legacy icon set available without blocking the first paint. Core Controller icons use inline SVG. -->
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link
+    rel="preload"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    as="style"
+    crossorigin
+    onload="this.onload=null;this.rel='stylesheet'"
+  />
+  <noscript>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  </noscript>
   <!-- Google Fonts: Inter and Kanit (for Thai support) --->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Kanit:wght@300;400;500;600;700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Kanit:wght@400;600;700&display=swap"
     rel="stylesheet">
 </head>
 

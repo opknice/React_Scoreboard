@@ -1,6 +1,7 @@
 import React from 'react';
 import { broadcastScoreboardButton } from '../hooks/useScoreboardChannels';
 import { useTimerSnapshot, type TimerStore } from '../hooks/useTimer';
+import UiIcon from './UiIcon';
 
 interface ScoreboardTimerPanelProps {
   timer: TimerStore;
@@ -26,7 +27,7 @@ function ScoreboardTimerPanel({
       <div className="row timer-area-container" style={{ marginBottom: 0 }}>
         <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button className="btn-secondary btn-sm" onClick={onOpenPresetTime}>
-            <i className="fas fa-clock"></i> ปรับเวลา
+            <UiIcon name="clock" /> ปรับเวลา
           </button>
           <div
             style={{
@@ -51,16 +52,16 @@ function ScoreboardTimerPanel({
           </div>
           <div className="row center" style={{ marginTop: '4px', gap: '6px', marginBottom: 0 }}>
             <button className="btn-success btn-sm" onClick={() => { timer.start1(); broadcastScoreboardButton('start_timer'); }}>
-              <i className="fas fa-play"></i> เริ่มครึ่งแรก
+              <UiIcon name="play" /> เริ่มครึ่งแรก
             </button>
             <button className="btn-danger btn-sm" onClick={() => { timer.halfpause(); broadcastScoreboardButton('half_time'); }}>
-              <i className="fas fa-pause"></i> พักครึ่งแรก
+              <UiIcon name="pause" /> พักครึ่งแรก
             </button>
             <button className="btn-success btn-sm" onClick={() => { timer.start2(); broadcastScoreboardButton('start_timer'); }}>
-              <i className="fas fa-play"></i> เริ่มครึ่งหลัง
+              <UiIcon name="play" /> เริ่มครึ่งหลัง
             </button>
             <button className="btn-danger btn-sm" onClick={() => { timer.fulltime(); broadcastScoreboardButton('full_time'); }}>
-              <i className="fas fa-pause"></i> จบเกมส์
+              <UiIcon name="pause" /> จบเกมส์
             </button>
             <button className="btn-warning btn-sm" onClick={onHideTime}>
               ซ่อนเวลา
@@ -78,7 +79,7 @@ function ScoreboardTimerPanel({
             title="เปิด VAR Controller V2"
             style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
           >
-            <i className="fas fa-expand-arrows-alt" style={{ fontSize: '0.9rem' }}></i>
+            <UiIcon name="expand" style={{ fontSize: '0.9rem' }} />
             <span>VAR Controller</span>
           </button>
           <button
@@ -87,7 +88,7 @@ function ScoreboardTimerPanel({
             title="เปิด Instant Replay Control"
             style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
           >
-            <i className="fas fa-play-circle" style={{ fontSize: '0.9rem' }}></i>
+            <UiIcon name="playCircle" style={{ fontSize: '0.9rem' }} />
             <span>Replay Control</span>
           </button>
         </div>

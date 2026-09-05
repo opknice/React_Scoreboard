@@ -110,6 +110,95 @@ function asUserAccessRecords(value: unknown): UserAccessRecord[] {
   return value.map(asUserAccessRecord).filter((record): record is UserAccessRecord => record !== null);
 }
 
+function getLocalAllowedEmails(): string[] {
+  return [
+    import.meta.env.VITE_ALLOWED_EMAILS || '',
+    typeof window === 'undefined' ? '' : window.localStorage.getItem('local_allowed_emails') || '',
+  ].join(',')
+    .split(',')
+    .map((item: string) => normalizeEmail(item))
+    .filter(Boolean);
+}
+
+/**
+ * Converts the permission record returned by Supabase into the UI access
+ * decision. Keeping this separate from the network call lets the login flow
+ * use the record it already received instead of querying the same row again.
+ */
+export function evaluateUserAccess(
+  record: UserAccessRecord | null,
+  email: string | null | undefined,
+  now = Date.now(),
+  localAllowedEmails: readonly string[] = getLocalAllowedEmails(),
+): AccessDecision {
+  if (!email) return { isAllowed: false, accessType: 'denied', reason: 'ไม่พบอีเมลของผู้ใช้' };
+
+  const cleanEmail = normalizeEmail(email);
+  const locallyAllowed = localAllowedEmails
+    .map((item) => normalizeEmail(item))
+    .filter(Boolean)
+    .includes(cleanEmail);
+
+  if (isSuperAdmin(cleanEmail)) {
+    return { isAllowed: true, accessType: 'super-admin', email: cleanEmail };
+  }
+
+  if (!record) {
+    if (locallyAllowed) {
+      return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
+    }
+    return {
+      isAllowed: false,
+      accessType: 'pending',
+      email: cleanEmail,
+      reason: `บัญชี ${cleanEmail} กำลังรอ Super Admin (${SUPER_ADMIN_EMAILS[0]}) อนุมัติสิทธิ์การใช้งาน`,
+    };
+  }
+
+  if (record.status === 'allowed' || locallyAllowed) {
+    return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
+  }
+
+  if (record.status === 'denied') {
+    return {
+      isAllowed: false,
+      accessType: 'denied',
+      email: cleanEmail,
+      reason: 'บัญชีนี้ถูกปฏิเสธ/ระงับการเข้าใช้งานโดย Super Admin',
+    };
+  }
+
+  const trial = evaluateTrialAccess(record.trial_started_at, now);
+  if (trial?.isActive) {
+    return {
+      isAllowed: true,
+      accessType: 'trial',
+      email: cleanEmail,
+      trialStartedAt: record.trial_started_at ?? undefined,
+      trialExpiresAt: trial.expiresAt,
+      trialDaysRemaining: trial.daysRemaining,
+    };
+  }
+
+  if (trial) {
+    return {
+      isAllowed: false,
+      accessType: 'trial-expired',
+      email: cleanEmail,
+      trialStartedAt: record.trial_started_at ?? undefined,
+      trialExpiresAt: trial.expiresAt,
+      reason: `สิทธิ์ทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วันหมดอายุแล้ว กรุณาติดต่อ Super Admin เพื่อขออนุมัติสิทธิ์ใช้งาน`,
+    };
+  }
+
+  return {
+    isAllowed: false,
+    accessType: 'pending',
+    email: cleanEmail,
+    reason: `บัญชีของคุณกำลังรอการอนุมัติสิทธิ์จาก Super Admin (${SUPER_ADMIN_EMAILS[0]})`,
+  };
+}
+
 export async function recordUserLoginAttempt(user: User): Promise<UserAccessRecord> {
   const email = normalizeEmail(user.email || '');
   if (!email) throw new Error('ไม่พบอีเมลของผู้ใช้ Google');
@@ -126,6 +215,16 @@ export async function recordUserLoginAttempt(user: User): Promise<UserAccessReco
   return record;
 }
 
+/**
+ * Performs the authenticated login/permission sync in one RPC request. The
+ * RPC returns the permission row, so access evaluation must happen from that
+ * response rather than issuing a second user_permissions query.
+ */
+export async function getUserAccessDecision(user: User): Promise<AccessDecision> {
+  const record = await recordUserLoginAttempt(user);
+  return evaluateUserAccess(record, user.email);
+}
+
 export async function verifyUserWhitelist(email: string | null | undefined): Promise<AccessDecision> {
   if (!email) return { isAllowed: false, accessType: 'denied', reason: 'ไม่พบอีเมลของผู้ใช้' };
 
@@ -134,13 +233,7 @@ export async function verifyUserWhitelist(email: string | null | undefined): Pro
     return { isAllowed: true, accessType: 'super-admin', email: cleanEmail };
   }
 
-  const localAllowedEmails = [
-    import.meta.env.VITE_ALLOWED_EMAILS || '',
-    typeof window === 'undefined' ? '' : window.localStorage.getItem('local_allowed_emails') || '',
-  ].join(',')
-    .split(',')
-    .map((item: string) => normalizeEmail(item))
-    .filter(Boolean);
+  const localAllowedEmails = getLocalAllowedEmails();
 
   const { data, error } = await requireConfiguredClient()
     .from('user_permissions')
@@ -149,53 +242,7 @@ export async function verifyUserWhitelist(email: string | null | undefined): Pro
     .maybeSingle();
   if (error) throw error;
 
-  const record = asUserAccessRecord(data);
-  if (!record) {
-    if (localAllowedEmails.includes(cleanEmail)) {
-      return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
-    }
-    return {
-      isAllowed: false,
-      accessType: 'pending',
-      email: cleanEmail,
-      reason: `บัญชี ${cleanEmail} กำลังรอ Super Admin (${SUPER_ADMIN_EMAILS[0]}) อนุมัติสิทธิ์การใช้งาน`,
-    };
-  }
-
-  if (record.status === 'allowed' || localAllowedEmails.includes(cleanEmail)) {
-    return { isAllowed: true, accessType: 'whitelist', email: cleanEmail };
-  }
-  if (record.status === 'denied') {
-    return { isAllowed: false, accessType: 'denied', email: cleanEmail, reason: 'บัญชีนี้ถูกปฏิเสธ/ระงับการเข้าใช้งานโดย Super Admin' };
-  }
-
-  const trial = evaluateTrialAccess(record.trial_started_at);
-  if (trial?.isActive) {
-    return {
-      isAllowed: true,
-      accessType: 'trial',
-      email: cleanEmail,
-      trialStartedAt: record.trial_started_at ?? undefined,
-      trialExpiresAt: trial.expiresAt,
-      trialDaysRemaining: trial.daysRemaining,
-    };
-  }
-  if (trial) {
-    return {
-      isAllowed: false,
-      accessType: 'trial-expired',
-      email: cleanEmail,
-      trialStartedAt: record.trial_started_at ?? undefined,
-      trialExpiresAt: trial.expiresAt,
-      reason: `สิทธิ์ทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วันหมดอายุแล้ว กรุณาติดต่อ Super Admin เพื่อขออนุมัติสิทธิ์ใช้งาน`,
-    };
-  }
-  return {
-    isAllowed: false,
-    accessType: 'pending',
-    email: cleanEmail,
-    reason: `บัญชีของคุณกำลังรอการอนุมัติสิทธิ์จาก Super Admin (${SUPER_ADMIN_EMAILS[0]})`,
-  };
+  return evaluateUserAccess(asUserAccessRecord(data), cleanEmail, Date.now(), localAllowedEmails);
 }
 
 export async function fetchAllUserPermissions(): Promise<UserAccessRecord[]> {

@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import type { AccessDecision } from '../../types/authAccess';
 import UserAvatar from '../UserAvatar';
 import { formatTrialRemaining } from '../../utils/trialAccess';
+import UiIcon from '../UiIcon';
 
 export interface ScoreboardHeaderProps {
   videoFolder: {
@@ -129,7 +130,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
               style={{ padding: '3px 8px', fontSize: '0.72rem', marginLeft: '2px' }}
               title="ออกจากระบบ"
             >
-              <i className="fas fa-sign-out-alt"></i> ออกจากระบบ
+              <UiIcon name="logout" /> ออกจากระบบ
             </button>
           </div>
         )}

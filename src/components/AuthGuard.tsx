@@ -3,8 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import {
   loginWithGoogle,
   logoutUser,
-  verifyUserWhitelist,
-  recordUserLoginAttempt,
+  getUserAccessDecision,
   FREE_TRIAL_DAYS,
   onAuthStateChange,
   getUserDisplayName,
@@ -12,6 +11,7 @@ import {
 import type { AccessDecision } from '../types/authAccess';
 import { AuthAccessProvider } from '../context/AuthAccessProvider';
 import UserAvatar from './UserAvatar';
+import AppLoadingShell from './AppLoadingShell';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -59,15 +59,10 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     setLoading(true);
     setUser(currentUser);
 
-    // Automatically record / update user profile and login timestamp in Supabase.
     try {
-      await recordUserLoginAttempt(currentUser);
-    } catch (err) {
-      console.warn('[AuthGuard] Auto record login attempt failed:', err);
-    }
-
-    try {
-      const result = await verifyUserWhitelist(currentUser.email);
+      // The RPC syncs the profile and returns the permission row. Evaluate
+      // that response directly so login does not issue a second query.
+      const result = await getUserAccessDecision(currentUser);
       if (requestId !== checkRequestIdRef.current) return;
 
       lastCheckedUserIdRef.current = currentUser.id;
@@ -160,16 +155,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
   // Loading Screen
   if (loading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.loadingBox}>
-          <div style={styles.spinner}></div>
-          <p style={{ marginTop: '16px', color: '#cbd5e1', fontSize: '15px' }}>
-            กำลังตรวจสอบสิทธิ์การใช้งาน...
-          </p>
-        </div>
-      </div>
-    );
+    return <AppLoadingShell message="กำลังตรวจสอบสิทธิ์การใช้งาน..." />;
   }
 
   // Not Logged In Screen
