@@ -4,6 +4,7 @@ import type { League, Team, Match } from '../config/supabaseClient';
 import { supabase, isSupabaseConfigured } from '../config/supabaseClient';
 import { LeagueService, type StandingsRow } from '../services/leagueService';
 import { dedupeRequest, leagueMemoryCache } from '../utils/memoryCache';
+import type { LogoStorageProvider } from '../types/logoStorage';
 
 const LEAGUES_CACHE_PREFIX = 'leagues:';
 const DETAILS_CACHE_PREFIX = 'league-details:';
@@ -80,7 +81,11 @@ export interface UseSupabaseLeagueResult {
   createTeam: (payload: Omit<Team, 'id' | 'created_at' | 'updated_at'>) => Promise<Team>;
   updateTeam: (id: string, updates: Partial<Team>) => Promise<Team>;
   deleteTeam: (id: string) => Promise<void>;
-  uploadTeamLogo: (file: File | Blob, fileName: string) => Promise<string>;
+  uploadTeamLogo: (
+    file: File | Blob,
+    fileName: string,
+    provider?: LogoStorageProvider,
+  ) => Promise<string>;
   createMatch: (payload: Omit<Match, 'id' | 'created_at' | 'updated_at'>) => Promise<Match>;
   updateMatch: (id: string, updates: Partial<Match>) => Promise<Match>;
   deleteMatch: (id: string) => Promise<void>;
@@ -581,9 +586,13 @@ export function useSupabaseLeague(
     }
   }, [notify]);
 
-  const uploadTeamLogo = useCallback(async (file: File | Blob, fileName: string) => {
+  const uploadTeamLogo = useCallback(async (
+    file: File | Blob,
+    fileName: string,
+    provider: LogoStorageProvider = 'supabase',
+  ) => {
     try {
-      return await LeagueService.uploadTeamLogo(file, fileName);
+      return await LeagueService.uploadTeamLogo(file, fileName, provider);
     } catch (err: unknown) {
       notify?.(`อัปโหลดโลโก้ไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
       throw err;

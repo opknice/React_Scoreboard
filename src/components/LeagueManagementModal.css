@@ -491,6 +491,21 @@
   gap: 8px;
 }
 
+.league-team-logo-provider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.league-team-logo-provider-row > label {
+  flex-shrink: 0;
+}
+
+.league-team-logo-provider-row .league-form-select {
+  width: min(100%, 220px);
+}
+
 .league-team-logo-input-row .league-form-input {
   flex: 1;
 }

@@ -9,6 +9,9 @@ import {
 } from '../../types/leagueLogoSizing';
 import TeamCard from './TeamCard';
 import LeagueLogoScaleModal from './LeagueLogoScaleModal';
+import LogoStorageProviderSelect from '../LogoStorageProviderSelect';
+import { validateLogoFile } from '../../services/logoStorageService';
+import type { LogoStorageProvider } from '../../types/logoStorage';
 
 type LogoCropContext = 'overlay' | 'logo-browser';
 
@@ -23,7 +26,11 @@ export interface TeamsTabProps {
   onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
   onUpdateLeague: (leagueId: string, updates: Partial<League>) => Promise<League | null>;
   onDeleteTeam: (teamId: string) => Promise<void> | void;
-  onUploadTeamLogo: (file: File, fileName: string) => Promise<string>;
+  onUploadTeamLogo: (
+    file: File,
+    fileName: string,
+    provider?: LogoStorageProvider,
+  ) => Promise<string>;
   onIncrementUploadCount: () => Promise<unknown> | void;
 }
 
@@ -52,6 +59,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const [cropEditor, setCropEditor] = useState<{ team: Team; context: LogoCropContext } | null>(null);
   const [previewLogoSizing, setPreviewLogoSizing] = useState<LeagueLogoSizingSettings | null>(null);
   const [isLogoScaleModalOpen, setIsLogoScaleModalOpen] = useState(false);
+  const [storageProvider, setStorageProvider] = useState<LogoStorageProvider>('cloudinary');
   const logoScaleButtonRef = useRef<HTMLButtonElement>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const teamModalOverlayMouseDownRef = useRef(false);
@@ -61,6 +69,14 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    try {
+      validateLogoFile(file);
+    } catch (validationError: unknown) {
+      alert(validationError instanceof Error ? validationError.message : 'ไฟล์รูปภาพไม่ถูกต้อง');
+      if (logoFileInputRef.current) logoFileInputRef.current.value = '';
+      return;
+    }
 
     if (quotaLoading) {
       alert('กำลังตรวจสอบโควต้า กรุณารอสักครู่');
@@ -74,7 +90,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
 
     setIsUploadingLogo(true);
     try {
-      const publicUrl = await onUploadTeamLogo(file, file.name);
+      const publicUrl = await onUploadTeamLogo(file, file.name, storageProvider);
       await onIncrementUploadCount();
       setTeamLogoUrl(publicUrl);
     } catch (err: unknown) {
@@ -303,7 +319,17 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
           {/* Logo Upload / URL */}
           <div className="league-form-grid" style={{ alignItems: 'center' }}>
             <div className="league-form-group league-team-logo-field">
-              <label>โลโก้ทีม (URL ภาพ หรืออัปโหลดไฟล์ตรงเข้า Supabase Storage)</label>
+              <label>โลโก้ทีม (URL ภาพ หรืออัปโหลดไฟล์)</label>
+              <div className="league-team-logo-provider-row">
+                <label htmlFor="league-team-logo-storage-provider">พื้นที่จัดเก็บ</label>
+                <LogoStorageProviderSelect
+                  id="league-team-logo-storage-provider"
+                  value={storageProvider}
+                  onChange={setStorageProvider}
+                  disabled={isUploadingLogo}
+                  className="league-form-select"
+                />
+              </div>
               <div className="league-team-logo-input-row">
                 <input
                   type="text"
@@ -325,7 +351,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
                 <input
                   ref={logoFileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
                   style={{ display: 'none' }}
                   onChange={handleLogoFileUpload}
                 />

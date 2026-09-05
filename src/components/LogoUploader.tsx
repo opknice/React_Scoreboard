@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
-import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '../constants/uploadConfig';
 import { useImageUploadQuota } from '../hooks/useImageUploadQuota';
+import { validateLogoFile } from '../services/logoStorageService';
+import type { LogoStorageProvider } from '../types/logoStorage';
+import LogoStorageProviderSelect from './LogoStorageProviderSelect';
 
 interface LogoUploaderProps {
-  uploadLogo: (file: File, fileName: string) => Promise<string>;
+  uploadLogo: (
+    file: File,
+    fileName: string,
+    provider?: LogoStorageProvider,
+  ) => Promise<string>;
   onUploadSuccess?: (fileName: string, url: string, targetTeam?: 'A' | 'B' | 'none') => Promise<void> | void;
 }
 
@@ -15,6 +21,7 @@ export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUpload
   const [error, setError] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [uploadedUrl, setUploadedUrl] = useState<string>('');
+  const [storageProvider, setStorageProvider] = useState<LogoStorageProvider>('supabase');
 
   const { isQuotaExceeded, isUnlimited, incrementUploadCount, quotaMessage, loading: quotaLoading } = useImageUploadQuota();
 
@@ -30,16 +37,10 @@ export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUpload
         return;
       }
 
-      // Validate file type
-      if (!selectedFile.type.startsWith('image/')) {
-        setError('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
-        return;
-      }
-
-      // Keep the same client-side size guard used by the Supabase upload flow.
-      if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
-        const sizeInMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
-        setError(`ไฟล์ใหญ่เกิน ${MAX_FILE_SIZE_MB}MB (ขนาดปัจจุบัน ${sizeInMB}MB)`);
+      try {
+        validateLogoFile(selectedFile);
+      } catch (validationError: unknown) {
+        setError(validationError instanceof Error ? validationError.message : 'ไฟล์รูปภาพไม่ถูกต้อง');
         return;
       }
 
@@ -77,7 +78,7 @@ export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUpload
     setMessage('');
 
     try {
-      const imageUrl = await uploadLogo(file, file.name);
+      const imageUrl = await uploadLogo(file, file.name, storageProvider);
 
       await incrementUploadCount();
 
@@ -106,7 +107,7 @@ export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUpload
       backgroundColor: '#1a1a1a',
       marginTop: '20px'
     }}>
-      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้ (Supabase Storage)</h3>
+      <h3 style={{ marginTop: 0 }}>📤 อัปโหลดโลโก้</h3>
 
       {/* Quota Banner */}
       <div style={{
@@ -122,10 +123,33 @@ export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUpload
         ℹ️ {quotaMessage}
       </div>
 
+      <div style={{ marginBottom: '15px' }}>
+        <label
+          htmlFor="scoreboard-logo-storage-provider"
+          style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}
+        >
+          พื้นที่จัดเก็บ
+        </label>
+        <LogoStorageProviderSelect
+          id="scoreboard-logo-storage-provider"
+          value={storageProvider}
+          onChange={setStorageProvider}
+          disabled={uploading}
+          style={{
+            width: '100%',
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid #444',
+            backgroundColor: '#2a2a2a',
+            color: '#fff',
+          }}
+        />
+      </div>
+
       <div style={{ marginBottom: '15px', display: 'flex', gap: '10px', alignItems: 'center' }}>
         <input
           type="file"
-          accept="image/*"
+          accept="image/png,image/jpeg,image/webp,image/gif"
           onChange={handleFileChange}
           disabled={uploading || isQuotaExceeded || quotaLoading}
           style={{
@@ -258,7 +282,7 @@ export default function LogoUploader({ uploadLogo, onUploadSuccess }: LogoUpload
         fontSize: '12px',
         color: '#888'
       }}>
-        💡 รูปภาพจะถูกเก็บใน Supabase Storage และใช้ URL เดียวกันทุก browser/OBS
+        💡 รูปภาพจะถูกเก็บใน {storageProvider === 'cloudinary' ? 'Cloudinary' : 'Supabase Storage'} และใช้ URL เดียวกันทุก browser/OBS
       </div>
     </div>
   );

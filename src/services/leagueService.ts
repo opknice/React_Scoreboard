@@ -1,6 +1,8 @@
 import { supabase, isSupabaseConfigured, type League, type Team, type Match } from '../config/supabaseClient';
 import { retryWithBackoff } from '../utils/retry';
 import { isFinishedMatch } from '../utils/finishedMatch';
+import { LogoStorageService } from './logoStorageService';
+import type { LogoStorageProvider } from '../types/logoStorage';
 
 const LEAGUE_COLUMNS = 'id, name, slug, season, description, is_active, created_by, settings, created_at, updated_at';
 const TEAM_COLUMNS = 'id, league_id, name, short_name, logo_url, color_primary, color_secondary, overlay_crop_metadata, logo_browser_crop_metadata, created_at, updated_at';
@@ -166,53 +168,16 @@ export class LeagueService {
       .eq('league_id', expectedLeagueId));
   }
 
-  /**
-   * Uploads a logo file or blob to Supabase Storage 'team-logos' bucket
-   */
-  static async uploadTeamLogo(file: File | Blob, fileName: string): Promise<string> {
+  /** Uploads a logo using the storage provider selected by the user. */
+  static async uploadTeamLogo(
+    file: File | Blob,
+    fileName: string,
+    provider: LogoStorageProvider = 'supabase',
+  ): Promise<string> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
-
-    // Extract and validate file extension
-    const dotIndex = fileName.lastIndexOf('.');
-    let ext = dotIndex !== -1 ? fileName.slice(dotIndex).toLowerCase() : '';
-    if (!ext || ext.length > 6 || !/^\.[a-z0-9]+$/i.test(ext)) {
-      if (file.type === 'image/jpeg') ext = '.jpg';
-      else if (file.type === 'image/webp') ext = '.webp';
-      else if (file.type === 'image/svg+xml') ext = '.svg';
-      else if (file.type === 'image/gif') ext = '.gif';
-      else ext = '.png';
-    }
-
-    // Clean ASCII-only base name (Supabase/S3 requires safe ASCII keys; non-ASCII/Thai letters cause 'Invalid key' error)
-    const baseName = dotIndex !== -1 ? fileName.slice(0, dotIndex) : fileName;
-    const cleanAsciiBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
-
-    const randomSuffix = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).substring(2, 10);
-
-    const timestamp = Date.now();
-    const finalFileName = cleanAsciiBase
-      ? `${cleanAsciiBase}_${timestamp}_${randomSuffix}${ext}`
-      : `logo_${timestamp}_${randomSuffix}${ext}`;
-
-    const filePath = `logos/${finalFileName}`;
-
-    await executeSupabaseRequest(() => supabase!.storage
-      .from('team-logos')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: file.type || 'image/png',
-      }));
-
-    const { data } = supabase.storage
-      .from('team-logos')
-      .getPublicUrl(filePath);
-
-    return data.publicUrl;
+    return LogoStorageService.upload(file, fileName, provider);
   }
 
   // ==========================================
