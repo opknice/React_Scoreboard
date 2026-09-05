@@ -8,6 +8,9 @@ import { calculateFinishedStandings } from '../utils/standingsCalculator';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
 import OverlayLogo from './OverlayLogo';
+import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
+import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
+import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
 
 export default function AllScoreCombinedStandalone() {
   useDisableZoom();
@@ -24,6 +27,9 @@ export default function AllScoreCombinedStandalone() {
   const showHeader = searchParams.get('header') !== '0';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
+  const syncSessionId = searchParams.get('sync') || 'default';
+  const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
+  const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
   const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
   const standingsRows = useMemo(
@@ -53,6 +59,8 @@ export default function AllScoreCombinedStandalone() {
           const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
           return {
             id: m.id,
+            teamIdA: teamA?.id ?? m.team_a_id ?? null,
+            teamIdB: teamB?.id ?? m.team_b_id ?? null,
             teamA: m.team_a_name,
             teamB: m.team_b_name,
             scoreA: m.score_a,
@@ -180,9 +188,16 @@ export default function AllScoreCombinedStandalone() {
     return `🏆 ตารางการแข่งขัน (WEEK #${weekNum || '1'})`;
   };
 
-  const renderLogo = (logoIdentifier: string | undefined, teamName: string, crop?: OverlayMatch['cropA']) => {
+  const renderLogo = (
+    logoIdentifier: string | undefined,
+    teamName: string,
+    crop?: OverlayMatch['cropA'],
+    teamId?: string | null,
+  ) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="combined-logo" crop={crop} />;
+    const resolvedCrop = resolveCrop(teamId, teamName, crop);
+    const scalePercent = getEffectiveLogoScalePercent(resolvedCrop, leagueLogoSizing.overlayScalePercent);
+    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="combined-logo" crop={resolvedCrop} scalePercent={scalePercent} />;
   };
 
   const getResultClassColor = (score1: number, score2: number) => {
@@ -238,7 +253,7 @@ export default function AllScoreCombinedStandalone() {
                     <tr key={row.team}>
                       <td>{index + 1}</td>
                       <td className="combined-team-cell">
-                        {renderLogo(row.logo, row.team, row.crop)}
+                        {renderLogo(row.logo, row.team, row.crop, row.teamId)}
                         {/* Tooltip for truncated team names on mobile */}
                         <span title={row.team}>{row.team}</span>
                       </td>
@@ -291,13 +306,13 @@ export default function AllScoreCombinedStandalone() {
                           <div key={m.id} className="combined-match-row">
                             <div className={`combined-team-side combined-side-a ${getResultClassColor(scoreA, scoreB)}`}>
                               <span>{m.teamA}</span>
-                              {renderLogo(m.logoA || '', m.teamA, m.cropA)}
+                              {renderLogo(m.logoA || '', m.teamA, m.cropA, m.teamIdA)}
                             </div>
                             <div className="combined-score">
                               {scoreA} - {scoreB}
                             </div>
                             <div className={`combined-team-side combined-side-b ${getResultClassColor(scoreB, scoreA)}`}>
-                              {renderLogo(m.logoB || '', m.teamB, m.cropB)}
+                              {renderLogo(m.logoB || '', m.teamB, m.cropB, m.teamIdB)}
                               <span>{m.teamB}</span>
                             </div>
                           </div>

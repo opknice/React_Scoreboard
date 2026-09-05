@@ -1,7 +1,7 @@
 import {
   DEFAULT_LOGO_BROWSER_SETTINGS,
+  LOGO_DEFAULT_SIZE,
   normalizeLogoBackgroundMode,
-  normalizeLogoSize,
   type LogoBackgroundMode,
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
@@ -21,10 +21,11 @@ export function getLogoPresentation(
   search: string | URLSearchParams,
   side: 'A' | 'B',
 ): LogoPresentation {
-  const specificSize = getParamValue(search, side === 'A' ? 'sizeA' : 'sizeB');
-  const fallbackSize = getParamValue(search, 'size');
+  void side;
   return {
-    size: normalizeLogoSize(specificSize || fallbackSize),
+    // Ignore legacy size query parameters so every Browser Source keeps the
+    // same predictable layout footprint.
+    size: LOGO_DEFAULT_SIZE,
     backgroundMode: normalizeLogoBackgroundMode(getParamValue(search, 'background')),
   };
 }
@@ -34,6 +35,8 @@ export function buildLogoBrowserUrl(
   appBaseUrl: string,
   side: LogoBrowserSide,
   settings?: LogoBrowserSettings,
+  syncSessionId?: string,
+  leagueId?: string,
 ): string {
   const params: Record<string, string> = {
     template: 'team-logos',
@@ -41,23 +44,20 @@ export function buildLogoBrowserUrl(
   };
 
   if (settings) {
-    const size = side === 'A'
-      ? settings.sizeA
-      : side === 'B'
-        ? settings.sizeB
-        : Math.max(settings.sizeA, settings.sizeB);
-    params.sizeA = String(normalizeLogoSize(settings.sizeA));
-    params.sizeB = String(normalizeLogoSize(settings.sizeB));
-    params.size = String(normalizeLogoSize(size));
+    params.sizeA = String(LOGO_DEFAULT_SIZE);
+    params.sizeB = String(LOGO_DEFAULT_SIZE);
+    params.size = String(LOGO_DEFAULT_SIZE);
     params.background = normalizeLogoBackgroundMode(settings.backgroundMode);
   } else {
     // Keep manually-created legacy URLs compatible with the default presentation.
-    params.sizeA = String(DEFAULT_LOGO_BROWSER_SETTINGS.sizeA);
-    params.sizeB = String(DEFAULT_LOGO_BROWSER_SETTINGS.sizeB);
-    params.size = String(DEFAULT_LOGO_BROWSER_SETTINGS.sizeA);
+    params.sizeA = String(LOGO_DEFAULT_SIZE);
+    params.sizeB = String(LOGO_DEFAULT_SIZE);
+    params.size = String(LOGO_DEFAULT_SIZE);
     params.background = DEFAULT_LOGO_BROWSER_SETTINGS.backgroundMode;
   }
 
+  if (syncSessionId) params.sync = syncSessionId;
+  if (leagueId) params.league = leagueId;
+
   return `${appBaseUrl.replace(/\/$/, '')}/goal-animation?${new URLSearchParams(params).toString()}`;
 }
-

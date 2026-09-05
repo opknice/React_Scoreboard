@@ -26,20 +26,8 @@ import { useScoreboardModalState } from '../hooks/useScoreboardModalState';
 import { useScoreboardMatchState } from '../hooks/useScoreboardMatchState';
 import { useAuthAccess } from '../hooks/useAuthAccess';
 import { getOrigin } from '../config/obsSetupConfig';
-import {
-  DEFAULT_TEAM_NAME_BROWSER_SETTINGS,
-  TEAM_NAME_SETTINGS_STORAGE_KEY,
-  normalizeTeamNameBrowserSettings,
-  type TeamNameBrowserSettings,
-} from '../types/teamNameBrowserSettings';
 import { buildTeamNameBrowserUrl } from '../utils/teamNameBrowserUrl';
 import { OBSSetupService } from '../services/obsSetupService';
-import {
-  DEFAULT_SCORE_BROWSER_SETTINGS,
-  SCORE_SETTINGS_STORAGE_KEY,
-  normalizeScoreBrowserSettings,
-  type ScoreBrowserSettings,
-} from '../types/scoreBrowserSettings';
 import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
 import {
   DEFAULT_LOGO_BROWSER_SETTINGS,
@@ -48,6 +36,15 @@ import {
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
 import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
+import { getLogoSyncSessionId } from '../hooks/useLogoCropPreviewSync';
+import { parseLeagueLogoSizing } from '../types/leagueLogoSizing';
+import {
+  mergeLeagueDetailLabels,
+  parseLeagueDetailLabels,
+} from '../types/leagueDetailLabels';
+import { useLeagueDetailLabelsObsSync } from '../hooks/useLeagueDetailLabelsObsSync';
+import { useLeagueBrowserSourceSettings } from '../hooks/useLeagueBrowserSourceSettings';
+import { getThaiDateString, renderDetailsTemplate } from '../utils/detailsTemplate';
 
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
@@ -58,6 +55,7 @@ const PresetTimeModal = lazy(() => import('./PresetTimeModal'));
 const TeamSelectModal = lazy(() => import('./TeamSelectModal'));
 const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
 const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
+const LeagueDetailLabelsModal = lazy(() => import('./LeagueDetailLabelsModal'));
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
 import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
 import { parseCropMetadata } from '../types/teamLogo';
@@ -166,14 +164,33 @@ export default function ScoreboardController() {
     showOBSSetupModal, setShowOBSSetupModal,
   } = useScoreboardModalState();
   const [tickerSpeed, setTickerSpeed] = useState<number>(() => parseInt(localStorage.getItem('tickerSpeed') || '75', 10));
-  const [teamNameSettings, setTeamNameSettings] = useState<TeamNameBrowserSettings>(() => {
-    try {
-      const saved = localStorage.getItem(TEAM_NAME_SETTINGS_STORAGE_KEY);
-      return saved ? normalizeTeamNameBrowserSettings(JSON.parse(saved)) : DEFAULT_TEAM_NAME_BROWSER_SETTINGS;
-    } catch {
-      return DEFAULT_TEAM_NAME_BROWSER_SETTINGS;
-    }
+
+  // Toast state is initialized before league hooks because persistence errors
+  // must remain visible even when Quick Setup is closed.
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
+  const triggerToast = useCallback((message: string, type = 'info') => {
+    const id = Date.now().toString() + Math.random().toString();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  }, []);
+
+  const activeUserEmail = currentUser?.email || authAccess?.email || '';
+  const supabaseLeague = useSupabaseLeague(triggerToast, activeUserEmail);
+  const {
+    teamNameSettings,
+    scoreSettings,
+    scope: browserSettingsScope,
+    saveStatus: browserSettingsSaveStatus,
+    updateTeamNameSettings,
+    updateScoreSettings,
+  } = useLeagueBrowserSourceSettings({
+    activeLeague: supabaseLeague.activeLeague,
+    updateLeague: supabaseLeague.updateLeague,
+    onSaveError: (message) => triggerToast(`บันทึก Browser Source settings ไม่สำเร็จ: ${message}`, 'error'),
   });
+
   const [teamNameObsBusy, setTeamNameObsBusy] = useState(false);
   const [teamNameObsMessage, setTeamNameObsMessage] = useState('');
   const [logoSettings, setLogoSettings] = useState<LogoBrowserSettings>(() => {
@@ -186,14 +203,6 @@ export default function ScoreboardController() {
   });
   const [logoObsBusy, setLogoObsBusy] = useState(false);
   const [logoObsMessage, setLogoObsMessage] = useState('');
-  const [scoreSettings, setScoreSettings] = useState<ScoreBrowserSettings>(() => {
-    try {
-      const saved = localStorage.getItem(SCORE_SETTINGS_STORAGE_KEY);
-      return saved ? normalizeScoreBrowserSettings(JSON.parse(saved)) : DEFAULT_SCORE_BROWSER_SETTINGS;
-    } catch {
-      return DEFAULT_SCORE_BROWSER_SETTINGS;
-    }
-  });
   const [scoreObsBusy, setScoreObsBusy] = useState(false);
   const [scoreObsMessage, setScoreObsMessage] = useState('');
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
@@ -226,27 +235,9 @@ export default function ScoreboardController() {
 
   // Announcement details text
   const [detailsTemplate, setDetailsTemplate] = useState<string>(() => localStorage.getItem('detailsText') || '');
+  const [showDetailLabelsModal, setShowDetailLabelsModal] = useState(false);
 
   // Database Viewer States
-
-  // Toast States
-  const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(TEAM_NAME_SETTINGS_STORAGE_KEY, JSON.stringify(teamNameSettings));
-    } catch {
-      console.warn('[Scoreboard] Unable to persist Team Name settings (storage may be full)');
-    }
-  }, [teamNameSettings]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(SCORE_SETTINGS_STORAGE_KEY, JSON.stringify(scoreSettings));
-    } catch {
-      console.warn('[Scoreboard] Unable to persist Score settings (storage may be full)');
-    }
-  }, [scoreSettings]);
 
   useEffect(() => {
     try {
@@ -257,15 +248,6 @@ export default function ScoreboardController() {
   }, [logoSettings]);
 
   const trans = translations[currentLang] || translations.en;
-
-  // --- Toast Function ---
-  const triggerToast = useCallback((message: string, type = 'info') => {
-    const id = Date.now().toString() + Math.random().toString();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
-  }, []);
 
   const teamNameUrls = useMemo(() => ({
     A: buildTeamNameBrowserUrl(getOrigin(), 'A', teamNameSettings),
@@ -287,17 +269,8 @@ export default function ScoreboardController() {
     both: buildScoreBrowserUrl(getOrigin(), 'both', scoreSettings),
   }), [scoreSettings]);
 
-  const logoUrls = useMemo(() => ({
-    A: buildLogoBrowserUrl(getOrigin(), 'A', logoSettings),
-    B: buildLogoBrowserUrl(getOrigin(), 'B', logoSettings),
-  }), [logoSettings]);
-
   const updateLogoSettings = useCallback((patch: Partial<LogoBrowserSettings>) => {
     setLogoSettings((current) => normalizeLogoBrowserSettings({ ...current, ...patch }));
-  }, []);
-
-  const updateScoreSettings = useCallback((patch: Partial<ScoreBrowserSettings>) => {
-    setScoreSettings((current) => normalizeScoreBrowserSettings({ ...current, ...patch }));
   }, []);
 
   const copyScoreUrl = useCallback(async (side: 'A' | 'B' | 'both') => {
@@ -308,10 +281,6 @@ export default function ScoreboardController() {
       triggerToast('ไม่สามารถคัดลอก URL Score ได้', 'error');
     }
   }, [scoreUrls, triggerToast]);
-
-  const updateTeamNameSettings = useCallback((patch: Partial<TeamNameBrowserSettings>) => {
-    setTeamNameSettings((current) => normalizeTeamNameBrowserSettings({ ...current, ...patch }));
-  }, []);
 
   const runTeamNameObsAction = useCallback(async (action: 'add' | 'update') => {
     const obsRef = obs.getObsRef();
@@ -363,42 +332,6 @@ export default function ScoreboardController() {
     }
   }, [obs, scoreSettings, triggerToast]);
 
-  const copyLogoUrl = useCallback(async (side: 'A' | 'B') => {
-    try {
-      await navigator.clipboard.writeText(logoUrls[side]);
-      triggerToast(`คัดลอก URL Logo ${side} แล้ว`, 'success');
-    } catch {
-      triggerToast('ไม่สามารถคัดลอก URL Logo ได้', 'error');
-    }
-  }, [logoUrls, triggerToast]);
-
-  const runLogoObsAction = useCallback(async (action: 'add' | 'update') => {
-    const obsRef = obs.getObsRef();
-    if (!obs.isConnected || !obsRef) {
-      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
-      return;
-    }
-
-    setLogoObsBusy(true);
-    setLogoObsMessage('กำลังดำเนินการ...');
-    try {
-      const service = new OBSSetupService(obsRef);
-      const result = action === 'add'
-        ? await service.addOrUpdateLogoBrowserSources(logoSettings)
-        : await service.updateLogoBrowserSources(logoSettings);
-      setLogoObsMessage(result.message);
-      triggerToast(result.message, 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า Logo ใน OBS ได้';
-      setLogoObsMessage(message);
-      triggerToast(message, 'error');
-    } finally {
-      setLogoObsBusy(false);
-    }
-  }, [obs, logoSettings, triggerToast]);
-
-  const activeUserEmail = currentUser?.email || authAccess?.email || '';
-  const supabaseLeague = useSupabaseLeague(triggerToast, activeUserEmail);
   const {
     teams: supabaseTeams,
     updateTeam: updateSupabaseTeam,
@@ -424,9 +357,54 @@ export default function ScoreboardController() {
   }, [supabaseTeams, triggerToast, updateSupabaseTeam]);
   const {
     activeLeagueId: activeSupabaseLeagueId,
+    activeLeague: activeSupabaseLeague,
     refreshLeagueDetails,
     selectLeague,
   } = supabaseLeague;
+  const persistedLeagueDetailLabels = useMemo(
+    () => parseLeagueDetailLabels(activeSupabaseLeague?.settings),
+    [activeSupabaseLeague?.settings],
+  );
+
+  const logoUrls = useMemo(() => ({
+    A: buildLogoBrowserUrl(getOrigin(), 'A', logoSettings, getLogoSyncSessionId(), activeSupabaseLeagueId),
+    B: buildLogoBrowserUrl(getOrigin(), 'B', logoSettings, getLogoSyncSessionId(), activeSupabaseLeagueId),
+  }), [activeSupabaseLeagueId, logoSettings]);
+
+  const copyLogoUrl = useCallback(async (side: 'A' | 'B') => {
+    try {
+      await navigator.clipboard.writeText(logoUrls[side]);
+      triggerToast(`คัดลอก URL Logo ${side} แล้ว`, 'success');
+    } catch {
+      triggerToast('ไม่สามารถคัดลอก URL Logo ได้', 'error');
+    }
+  }, [logoUrls, triggerToast]);
+
+  const runLogoObsAction = useCallback(async (action: 'add' | 'update') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    setLogoObsBusy(true);
+    setLogoObsMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const syncSessionId = getLogoSyncSessionId();
+      const result = action === 'add'
+        ? await service.addOrUpdateLogoBrowserSources(logoSettings, undefined, syncSessionId, activeSupabaseLeagueId)
+        : await service.updateLogoBrowserSources(logoSettings, syncSessionId, activeSupabaseLeagueId);
+      setLogoObsMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า Logo ใน OBS ได้';
+      setLogoObsMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setLogoObsBusy(false);
+    }
+  }, [activeSupabaseLeagueId, logoSettings, obs, triggerToast]);
   const [selectedLeagueIdToLoad, setSelectedLeagueIdToLoad] = useState<string>(() => supabaseLeague.activeLeagueId || '');
   const autoLoadedLeagueIdRef = useRef<string | null>(null);
   const matchLoadedFromModalRef = useRef<boolean>(false); // 🔥 Track if user loaded match from modal
@@ -483,11 +461,18 @@ export default function ScoreboardController() {
     scoreB,
   });
 
+  useLeagueDetailLabelsObsSync({
+    obs,
+    activeLeagueId: activeSupabaseLeagueId,
+    labels: persistedLeagueDetailLabels,
+  });
+
   useAutoObsSourceSync({
     obs,
     teamNameSettings,
     logoSettings,
     scoreSettings,
+    activeLeagueId: activeSupabaseLeagueId,
   });
 
   const scoreboardStatePayload = useMemo(() => {
@@ -501,6 +486,10 @@ export default function ScoreboardController() {
       scoreB,
       nameA,
       nameB,
+      leagueId: supabaseLeague.activeLeagueId || null,
+      leagueLogoSizing: parseLeagueLogoSizing(supabaseLeague.activeLeague?.settings),
+      teamIdA: teamA?.id || null,
+      teamIdB: teamB?.id || null,
       logoA: resolveLogoSrc(logoA, nameA, logoFolderPath),
       logoB: resolveLogoSrc(logoB, nameB, logoFolderPath),
       colorA1,
@@ -522,6 +511,8 @@ export default function ScoreboardController() {
     nameB,
     scoreA,
     scoreB,
+    supabaseLeague.activeLeague?.settings,
+    supabaseLeague.activeLeagueId,
     supabaseLeague.teams,
   ]);
 
@@ -1099,17 +1090,30 @@ export default function ScoreboardController() {
     triggerToast,
   ]);
 
-  // --- Copy Details announcement template ---
-  const getThaiDateString = () => {
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('th-TH-u-ca-buddhist', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+  // Resolve the current scoreboard state only when Preview/Copy is requested.
+  // Keeping this as a callback prevents the preview text from changing while its dialog is open.
+  const buildDetailsPreview = useCallback((template: string): string => {
+    const { formattedTime, half } = timerStore.getSnapshot();
+    return renderDetailsTemplate(template, {
+      nameA,
+      nameB,
+      scoreA,
+      scoreB,
+      thaiDate: getThaiDateString(),
+      timeCounter: formattedTime,
+      halfText: half,
+      label1,
+      label2,
+      label3,
+      label4: persistedLeagueDetailLabels.label4,
+      label5: persistedLeagueDetailLabels.label5,
+      label6: persistedLeagueDetailLabels.label6,
+      label7: persistedLeagueDetailLabels.label7,
+      label8: persistedLeagueDetailLabels.label8,
+      label9: persistedLeagueDetailLabels.label9,
+      label10: persistedLeagueDetailLabels.label10,
     });
-    return dateStr;
-  };
+  }, [label1, label2, label3, nameA, nameB, persistedLeagueDetailLabels, scoreA, scoreB, timerStore]);
 
   const copyDetailsToClipboard = () => {
     if (!detailsTemplate.trim()) {
@@ -1117,21 +1121,7 @@ export default function ScoreboardController() {
       return;
     }
 
-    const cleanBr = (s: string) => s.replace(/<br\s*\/?>/gi, ' ').replace(/&amp;/g, '&');
-    const thaiDate = getThaiDateString();
-    const { formattedTime, half } = timerStore.getSnapshot();
-
-    const filled = detailsTemplate
-      .replace(/<TeamA>/gi, cleanBr(nameA))
-      .replace(/<TeamB>/gi, cleanBr(nameB))
-      .replace(/<score_team_a>/gi, String(scoreA))
-      .replace(/<score_team_b>/gi, String(scoreB))
-      .replace(/<thai_date>/gi, thaiDate)
-      .replace(/<time_counter>/gi, formattedTime)
-      .replace(/<half_text>/gi, half)
-      .replace(/<label1>/gi, cleanBr(label1))
-      .replace(/<label2>/gi, cleanBr(label2))
-      .replace(/<label3>/gi, cleanBr(label3));
+    const filled = buildDetailsPreview(detailsTemplate);
 
     navigator.clipboard
       .writeText(filled)
@@ -1161,6 +1151,10 @@ export default function ScoreboardController() {
         urlString += `&date=today&speed=${tickerSpeed}`;
       }
     }
+
+    // A shared session isolates this controller's crop preview traffic while
+    // legacy OBS URLs without the parameter continue to use the default channel.
+    urlString += `&sync=${encodeURIComponent(getLogoSyncSessionId())}`;
 
     navigator.clipboard
       .writeText(urlString)
@@ -1794,13 +1788,32 @@ export default function ScoreboardController() {
           label1={label1}
           label2={label2}
           label3={label3}
+          detailLabels={persistedLeagueDetailLabels}
           onTemplateChange={setDetailsTemplate}
-          onSave={() => {
+          onOpenDetailLabels={() => setShowDetailLabelsModal(true)}
+          onPreview={buildDetailsPreview}
+          onSave={async () => {
             localStorage.setItem('detailsText', detailsTemplate);
             setShowSettingsModal(false);
             triggerToast(trans.toastSaved, 'success');
           }}
-          onClose={() => setShowSettingsModal(false)}
+          onClose={() => {
+            setShowSettingsModal(false);
+            setShowDetailLabelsModal(false);
+          }}
+        />}
+
+        {showDetailLabelsModal && <LeagueDetailLabelsModal
+          isOpen={showDetailLabelsModal}
+          activeLeagueId={activeSupabaseLeagueId}
+          initialLabels={persistedLeagueDetailLabels}
+          onSave={async (labels) => {
+            if (!activeSupabaseLeagueId) return;
+            await supabaseLeague.updateLeague(activeSupabaseLeagueId, {
+              settings: mergeLeagueDetailLabels(activeSupabaseLeague?.settings, labels),
+            });
+          }}
+          onClose={() => setShowDetailLabelsModal(false)}
         />}
 
         {/* --- Logo Upload & Path Settings Modal --- */}
@@ -1999,8 +2012,12 @@ export default function ScoreboardController() {
           isOpen={showQuickSetupModal}
           teams={supabaseLeague.teams}
           onUpdateTeam={supabaseLeague.updateTeam}
+          logoBrowserScalePercent={parseLeagueLogoSizing(supabaseLeague.activeLeague?.settings).logoBrowserScalePercent}
           tickerSpeed={tickerSpeed}
           closeLabel={trans.close}
+          activeLeagueName={supabaseLeague.activeLeague?.name}
+          browserSettingsScope={browserSettingsScope}
+          browserSettingsSaveStatus={browserSettingsSaveStatus}
           onTickerSpeedChange={(speed) => {
             setTickerSpeed(speed);
             localStorage.setItem('tickerSpeed', String(speed));

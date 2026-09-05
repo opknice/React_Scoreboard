@@ -1,19 +1,27 @@
 import React, { useState, useRef } from 'react';
-import type { Team } from '../../config/supabaseClient';
+import type { League, Team } from '../../config/supabaseClient';
 import LogoBrowserCropModal from '../LogoBrowserCropModal';
+import { cropMetadataToJson, parseCropMetadata } from '../../types/teamLogo';
 import {
-  cropMetadataToJson,
-  parseCropMetadata,
-} from '../../types/teamLogo';
+  getLeagueScaleForContext,
+  parseLeagueLogoSizing,
+  type LeagueLogoSizingSettings,
+} from '../../types/leagueLogoSizing';
+import TeamCard from './TeamCard';
+import LeagueLogoScaleModal from './LeagueLogoScaleModal';
+
+type LogoCropContext = 'overlay' | 'logo-browser';
 
 export interface TeamsTabProps {
   activeLeagueId: string;
+  activeLeague: League | null;
   teams: Team[];
   loading: boolean;
   isQuotaExceeded: boolean;
   quotaLoading: boolean;
   onCreateTeam: (data: Omit<Team, 'id' | 'created_at' | 'updated_at'>) => Promise<Team | null>;
   onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
+  onUpdateLeague: (leagueId: string, updates: Partial<League>) => Promise<League | null>;
   onDeleteTeam: (teamId: string) => Promise<void> | void;
   onUploadTeamLogo: (file: File, fileName: string) => Promise<string>;
   onIncrementUploadCount: () => Promise<unknown> | void;
@@ -21,12 +29,14 @@ export interface TeamsTabProps {
 
 export const TeamsTab: React.FC<TeamsTabProps> = ({
   activeLeagueId,
+  activeLeague,
   teams,
   loading,
   isQuotaExceeded,
   quotaLoading,
   onCreateTeam,
   onUpdateTeam,
+  onUpdateLeague,
   onDeleteTeam,
   onUploadTeamLogo,
   onIncrementUploadCount,
@@ -39,9 +49,14 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const [teamLogoUrl, setTeamLogoUrl] = useState('');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isTeamFormOpen, setIsTeamFormOpen] = useState(false);
-  const [cropTeam, setCropTeam] = useState<Team | null>(null);
+  const [cropEditor, setCropEditor] = useState<{ team: Team; context: LogoCropContext } | null>(null);
+  const [previewLogoSizing, setPreviewLogoSizing] = useState<LeagueLogoSizingSettings | null>(null);
+  const [isLogoScaleModalOpen, setIsLogoScaleModalOpen] = useState(false);
+  const logoScaleButtonRef = useRef<HTMLButtonElement>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const teamModalOverlayMouseDownRef = useRef(false);
+  const leagueLogoSizing = parseLeagueLogoSizing(activeLeague?.settings);
+  const effectiveLeagueLogoSizing = previewLogoSizing ?? leagueLogoSizing;
 
   const handleLogoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -144,19 +159,52 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
 
   return (
     <div>
-      {cropTeam && (
+      {cropEditor && (
         <LogoBrowserCropModal
           isOpen
-          team={cropTeam}
-          cropMetadata={cropTeam.overlay_crop_metadata}
-          cropContext="overlay"
-          onClose={() => setCropTeam(null)}
+          team={cropEditor.team}
+          cropMetadata={cropEditor.context === 'overlay'
+            ? cropEditor.team.overlay_crop_metadata
+            : cropEditor.team.logo_browser_crop_metadata}
+          cropContext={cropEditor.context}
+          initialFrameScalePercent={
+            parseCropMetadata(cropEditor.context === 'overlay'
+              ? cropEditor.team.overlay_crop_metadata
+              : cropEditor.team.logo_browser_crop_metadata)?.frameScalePercent
+            ?? getLeagueScaleForContext(effectiveLeagueLogoSizing, cropEditor.context)
+          }
+          onClose={() => setCropEditor(null)}
           onSave={async (crop) => {
-            await onUpdateTeam(cropTeam.id, { overlay_crop_metadata: cropMetadataToJson(crop) });
+            await onUpdateTeam(cropEditor.team.id, cropEditor.context === 'overlay'
+              ? {
+                overlay_crop_metadata: cropMetadataToJson(crop),
+              }
+              : {
+                logo_browser_crop_metadata: cropMetadataToJson(crop),
+              });
           }}
           onReset={async () => {
-            await onUpdateTeam(cropTeam.id, { overlay_crop_metadata: null });
+            await onUpdateTeam(cropEditor.team.id, cropEditor.context === 'overlay'
+              ? {
+                overlay_crop_metadata: null,
+              }
+              : {
+                logo_browser_crop_metadata: null,
+              });
           }}
+        />
+      )}
+
+      {activeLeague && (
+        <LeagueLogoScaleModal
+          isOpen={isLogoScaleModalOpen}
+          league={activeLeague}
+          teams={teams}
+          disabled={loading}
+          onUpdateLeague={onUpdateLeague}
+          onPreviewSizingChange={setPreviewLogoSizing}
+          onClose={() => setIsLogoScaleModalOpen(false)}
+          returnFocusRef={logoScaleButtonRef}
         />
       )}
 
@@ -273,6 +321,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
                   <i className={`fas ${isUploadingLogo ? 'fa-spinner fa-spin' : 'fa-upload'}`}></i>
                   <span>{isUploadingLogo ? 'กำลังอัปโหลด...' : 'อัปโหลดภาพ'}</span>
                 </button>
+
                 <input
                   ref={logoFileInputRef}
                   type="file"
@@ -314,66 +363,52 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
             <i className="fas fa-shield-alt" style={{ color: '#10b981' }}></i>
             <span>รายชื่อทีมในลีกนี้ ({teams.length} ทีม)</span>
           </h3>
-          <button
-            type="button"
-            className="league-btn-primary"
-            onClick={handleOpenCreateTeam}
-            disabled={!activeLeagueId || loading}
-          >
-            <i className="fas fa-user-plus"></i>
-            <span>เพิ่มทีม</span>
-          </button>
+          <div className="league-team-list-actions">
+            <button
+              ref={logoScaleButtonRef}
+              type="button"
+              className="league-btn-secondary"
+              onClick={() => setIsLogoScaleModalOpen(true)}
+              disabled={!activeLeague || loading}
+            >
+              <i className="fas fa-expand-arrows-alt" aria-hidden="true"></i>
+              <span>ขนาดโลโก้เริ่มต้นของลีก</span>
+            </button>
+            <button
+              type="button"
+              className="league-btn-primary"
+              onClick={handleOpenCreateTeam}
+              disabled={!activeLeagueId || loading}
+            >
+              <i className="fas fa-user-plus"></i>
+              <span>เพิ่มทีม</span>
+            </button>
+          </div>
         </div>
         {teams.length === 0 ? (
           <p style={{ color: '#64748b', fontSize: '0.88rem' }}>ยังไม่มีทีมในลีกนี้ กดปุ่ม “เพิ่มทีม” เพื่อเพิ่มทีมแรก</p>
         ) : (
           <div className="league-teams-grid">
-            {teams.map((t) => {
-              const hasOverlayCrop = parseCropMetadata(t.overlay_crop_metadata) !== null;
-
-              return (
-              <div key={t.id} className="league-team-card">
-                <div className="league-team-logo">
-                  {t.logo_url ? (
-                    <img src={t.logo_url} alt="" onError={(e) => ((e.target as HTMLElement).style.display = 'none')} />
-                  ) : (
-                    t.short_name || t.name.slice(0, 2).toUpperCase()
-                  )}
-                </div>
-                <div className="league-team-info">
-                  <div className="league-team-name">{t.name}</div>
-                  <div className="league-team-colors">
-                    <span className="league-color-dot" style={{ background: t.color_primary }} title="สีหลัก" />
-                    <span className="league-color-dot" style={{ background: t.color_secondary }} title="สีรอง" />
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: '4px' }}>{t.short_name}</span>
-                  </div>
-                </div>
-                <button type="button" className="league-btn-icon" onClick={() => handleStartEditTeam(t)} title="แก้ไข">
-                  <i className="fas fa-edit" style={{ color: '#38bdf8' }}></i>
-                </button>
-                <button
-                  type="button"
-                  className="league-btn-icon"
-                  onClick={() => setCropTeam(t)}
-                  title={hasOverlayCrop ? 'แก้ไข Crop โลโก้สำหรับ Overlay/OBS' : 'ตั้งค่า Crop โลโก้สำหรับ Overlay/OBS'}
-                  disabled={!t.logo_url}
-                >
-                  <i className="fas fa-crop-alt" style={{ color: hasOverlayCrop ? '#34d399' : '#fbbf24' }}></i>
-                </button>
-
-                <button
-                  type="button"
-                  className="league-btn-icon"
-                  onClick={() => {
-                    if (window.confirm(`ลบทีม "${t.name}"?`)) onDeleteTeam(t.id);
-                  }}
-                  title="ลบ"
-                >
-                  <i className="fas fa-trash" style={{ color: '#ef4444' }}></i>
-                </button>
-              </div>
-              );
-            })}
+            {teams.map((team) => (
+              <TeamCard
+                key={team.id}
+                team={team}
+                leagueLogoSizing={effectiveLeagueLogoSizing}
+                disabled={loading}
+                onEdit={handleStartEditTeam}
+                onOpenCrop={(selectedTeam, context) => setCropEditor({ team: selectedTeam, context })}
+                onResetContext={async (selectedTeam, context) => {
+                  await onUpdateTeam(selectedTeam.id, context === 'overlay'
+                    ? {
+                      overlay_crop_metadata: null,
+                    }
+                    : {
+                      logo_browser_crop_metadata: null,
+                    });
+                }}
+                onDelete={(selectedTeam) => onDeleteTeam(selectedTeam.id)}
+              />
+            ))}
           </div>
         )}
       </div>

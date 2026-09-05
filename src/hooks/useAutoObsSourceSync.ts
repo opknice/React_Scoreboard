@@ -4,6 +4,7 @@ import { OBSSetupService } from '../services/obsSetupService';
 import type { TeamNameBrowserSettings } from '../types/teamNameBrowserSettings';
 import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
 import type { ScoreBrowserSettings } from '../types/scoreBrowserSettings';
+import { getLogoSyncSessionId } from './useLogoCropPreviewSync';
 
 interface UseAutoObsSourceSyncOptions {
   obs: {
@@ -13,6 +14,7 @@ interface UseAutoObsSourceSyncOptions {
   teamNameSettings: TeamNameBrowserSettings;
   logoSettings: LogoBrowserSettings;
   scoreSettings: ScoreBrowserSettings;
+  activeLeagueId?: string;
   debounceMs?: number;
 }
 
@@ -25,6 +27,7 @@ export function useAutoObsSourceSync({
   teamNameSettings,
   logoSettings,
   scoreSettings,
+  activeLeagueId,
   debounceMs = 300,
 }: UseAutoObsSourceSyncOptions) {
   const { getObsRef, isConnected } = obs;
@@ -66,13 +69,13 @@ export function useAutoObsSourceSync({
 
     const timer = setTimeout(() => {
       const service = new OBSSetupService(obsRef);
-      service.updateLogoBrowserSources(logoSettings).catch((err) => {
+      service.updateLogoBrowserSources(logoSettings, getLogoSyncSessionId(), activeLeagueId).catch((err) => {
         console.warn('[Auto OBS Sync] Failed to update Logo Sources:', err);
       });
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [debounceMs, getObsRef, isConnected, logoSettings]);
+  }, [activeLeagueId, debounceMs, getObsRef, isConnected, logoSettings]);
 
   // Auto-sync Score Browser Sources on settings change
   useEffect(() => {

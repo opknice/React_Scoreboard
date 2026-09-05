@@ -9,6 +9,9 @@ import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
 import OverlayLogo from './OverlayLogo';
 import { limitOverlayItems, parseOverlayLimit } from '../utils/overlayQuery';
+import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
+import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
+import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
 
 const getLocalTodayString = (): string => {
   const now = new Date();
@@ -42,6 +45,9 @@ export default function OverlayContainer() {
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
   const resultLimit = parseOverlayLimit(limitParam);
+  const syncSessionId = searchParams.get('sync') || 'default';
+  const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
+  const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
   const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
   const standingsRows = useMemo(
@@ -87,6 +93,8 @@ export default function OverlayContainer() {
             : '';
           return {
             id: m.id,
+            teamIdA: teamA?.id ?? m.team_a_id ?? null,
+            teamIdB: teamB?.id ?? m.team_b_id ?? null,
             teamA: m.team_a_name,
             teamB: m.team_b_name,
             scoreA: m.score_a || 0,
@@ -169,9 +177,17 @@ export default function OverlayContainer() {
 
   // Finished matches drive both the table and every result-based view.
   // Helper for rendering logos
-  const renderLogo = (logoIdentifier: string | undefined, teamName: string, className = 'overlay-logo', crop?: OverlayMatch['cropA']) => {
+  const renderLogo = (
+    logoIdentifier: string | undefined,
+    teamName: string,
+    className = 'overlay-logo',
+    crop?: OverlayMatch['cropA'],
+    teamId?: string | null,
+  ) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className={className} crop={crop} />;
+    const resolvedCrop = resolveCrop(teamId, teamName, crop);
+    const scalePercent = getEffectiveLogoScalePercent(resolvedCrop, leagueLogoSizing.overlayScalePercent);
+    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className={className} crop={resolvedCrop} scalePercent={scalePercent} />;
   };
 
   const resultClass = (self: number, opponent: number) => {
@@ -216,7 +232,7 @@ export default function OverlayContainer() {
               <tr key={row.team}>
                 <td>{index + 1}</td>
                 <td className="overlay-team-cell">
-                  {renderLogo(row.logo, row.team, 'overlay-logo', row.crop)}
+                  {renderLogo(row.logo, row.team, 'overlay-logo', row.crop, row.teamId)}
                   {row.team}
                 </td>
                 <td>{row.P}</td>
@@ -316,13 +332,13 @@ export default function OverlayContainer() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${resultClass(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(m.logoA || '', m.teamA, 'overlay-logo', m.cropA)}
+                          {renderLogo(m.logoA || '', m.teamA, 'overlay-logo', m.cropA, m.teamIdA)}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${resultClass(scoreB, scoreA)}`}>
-                          {renderLogo(m.logoB || '', m.teamB, 'overlay-logo', m.cropB)}
+                          {renderLogo(m.logoB || '', m.teamB, 'overlay-logo', m.cropB, m.teamIdB)}
                           <span>{m.teamB}</span>
                         </div>
                       </div>
@@ -364,13 +380,13 @@ export default function OverlayContainer() {
         >
           {limited.map((m) => (
             <React.Fragment key={m.id}>
-              {renderLogo(m.logoA || '', m.teamA, 'overlay-logo-small', m.cropA)}
+              {renderLogo(m.logoA || '', m.teamA, 'overlay-logo-small', m.cropA, m.teamIdA)}
               <span>{m.teamA}</span>
               <span className="overlay-ticker-score">
                 {m.scoreA} - {m.scoreB}
               </span>
               <span>{m.teamB}</span>
-              {renderLogo(m.logoB || '', m.teamB, 'overlay-logo-small', m.cropB)}
+              {renderLogo(m.logoB || '', m.teamB, 'overlay-logo-small', m.cropB, m.teamIdB)}
               <span style={{ fontSize: '1.5rem', color: '#9ca3af' }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
             </React.Fragment>
           ))}
@@ -470,7 +486,7 @@ export default function OverlayContainer() {
                       <tr key={row.team}>
                         <td style={{ textAlign: 'center' }}>{index + 1}</td>
                         <td className="team-cell">
-                          {renderLogo(row.logo, row.team, 'overlay-logo', row.crop)}
+                          {renderLogo(row.logo, row.team, 'overlay-logo', row.crop, row.teamId)}
                           <span>{row.team}</span>
                         </td>
                         <td style={{ textAlign: 'center' }}>{row.P}</td>
@@ -504,13 +520,13 @@ export default function OverlayContainer() {
                       <div key={match.id} className="match-card">
                         <div className={`match-team left ${resultClass(scoreA, scoreB).replace('overlay-', '')}`}>
                           <span>{match.teamA}</span>
-                          {renderLogo(match.logoA || '', match.teamA, 'overlay-logo', match.cropA)}
+                          {renderLogo(match.logoA || '', match.teamA, 'overlay-logo', match.cropA, match.teamIdA)}
                         </div>
                         <div className="match-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`match-team right ${resultClass(scoreB, scoreA).replace('overlay-', '')}`}>
-                          {renderLogo(match.logoB || '', match.teamB, 'overlay-logo', match.cropB)}
+                          {renderLogo(match.logoB || '', match.teamB, 'overlay-logo', match.cropB, match.teamIdB)}
                           <span>{match.teamB}</span>
                         </div>
                       </div>

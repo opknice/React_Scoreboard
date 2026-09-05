@@ -63,4 +63,20 @@ describe('timer store', () => {
     expect(localStorage.getItem('countdownStartTime')).toBe('2700');
     store.destroy();
   });
+
+  it('resets a new match to the first half at 00:00', () => {
+    const store = createTimerStore();
+    store.start2();
+
+    store.resetToZero();
+
+    expect(store.getSnapshot()).toMatchObject({
+      timer: 0,
+      formattedTime: '00:00',
+      isRunning: false,
+      half: '1st',
+      customText: '',
+    });
+    store.destroy();
+  });
 });

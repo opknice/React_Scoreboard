@@ -3,7 +3,7 @@
  * Renders logo with crop metadata using Canvas API
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CropMetadata } from '../types/teamLogo';
 
 interface LogoWithCropProps {
@@ -12,7 +12,10 @@ interface LogoWithCropProps {
   alt?: string;
   className?: string;
   style?: React.CSSProperties;
+  /** Fill a fixed parent frame; disable when className defines the frame size. */
+  fillFrame?: boolean;
   onError?: () => void;
+  onImageLoad?: (dimensions: { naturalWidth: number; naturalHeight: number }) => void;
 }
 
 export default function LogoWithCrop({
@@ -21,21 +24,57 @@ export default function LogoWithCrop({
   alt = 'Logo',
   className,
   style,
+  fillFrame = true,
   onError,
+  onImageLoad,
 }: LogoWithCropProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const onErrorRef = useRef(onError);
+  const onImageLoadRef = useRef(onImageLoad);
+  const [imageVersion, setImageVersion] = useState(0);
+  onErrorRef.current = onError;
+  onImageLoadRef.current = onImageLoad;
 
   useEffect(() => {
-    if (!url || !canvasRef.current) return;
+    if (!url) return;
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
+    let disposed = false;
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
+      if (disposed) return;
+      imageRef.current = img;
+      onImageLoadRef.current?.({
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+      });
+      setImageVersion((version) => version + 1);
+    };
+
+    img.onerror = () => {
+      if (disposed) return;
+      imageRef.current = null;
+      console.error('[LogoWithCrop] Failed to load image:', url);
+      onErrorRef.current?.();
+    };
+
+    img.src = url;
+    return () => {
+      disposed = true;
+      if (imageRef.current === img) imageRef.current = null;
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (!url || !canvasRef.current || !imageRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const img = imageRef.current;
+    const frameId = window.requestAnimationFrame(() => {
       const targetWidth = crop?.width && crop.width > 0 ? crop.width : img.naturalWidth || 300;
       const targetHeight = crop?.height && crop.height > 0 ? crop.height : img.naturalHeight || 300;
 
@@ -45,7 +84,18 @@ export default function LogoWithCrop({
       ctx.clearRect(0, 0, targetWidth, targetHeight);
 
       if (!crop) {
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        const naturalWidth = img.naturalWidth || targetWidth;
+        const naturalHeight = img.naturalHeight || targetHeight;
+        const containScale = Math.min(targetWidth / naturalWidth, targetHeight / naturalHeight);
+        const drawWidth = naturalWidth * containScale;
+        const drawHeight = naturalHeight * containScale;
+        ctx.drawImage(
+          img,
+          (targetWidth - drawWidth) / 2,
+          (targetHeight - drawHeight) / 2,
+          drawWidth,
+          drawHeight,
+        );
         return;
       }
 
@@ -66,23 +116,17 @@ export default function LogoWithCrop({
       ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
 
       ctx.restore();
-    };
+    });
 
-    img.onerror = () => {
-      console.error('[LogoWithCrop] Failed to load image:', url);
-      onError?.();
-    };
-
-    img.src = url;
-  }, [url, crop, onError]);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [url, crop, imageVersion]);
 
   return (
     <canvas
       ref={canvasRef}
       className={className}
       style={{
-        width: '100%',
-        height: '100%',
+        ...(fillFrame ? { width: '100%', height: '100%' } : {}),
         objectFit: 'contain',
         ...style,
       }}

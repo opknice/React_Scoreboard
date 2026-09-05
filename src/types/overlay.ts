@@ -3,6 +3,8 @@ import type { CropMetadata } from './teamLogo';
 
 export interface OverlayMatch extends MatchStatusRecord {
   id: string;
+  teamIdA?: string | null;
+  teamIdB?: string | null;
   teamA: string;
   teamB: string;
   scoreA: number | string;
@@ -19,7 +21,7 @@ export interface OverlayMatch extends MatchStatusRecord {
 }
 
 export interface OverlayTeam {
-  id?: string;
+  id?: string | null;
   name: string;
   logo?: string | null;
   crop?: CropMetadata | null;

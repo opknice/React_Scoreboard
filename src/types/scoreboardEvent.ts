@@ -1,4 +1,5 @@
 import { isCropMetadata, type CropMetadata } from './teamLogo';
+import { isLeagueLogoSizingSettings, type LeagueLogoSizingSettings } from './leagueLogoSizing';
 
 export const SCOREBOARD_EVENT_CHANNEL = 'scoreboard-events';
 export const SCOREBOARD_STATE_STORAGE_KEY = 'scoreboard_live_state_v1';
@@ -27,6 +28,10 @@ export interface ScoreboardStateEvent {
   scoreB: number;
   nameA: string;
   nameB: string;
+  leagueId?: string | null;
+  leagueLogoSizing?: LeagueLogoSizingSettings;
+  teamIdA?: string | null;
+  teamIdB?: string | null;
   logoA: string;
   logoB: string;
   colorA1: string;
@@ -48,8 +53,6 @@ export interface TeamNameAnimationCompletedEvent {
 
 export interface LogoSettingsUpdatedEvent {
   type: 'LogoSettingsUpdated';
-  sizeA?: number;
-  sizeB?: number;
   backgroundMode?: 'transparent' | 'normal';
   timestamp: number;
 }
@@ -88,6 +91,10 @@ export function isScoreboardStateEvent(value: unknown): value is ScoreboardState
     && Number.isFinite(event.scoreB)
     && typeof event.nameA === 'string'
     && typeof event.nameB === 'string'
+    && (event.leagueId === undefined || event.leagueId === null || typeof event.leagueId === 'string')
+    && (event.leagueLogoSizing === undefined || isLeagueLogoSizingSettings(event.leagueLogoSizing))
+    && (event.teamIdA === undefined || event.teamIdA === null || typeof event.teamIdA === 'string')
+    && (event.teamIdB === undefined || event.teamIdB === null || typeof event.teamIdB === 'string')
     && typeof event.logoA === 'string'
     && typeof event.logoB === 'string'
     && typeof event.colorA1 === 'string'

@@ -8,7 +8,16 @@ import {
   SCOREBOARD_STATE_STORAGE_KEY,
   type ScoreboardStateEvent,
 } from '../types/scoreboardEvent';
+import { parseCropMetadata } from '../types/teamLogo';
+import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
+import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
 import {
+  DEFAULT_LEAGUE_LOGO_SIZING,
+  getEffectiveLogoScalePercent,
+  scaleLogoPixels,
+} from '../types/leagueLogoSizing';
+import {
+  LOGO_DEFAULT_SIZE,
   LOGO_SETTINGS_STORAGE_KEY,
   normalizeLogoBrowserSettings,
   type LogoBrowserSettings,
@@ -22,19 +31,22 @@ import './LogoOnlyAnimation.css';
 
 interface LogoOnlyAnimationProps {
   side: GoalAnimationSide;
-  overrideSize?: number;
   overrideBackgroundMode?: 'transparent' | 'normal';
 }
 
-type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB' | 'logoBrowserCropA' | 'logoBrowserCropB'>;
+type LogoState = Pick<ScoreboardStateEvent, 'nameA' | 'nameB' | 'logoA' | 'logoB' | 'teamIdA' | 'teamIdB' | 'logoBrowserCropA' | 'logoBrowserCropB' | 'leagueId' | 'leagueLogoSizing'>;
 
 const DEFAULT_LOGO_STATE: LogoState = {
   nameA: 'Team A',
   nameB: 'Team B',
   logoA: '',
   logoB: '',
+  teamIdA: null,
+  teamIdB: null,
   logoBrowserCropA: null,
   logoBrowserCropB: null,
+  leagueId: null,
+  leagueLogoSizing: DEFAULT_LEAGUE_LOGO_SIZING,
 };
 
 function logoStateFromEvent(event: ScoreboardStateEvent): LogoState {
@@ -43,8 +55,12 @@ function logoStateFromEvent(event: ScoreboardStateEvent): LogoState {
     nameB: event.nameB,
     logoA: event.logoA,
     logoB: event.logoB,
-    logoBrowserCropA: event.logoBrowserCropA ?? null,
-    logoBrowserCropB: event.logoBrowserCropB ?? null,
+    teamIdA: event.teamIdA ?? null,
+    teamIdB: event.teamIdB ?? null,
+    logoBrowserCropA: parseCropMetadata(event.logoBrowserCropA),
+    logoBrowserCropB: parseCropMetadata(event.logoBrowserCropB),
+    leagueId: event.leagueId ?? null,
+    leagueLogoSizing: event.leagueLogoSizing ?? DEFAULT_LEAGUE_LOGO_SIZING,
   };
 }
 
@@ -61,12 +77,24 @@ function readInitialLogoState(): LogoState {
 
 const LOGO_GOAL_ANIMATION_DURATION_MS = 4000;
 
-export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgroundMode }: LogoOnlyAnimationProps) {
+export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: LogoOnlyAnimationProps) {
   const [searchParams] = useSearchParams();
   const [logoState, setLogoState] = useState<LogoState>(readInitialLogoState);
   const [goalTeam, setGoalTeam] = useState<'A' | 'B' | null>(null);
   const [animationKey, setAnimationKey] = useState(0);
   const goalTimerRef = useRef<number | null>(null);
+  const syncSessionId = searchParams.get('sync') || 'default';
+  const sourceLeagueId = searchParams.get('league') || logoState.leagueId;
+
+  const { resolveCrop } = useCropPreviewOverrides({
+    sessionId: syncSessionId,
+    context: 'logo-browser',
+  });
+  const leagueLogoSizing = useLeagueLogoSizingForObs({
+    leagueId: sourceLeagueId,
+    sessionId: syncSessionId,
+    initialSizing: logoState.leagueLogoSizing,
+  });
   const [liveSettings, setLiveSettings] = useState<LogoBrowserSettings | null>(() => {
     try {
       const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
@@ -158,17 +186,16 @@ export default function LogoOnlyAnimation({ side, overrideSize, overrideBackgrou
         const logoSrc = getLogoSrc(display.logo, display.name);
         if (!logoSrc) return null;
 
-        const cropData = display.team === 'A' ? logoState.logoBrowserCropA : logoState.logoBrowserCropB;
+        const persistedCrop = display.team === 'A' ? logoState.logoBrowserCropA : logoState.logoBrowserCropB;
+        const teamId = display.team === 'A' ? logoState.teamIdA : logoState.teamIdB;
+        const cropData = resolveCrop(teamId, display.name, persistedCrop);
         const presentation = getLogoPresentation(searchParams, display.team);
 
-        // Priority: override prop -> team customSize -> URL param -> liveSettings -> presentation fallback
-        const teamCustomSize = cropData?.customSize;
-        const hasUrlSizeParam = searchParams.has('size') || searchParams.has('sizeA') || searchParams.has('sizeB');
-        const fallbackSize = liveSettings ? (display.team === 'A' ? liveSettings.sizeA : liveSettings.sizeB) : presentation.size;
-        const sizePx = overrideSize
-          ?? (teamCustomSize && teamCustomSize > 0 ? teamCustomSize : null)
-          ?? (hasUrlSizeParam ? presentation.size : null)
-          ?? fallbackSize;
+        const scalePercent = getEffectiveLogoScalePercent(
+          cropData,
+          leagueLogoSizing.logoBrowserScalePercent,
+        );
+        const sizePx = scaleLogoPixels(LOGO_DEFAULT_SIZE, scalePercent);
         const bgMode = overrideBackgroundMode ?? (searchParams.has('background') ? presentation.backgroundMode : (liveSettings?.backgroundMode || presentation.backgroundMode));
 
         const containerStyle: React.CSSProperties = {

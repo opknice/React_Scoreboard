@@ -3,6 +3,7 @@ import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import type { CropMetadata } from '../types/teamLogo';
 
 export interface CalculatedStanding {
+  teamId?: string | null;
   team: string;
   logo: string;
   crop?: CropMetadata | null;
@@ -16,11 +17,7 @@ export interface CalculatedStanding {
   Pts: number;
 }
 
-interface MutableStanding extends CalculatedStanding {
-  teamId?: string;
-}
-
-const createEmptyStanding = (team: OverlayTeam): MutableStanding => ({
+const createEmptyStanding = (team: OverlayTeam): CalculatedStanding => ({
   teamId: team.id,
   team: team.name,
   logo: team.logo || '',
@@ -43,7 +40,7 @@ export const calculateFinishedStandings = (
   matches: readonly OverlayMatch[],
   registeredTeams: readonly OverlayTeam[] = [],
 ): CalculatedStanding[] => {
-  const stats: Record<string, MutableStanding> = {};
+  const stats: Record<string, CalculatedStanding> = {};
 
   registeredTeams.forEach((team) => {
     const teamName = team.name.trim();

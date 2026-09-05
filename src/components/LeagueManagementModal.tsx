@@ -202,12 +202,14 @@ export default function LeagueManagementModal({
           {activeTab === 'teams' && (
             <TeamsTab
               activeLeagueId={activeLeagueId}
+              activeLeague={activeLeague}
               teams={teams}
               loading={loading}
               isQuotaExceeded={isQuotaExceeded}
               quotaLoading={quotaLoading}
               onCreateTeam={createTeam}
               onUpdateTeam={updateTeam}
+              onUpdateLeague={updateLeague}
               onDeleteTeam={deleteTeam}
               onUploadTeamLogo={uploadTeamLogo}
               onIncrementUploadCount={incrementUploadCount}

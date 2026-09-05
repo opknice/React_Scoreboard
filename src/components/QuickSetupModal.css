@@ -5,6 +5,37 @@
   background: #202938;
 }
 
+.quick-setup-persistence-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 7px;
+  color: #bfdbfe;
+  background: rgba(30, 64, 175, 0.16);
+  font-size: 11px;
+}
+
+.quick-setup-persistence-save-state {
+  color: #94a3b8;
+  text-align: right;
+}
+
+.quick-setup-persistence-status.is-saving .quick-setup-persistence-save-state {
+  color: #fde68a;
+}
+
+.quick-setup-persistence-status.is-saved .quick-setup-persistence-save-state {
+  color: #86efac;
+}
+
+.quick-setup-persistence-status.is-error .quick-setup-persistence-save-state {
+  color: #fca5a5;
+}
+
 .quick-setup-panel--team-name {
   border: 1px solid #3b82f6;
 }
@@ -99,6 +130,15 @@
 }
 
 @media (max-width: 520px) {
+  .quick-setup-persistence-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .quick-setup-persistence-save-state {
+    text-align: left;
+  }
+
   .quick-setup-team-name-settings-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

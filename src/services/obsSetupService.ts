@@ -271,6 +271,8 @@ export class OBSSetupService {
   private getLogoBrowserConfig(
     sourceName: string,
     settings?: LogoBrowserSettings,
+    syncSessionId?: string,
+    leagueId?: string,
   ): SourceConfig {
     const baseConfig = BROWSER_SOURCES.find((source) => source.name === sourceName) || {
       name: sourceName,
@@ -290,7 +292,7 @@ export class OBSSetupService {
       name: sourceName,
       settings: {
         ...baseConfig.settings,
-        url: buildLogoBrowserUrl(getOrigin(), side, settings),
+        url: buildLogoBrowserUrl(getOrigin(), side, settings, syncSessionId, leagueId),
       },
     };
   }
@@ -451,13 +453,15 @@ export class OBSSetupService {
   async addOrUpdateLogoBrowserSources(
     settings?: LogoBrowserSettings,
     sceneName = MAIN_SCENE_CONFIG.name,
+    syncSessionId?: string,
+    leagueId?: string,
   ): Promise<TeamNameBrowserSetupResult> {
     if (!this.isConnected()) throw new Error('OBS is not connected');
     if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
 
     const updatedSources: string[] = [];
     for (const sourceName of ['Logo_Display_A', 'Logo_Display_B'] as const) {
-      const config = this.getLogoBrowserConfig(sourceName, settings);
+      const config = this.getLogoBrowserConfig(sourceName, settings, syncSessionId, leagueId);
       if (!(await this.sourceExists(config.name))) {
         await this.obsRef.call('CreateInput', {
           sceneName,
@@ -489,6 +493,8 @@ export class OBSSetupService {
   /** Update only existing Logo Browser Sources without creating missing inputs. */
   async updateLogoBrowserSources(
     settings?: LogoBrowserSettings,
+    syncSessionId?: string,
+    leagueId?: string,
   ): Promise<TeamNameBrowserSetupResult> {
     if (!this.isConnected()) throw new Error('OBS is not connected');
 
@@ -501,7 +507,7 @@ export class OBSSetupService {
         missingSources.push(sourceName);
         continue;
       }
-      const config = this.getLogoBrowserConfig(sourceName, settings);
+      const config = this.getLogoBrowserConfig(sourceName, settings, syncSessionId, leagueId);
       await this.updateSourceSettings(config.name, config.settings);
       await this.refreshBrowserSource(config.name);
       updatedSources.push(sourceName);

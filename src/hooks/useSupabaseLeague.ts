@@ -75,7 +75,7 @@ export interface UseSupabaseLeagueResult {
   fetchLeagues: (silent?: boolean) => Promise<void>;
   refreshLeagueDetails: () => Promise<LeagueDetailsResult | null>;
   createLeague: (payload: Omit<League, 'id' | 'created_at' | 'updated_at'>) => Promise<League>;
-  updateLeague: (id: string, updates: Partial<League>) => Promise<League>;
+  updateLeague: (id: string, updates: Partial<League>, options?: UpdateLeagueOptions) => Promise<League>;
   deleteLeague: (id: string) => Promise<void>;
   createTeam: (payload: Omit<Team, 'id' | 'created_at' | 'updated_at'>) => Promise<Team>;
   updateTeam: (id: string, updates: Partial<Team>) => Promise<Team>;
@@ -85,6 +85,10 @@ export interface UseSupabaseLeagueResult {
   updateMatch: (id: string, updates: Partial<Match>) => Promise<Match>;
   deleteMatch: (id: string) => Promise<void>;
   clearMatches: () => Promise<void>;
+}
+
+export interface UpdateLeagueOptions {
+  silent?: boolean;
 }
 
 export interface LeagueDetailsResult {
@@ -486,16 +490,22 @@ export function useSupabaseLeague(
     }
   }, [notify, selectLeague]);
 
-  const updateLeague = useCallback(async (id: string, updates: Partial<League>) => {
+  const updateLeague = useCallback(async (
+    id: string,
+    updates: Partial<League>,
+    options: UpdateLeagueOptions = {},
+  ) => {
     try {
       const updated = await LeagueService.updateLeague(id, updates);
       leagueMemoryCache.invalidatePrefix(LEAGUES_CACHE_PREFIX);
       setLeagues((prev) => prev.map((l) => (l.id === id ? updated : l)));
       dispatchLeagueChanged(updated.id);
-      notify?.(`อัปเดตข้อมูลลีกสำเร็จ`, 'success');
+      if (!options.silent) notify?.(`อัปเดตข้อมูลลีกสำเร็จ`, 'success');
       return updated;
     } catch (err: unknown) {
-      notify?.(`อัปเดตไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
+      if (!options.silent) {
+        notify?.(`อัปเดตไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
+      }
       throw err;
     }
   }, [notify]);

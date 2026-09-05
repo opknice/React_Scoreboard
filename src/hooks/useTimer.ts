@@ -149,7 +149,8 @@ export function createTimerStore(): TimerStore {
       startedAt = null;
       baseTimer = 0;
       clearTicker();
-      updateSnapshot({ timer: 0, isRunning: false, customText: '' });
+      // A new match always starts from the first half at 00:00.
+      updateSnapshot({ timer: 0, isRunning: false, half: '1st', customText: '' });
     },
     setCountdownStartTime: (seconds) => {
       const nextSeconds = normalizeSeconds(seconds);

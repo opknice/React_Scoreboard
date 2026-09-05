@@ -12,14 +12,13 @@ import {
   SCORE_MIN_FONT_SIZE,
   type ScoreBrowserSettings,
 } from '../types/scoreBrowserSettings';
-import {
-  LOGO_MAX_SIZE,
-  LOGO_MIN_SIZE,
-  type LogoBrowserSettings,
-} from '../types/logoBrowserSettings';
+import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
 import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
 import { getLogoSrc } from '../utils/logoResolver';
-import { cropMetadataToJson, parseCropMetadata } from '../types/teamLogo';
+import { LOGO_FRAME_SIZE_PX, cropMetadataToJson, parseCropMetadata } from '../types/teamLogo';
+import { getEffectiveLogoScalePercent, scaleLogoPixels } from '../types/leagueLogoSizing';
+import type { BrowserSourceSettingsScope } from '../types/leagueBrowserSourceSettings';
+import type { BrowserSourceSettingsSaveStatus } from '../hooks/useLeagueBrowserSourceSettings';
 import LogoWithCrop from './LogoWithCrop';
 import LogoBrowserCropModal from './LogoBrowserCropModal';
 import './QuickSetupModal.css';
@@ -43,8 +42,12 @@ interface QuickSetupModalProps {
   isOpen: boolean;
   teams: Team[];
   onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
+  logoBrowserScalePercent?: number;
   tickerSpeed: number;
   closeLabel: string;
+  activeLeagueName?: string;
+  browserSettingsScope: BrowserSourceSettingsScope;
+  browserSettingsSaveStatus: BrowserSourceSettingsSaveStatus;
   onTickerSpeedChange: (speed: number) => void;
   teamNameSettings: TeamNameBrowserSettings;
   teamNameUrls: { A: string; B: string };
@@ -79,8 +82,12 @@ export default function QuickSetupModal({
   isOpen,
   teams,
   onUpdateTeam,
+  logoBrowserScalePercent = 100,
   tickerSpeed,
   closeLabel,
+  activeLeagueName,
+  browserSettingsScope,
+  browserSettingsSaveStatus,
   onTickerSpeedChange,
   teamNameSettings,
   teamNameUrls,
@@ -138,8 +145,6 @@ export default function QuickSetupModal({
       const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
       bc.postMessage({
         type: 'LogoSettingsUpdated',
-        sizeA: patch.sizeA,
-        sizeB: patch.sizeB,
         backgroundMode: patch.backgroundMode,
         timestamp: Date.now(),
       });
@@ -195,6 +200,23 @@ export default function QuickSetupModal({
       <div className="modal-content" onClick={(event) => event.stopPropagation()}>
         <h3><i className="fas fa-sliders"></i> Quick Setup</h3>
         <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>คัดลอก Overlay URL ไปใส่เป็น Browser Source ใน OBS Studio</p>
+        <div className={`quick-setup-persistence-status is-${browserSettingsSaveStatus}`} role="status">
+          <span>
+            <i className={`fas ${activeLeagueName ? 'fa-trophy' : 'fa-globe'}`} aria-hidden="true"></i>{' '}
+            {activeLeagueName
+              ? browserSettingsScope === 'league'
+                ? `ค่าของลีก: ${activeLeagueName}`
+                : browserSettingsScope === 'mixed'
+                  ? `ค่าของลีก + Global fallback: ${activeLeagueName}`
+                  : `Global fallback: ${activeLeagueName} ยังไม่มีค่าของลีก`
+              : 'Global settings (เครื่องนี้)'}
+          </span>
+          <span className="quick-setup-persistence-save-state">
+            {browserSettingsSaveStatus === 'saving' && 'กำลังบันทึก...'}
+            {browserSettingsSaveStatus === 'saved' && (activeLeagueName ? 'บันทึกลง Supabase แล้ว' : 'บันทึกในเครื่องแล้ว')}
+            {browserSettingsSaveStatus === 'error' && 'บันทึกไม่สำเร็จ'}
+          </span>
+        </div>
         <div className="quick-setup-panel quick-setup-panel--team-name">
           <button
             type="button"
@@ -330,7 +352,7 @@ export default function QuickSetupModal({
           </button>
           {openPanel === 'logo' ? <div className="quick-setup-panel-content">
             <p style={{ margin: '0 0 8px', color: '#cbd5e1', fontSize: '12px' }}>
-              พรีวิวและปรับขนาด/ตัดขอบ (Crop/Resize) โลโก้สำหรับ Logo Browser Source แบบ Realtime
+              ขนาดลีก {logoBrowserScalePercent}% ({LOGO_FRAME_SIZE_PX}px → {scaleLogoPixels(LOGO_FRAME_SIZE_PX, logoBrowserScalePercent)}px) — ทีมที่ Crop แล้วจะใช้ขนาด Custom ของตัวเอง
             </p>
 
             {/* Live Preview Box */}
@@ -393,8 +415,8 @@ export default function QuickSetupModal({
                     const teamName = matchState.nameA;
                     const logoSrc = getLogoSrc(matchState.logoA, teamName);
                     const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.logo_browser_crop_metadata);
-                    const basePreviewSize = 55;
-                    const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeA / 190))));
+                    const effectiveScale = getEffectiveLogoScalePercent(cropData, logoBrowserScalePercent);
+                    const previewDisplaySize = scaleLogoPixels(55, effectiveScale);
 
                     return (
                       <div
@@ -421,7 +443,7 @@ export default function QuickSetupModal({
                           <img src={logoSrc} alt={teamName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                         )}
                         <span style={{ position: 'absolute', bottom: '-16px', fontSize: '9px', color: '#38bdf8', whiteSpace: 'nowrap' }}>
-                          A: {teamName} ({logoSettings.sizeA}px)
+                          A: {teamName} ({effectiveScale}% · {scaleLogoPixels(LOGO_FRAME_SIZE_PX, effectiveScale)}px)
                         </span>
                       </div>
                     );
@@ -431,8 +453,8 @@ export default function QuickSetupModal({
                     const teamName = matchState.nameB;
                     const logoSrc = getLogoSrc(matchState.logoB, teamName);
                     const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.logo_browser_crop_metadata);
-                    const basePreviewSize = 55;
-                    const previewDisplaySize = Math.max(24, Math.min(125, Math.round(basePreviewSize * (logoSettings.sizeB / 190))));
+                    const effectiveScale = getEffectiveLogoScalePercent(cropData, logoBrowserScalePercent);
+                    const previewDisplaySize = scaleLogoPixels(55, effectiveScale);
 
                     return (
                       <div
@@ -459,7 +481,7 @@ export default function QuickSetupModal({
                           <img src={logoSrc} alt={teamName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                         )}
                         <span style={{ position: 'absolute', bottom: '-16px', fontSize: '9px', color: '#fb7185', whiteSpace: 'nowrap' }}>
-                          B: {teamName} ({logoSettings.sizeB}px)
+                          B: {teamName} ({effectiveScale}% · {scaleLogoPixels(LOGO_FRAME_SIZE_PX, effectiveScale)}px)
                         </span>
                       </div>
                     );
@@ -468,79 +490,32 @@ export default function QuickSetupModal({
               </div>
             </div>
 
-            {/* Interactive Size Sliders, Presets & Crop Buttons */}
+            {/* Effective frame summaries and per-team Crop buttons */}
             <div style={{ display: 'grid', gap: '10px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 {(['A', 'B'] as const).map((side) => {
-                  const sizeKey = side === 'A' ? 'sizeA' : 'sizeB';
                   const teamName = side === 'A' ? matchState.nameA : matchState.nameB;
                   const supabaseTeam = getSupabaseTeam(teamName);
+                  const cropData = parseCropMetadata(supabaseTeam?.logo_browser_crop_metadata);
+                  const effectiveScale = getEffectiveLogoScalePercent(cropData, logoBrowserScalePercent);
 
                   return (
                     <div key={side} style={{ backgroundColor: '#0f172a', padding: '8px 10px', borderRadius: '6px', border: '1px solid #1e293b' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                         <span style={{ fontSize: '11px', fontWeight: 'bold', color: side === 'A' ? '#38bdf8' : '#fb7185' }}>
-                          Logo {side} Size
+                          Logo {side} · {cropData ? 'Custom' : 'League'} {effectiveScale}%
                         </span>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          <input
-                            type="number"
-                            min={LOGO_MIN_SIZE}
-                            max={LOGO_MAX_SIZE}
-                            value={logoSettings[sizeKey]}
-                            onChange={(event) => handleLogoSettingsUpdate({ [sizeKey]: Number(event.target.value) } as Partial<LogoBrowserSettings>)}
-                            style={{
-                              width: '56px',
-                              padding: '2px 4px',
-                              borderRadius: '4px',
-                              backgroundColor: '#1e293b',
-                              border: '1px solid #334155',
-                              color: '#fff',
-                              fontSize: '11px',
-                              textAlign: 'center',
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ padding: '2px 6px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px' }}
-                            onClick={() => supabaseTeam && setCropModalTeam(supabaseTeam)}
-                            disabled={!supabaseTeam?.logo_url}
-                            title={supabaseTeam?.logo_url ? 'ตั้งค่า Crop โลโก้สำหรับ Logo Browser Source ใน Supabase' : 'เลือกทีมจากลีก Supabase ที่มีโลโก้ก่อน'}
-                          >
-                            ✂️ Crop
-                          </button>
-                        </div>
                       </div>
-                      <input
-                        type="range"
-                        min={LOGO_MIN_SIZE}
-                        max={LOGO_MAX_SIZE}
-                        value={logoSettings[sizeKey]}
-                        onChange={(event) => handleLogoSettingsUpdate({ [sizeKey]: Number(event.target.value) } as Partial<LogoBrowserSettings>)}
-                        style={{ width: '100%', accentColor: side === 'A' ? '#0284c7' : '#e11d48' }}
-                      />
-                      <div style={{ display: 'flex', gap: '3px', marginTop: '4px' }}>
-                        {[120, 190, 250, 320].map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            style={{
-                              flex: 1,
-                              padding: '2px 0',
-                              fontSize: '9px',
-                              backgroundColor: logoSettings[sizeKey] === preset ? (side === 'A' ? '#0284c7' : '#e11d48') : '#1e293b',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '3px',
-                              cursor: 'pointer',
-                            }}
-                            onClick={() => handleLogoSettingsUpdate({ [sizeKey]: preset } as Partial<LogoBrowserSettings>)}
-                          >
-                            {preset}px
-                          </button>
-                        ))}
-                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ width: '100%', minHeight: '36px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                        onClick={() => supabaseTeam && setCropModalTeam(supabaseTeam)}
+                        disabled={!supabaseTeam?.logo_url}
+                        title={supabaseTeam?.logo_url ? 'ตั้งค่า Crop โลโก้สำหรับ Logo Browser Source ใน Supabase' : 'เลือกทีมจากลีก Supabase ที่มีโลโก้ก่อน'}
+                      >
+                        ✂️ ปรับรูปด้วย Crop
+                      </button>
                     </div>
                   );
                 })}
@@ -591,11 +566,19 @@ export default function QuickSetupModal({
                 team={cropModalTeam}
                 cropMetadata={cropModalTeam.logo_browser_crop_metadata}
                 cropContext="logo-browser"
+                initialFrameScalePercent={
+                  parseCropMetadata(cropModalTeam.logo_browser_crop_metadata)?.frameScalePercent
+                  ?? logoBrowserScalePercent
+                }
                 onSave={async (crop) => {
-                  await onUpdateTeam(cropModalTeam.id, { logo_browser_crop_metadata: cropMetadataToJson(crop) });
+                  await onUpdateTeam(cropModalTeam.id, {
+                    logo_browser_crop_metadata: cropMetadataToJson(crop),
+                  });
                 }}
                 onReset={async () => {
-                  await onUpdateTeam(cropModalTeam.id, { logo_browser_crop_metadata: null });
+                  await onUpdateTeam(cropModalTeam.id, {
+                    logo_browser_crop_metadata: null,
+                  });
                 }}
               />
             )}

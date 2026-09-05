@@ -7,6 +7,9 @@ import { calculateFinishedStandings } from '../utils/standingsCalculator';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
 import OverlayLogo from './OverlayLogo';
+import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
+import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
+import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
 
 export default function LeagueTableStandalone() {
   useDisableZoom();
@@ -22,6 +25,9 @@ export default function LeagueTableStandalone() {
   const showHeader = searchParams.get('header') !== '0';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
+  const syncSessionId = searchParams.get('sync') || 'default';
+  const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
+  const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
   const standingsRows = useMemo(
     () => calculateFinishedStandings(matches, registeredTeams),
@@ -51,6 +57,8 @@ export default function LeagueTableStandalone() {
           const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
           return {
             id: m.id,
+            teamIdA: teamA?.id ?? m.team_a_id ?? null,
+            teamIdB: teamB?.id ?? m.team_b_id ?? null,
             teamA: m.team_a_name,
             teamB: m.team_b_name,
             scoreA: m.score_a,
@@ -129,9 +137,16 @@ export default function LeagueTableStandalone() {
     );
   }
 
-  const renderLogo = (logoIdentifier: string | undefined, teamName: string, crop?: OverlayMatch['cropA']) => {
+  const renderLogo = (
+    logoIdentifier: string | undefined,
+    teamName: string,
+    crop?: OverlayMatch['cropA'],
+    teamId?: string | null,
+  ) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="overlay-logo" crop={crop} />;
+    const resolvedCrop = resolveCrop(teamId, teamName, crop);
+    const scalePercent = getEffectiveLogoScalePercent(resolvedCrop, leagueLogoSizing.overlayScalePercent);
+    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="overlay-logo" crop={resolvedCrop} scalePercent={scalePercent} />;
   };
 
   if (standingsRows.length === 0) {
@@ -185,7 +200,7 @@ export default function LeagueTableStandalone() {
                 <tr key={row.team}>
                   <td style={{ fontWeight: 400 }}>{index + 1}</td>
                   <td className="overlay-team-cell">
-                  {renderLogo(row.logo, row.team, row.crop)}
+                  {renderLogo(row.logo, row.team, row.crop, row.teamId)}
                   {row.team}
                 </td>
                   <td>{row.P}</td>

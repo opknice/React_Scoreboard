@@ -7,6 +7,9 @@ import { filterFinishedMatches } from '../utils/finishedMatch';
 import type { OverlayMatch } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
 import OverlayLogo from './OverlayLogo';
+import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
+import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
+import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
 
 export default function AllScoresStandalone() {
   useDisableZoom();
@@ -22,6 +25,9 @@ export default function AllScoresStandalone() {
   const showHeader = searchParams.get('header') !== '0';
   const logoParam = searchParams.get('logo') || '';
   const backgroundParam = searchParams.get('background') || '';
+  const syncSessionId = searchParams.get('sync') || 'default';
+  const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
+  const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
   const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
 
@@ -47,6 +53,8 @@ export default function AllScoresStandalone() {
           const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
           return {
             id: m.id,
+            teamIdA: teamA?.id ?? m.team_a_id ?? null,
+            teamIdB: teamB?.id ?? m.team_b_id ?? null,
             teamA: m.team_a_name,
             teamB: m.team_b_name,
             scoreA: m.score_a,
@@ -170,9 +178,16 @@ export default function AllScoresStandalone() {
     return `🏆 ตารางการแข่งขัน (WEEK #${weekNum || '1'})`;
   };
 
-  const renderLogo = (logoIdentifier: string | undefined, teamName: string, crop?: OverlayMatch['cropA']) => {
+  const renderLogo = (
+    logoIdentifier: string | undefined,
+    teamName: string,
+    crop?: OverlayMatch['cropA'],
+    teamId?: string | null,
+  ) => {
     const logoSrc = getLogoSrc(logoIdentifier, teamName);
-    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="overlay-logo" crop={crop} />;
+    const resolvedCrop = resolveCrop(teamId, teamName, crop);
+    const scalePercent = getEffectiveLogoScalePercent(resolvedCrop, leagueLogoSizing.overlayScalePercent);
+    return <OverlayLogo key={`${logoSrc}-${teamName}`} src={logoSrc} fallbackSrc={defaultLogo} alt={teamName} className="overlay-logo" crop={resolvedCrop} scalePercent={scalePercent} />;
   };
 
   const getResultClassColor = (score1: number, score2: number) => {
@@ -227,13 +242,13 @@ export default function AllScoresStandalone() {
                       <div key={m.id} className="overlay-match-row">
                         <div className={`overlay-team-side overlay-side-a ${getResultClassColor(scoreA, scoreB)}`}>
                           <span>{m.teamA}</span>
-                          {renderLogo(m.logoA || '', m.teamA, m.cropA)}
+                          {renderLogo(m.logoA || '', m.teamA, m.cropA, m.teamIdA)}
                         </div>
                         <div className="overlay-score">
                           {scoreA} - {scoreB}
                         </div>
                         <div className={`overlay-team-side overlay-side-b ${getResultClassColor(scoreB, scoreA)}`}>
-                          {renderLogo(m.logoB || '', m.teamB, m.cropB)}
+                          {renderLogo(m.logoB || '', m.teamB, m.cropB, m.teamIdB)}
                           <span>{m.teamB}</span>
                         </div>
                       </div>
