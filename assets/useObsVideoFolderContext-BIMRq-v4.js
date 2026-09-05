@@ -1,0 +1,1 @@
+import{i as e}from"./rolldown-runtime-aKtaBQYM.js";import{f as t,n}from"./index-CmPtu8es.js";var r=e(t(),1);function i(){let e=(0,r.useContext)(n);if(!e)throw Error(`useObsVideoFolderContext must be used within ObsVideoFolderProvider`);return e}export{i as t};

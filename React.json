@@ -3799,7 +3799,7 @@
             "settings": {
                 "is_local_file": false,
                 "local_file": "D:/scoreboard-main/table_var.html",
-                "url": "https://opknice.github.io/OBS_football/league-table-standalone.html?league=alcohol-dd2b1&title=Alcohol+League+Cup+4&fb=eyJhcGlLZXkiOiJBSXphU3lDNVZPc1lRR1FkYXYxQk13NDhHWTlFck91eGQtdHA2RzgiLCJhdXRoRG9tYWluIjoiYWxjb2hvbC1kZDJiMS5maXJlYmFzZWFwcC5jb20iLCJkYXRhYmFzZVVSTCI6Imh0dHBzOi8vYWxjb2hvbC1kZDJiMS1kZWZhdWx0LXJ0ZGIuZmlyZWJhc2Vpby5jb20iLCJwcm9qZWN0SWQiOiJhbGNvaG9sLWRkMmIxIiwic3RvcmFnZUJ1Y2tldCI6ImFsY29ob2wtZGQyYjEuZmlyZWJhc2VzdG9yYWdlLmFwcCIsIm1lc3NhZ2luZ1NlbmRlcklkIjoiMTExNDQ5NDY2MDAxIiwiYXBwSWQiOiIxOjExMTQ0OTQ2NjAwMTp3ZWI6NDkyOTg0YmIzNTE5NDE5ZmNmMGIzMCIsIm1lYXN1cmVtZW50SWQiOiJHLUUyVjNHUExTREIifQ",
+                "url": "https://opknice.github.io/OBS_football/league-table-standalone.html?league=alcohol-dd2b1&title=Alcohol+League+Cup+4",
                 "width": 1920,
                 "height": 1080,
                 "fps": 60,
@@ -8258,7 +8258,7 @@
             "id": "browser_source",
             "versioned_id": "browser_source",
             "settings": {
-                "url": "https://opknice.github.io/OBS_football/overlay.html?league=alcohol-dd2b1&view=ticker&title=Alcohol+League+Cup+4&fb=eyJhcGlLZXkiOiJBSXphU3lDNVZPc1lRR1FkYXYxQk13NDhHWTlFck91eGQtdHA2RzgiLCJhdXRoRG9tYWluIjoiYWxjb2hvbC1kZDJiMS5maXJlYmFzZWFwcC5jb20iLCJkYXRhYmFzZVVSTCI6Imh0dHBzOi8vYWxjb2hvbC1kZDJiMS1kZWZhdWx0LXJ0ZGIuZmlyZWJhc2Vpby5jb20iLCJwcm9qZWN0SWQiOiJhbGNvaG9sLWRkMmIxIiwic3RvcmFnZUJ1Y2tldCI6ImFsY29ob2wtZGQyYjEuZmlyZWJhc2VzdG9yYWdlLmFwcCIsIm1lc3NhZ2luZ1NlbmRlcklkIjoiMTExNDQ5NDY2MDAxIiwiYXBwSWQiOiIxOjExMTQ0OTQ2NjAwMTp3ZWI6NDkyOTg0YmIzNTE5NDE5ZmNmMGIzMCIsIm1lYXN1cmVtZW50SWQiOiJHLUUyVjNHUExTREIifQ&date=today",
+                "url": "https://opknice.github.io/OBS_football/overlay.html?league=alcohol-dd2b1&view=ticker&title=Alcohol+League+Cup+4",
                 "width": 1920,
                 "height": 1080,
                 "fps": 60,

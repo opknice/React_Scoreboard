@@ -1,0 +1,1 @@
+var e=e=>e.score_a===0&&e.score_b===0&&e.status!==`finished`,t=t=>[...t].filter(e).sort((e,t)=>e.match_number-t.match_number)[0]??null,n=e=>e.length===0?1:Math.max(...e.map(e=>e.match_number))+1;export{n,e as r,t};
