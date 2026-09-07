@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import type { League, Team } from '../../config/supabaseClient';
+import type { League, Team, Match, Player, PlayerMatchStat } from '../../config/supabaseClient';
 import LogoBrowserCropModal from '../LogoBrowserCropModal';
 import { cropMetadataToJson, parseCropMetadata } from '../../types/teamLogo';
 import {
@@ -13,6 +13,7 @@ import LogoStorageProviderSelect from '../LogoStorageProviderSelect';
 import { validateLogoFile } from '../../services/logoStorageService';
 import type { LogoStorageProvider } from '../../types/logoStorage';
 import ModalBackdrop from '../ModalBackdrop';
+import PlayerManagementModal from './PlayerManagementModal';
 
 type LogoCropContext = 'overlay' | 'logo-browser';
 
@@ -20,6 +21,7 @@ export interface TeamsTabProps {
   activeLeagueId: string;
   activeLeague: League | null;
   teams: Team[];
+  matches: Match[];
   loading: boolean;
   isQuotaExceeded: boolean;
   quotaLoading: boolean;
@@ -27,6 +29,13 @@ export interface TeamsTabProps {
   onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
   onUpdateLeague: (leagueId: string, updates: Partial<League>) => Promise<League | null>;
   onDeleteTeam: (teamId: string) => Promise<void> | void;
+  onGetPlayers: (teamId: string) => Promise<Player[]>;
+  onCreatePlayer: (payload: Omit<Player, 'id' | 'created_at' | 'updated_at'>) => Promise<Player>;
+  onUpdatePlayer: (id: string, updates: Partial<Player>) => Promise<Player>;
+  onDeletePlayer: (id: string, teamId: string) => Promise<void>;
+  onGetPlayerStats: (teamId: string) => Promise<PlayerMatchStat[]>;
+  onUpsertPlayerStat: (payload: Omit<PlayerMatchStat, 'id' | 'created_at' | 'updated_at'>) => Promise<PlayerMatchStat>;
+  onDeletePlayerStat: (id: string) => Promise<void>;
   onUploadTeamLogo: (
     file: File,
     fileName: string,
@@ -39,6 +48,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   activeLeagueId,
   activeLeague,
   teams,
+  matches,
   loading,
   isQuotaExceeded,
   quotaLoading,
@@ -46,6 +56,13 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   onUpdateTeam,
   onUpdateLeague,
   onDeleteTeam,
+  onGetPlayers,
+  onCreatePlayer,
+  onUpdatePlayer,
+  onDeletePlayer,
+  onGetPlayerStats,
+  onUpsertPlayerStat,
+  onDeletePlayerStat,
   onUploadTeamLogo,
   onIncrementUploadCount,
 }) => {
@@ -60,6 +77,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const [cropEditor, setCropEditor] = useState<{ team: Team; context: LogoCropContext } | null>(null);
   const [previewLogoSizing, setPreviewLogoSizing] = useState<LeagueLogoSizingSettings | null>(null);
   const [isLogoScaleModalOpen, setIsLogoScaleModalOpen] = useState(false);
+  const [playerTeam, setPlayerTeam] = useState<Team | null>(null);
   const [storageProvider, setStorageProvider] = useState<LogoStorageProvider>('cloudinary');
   const logoScaleButtonRef = useRef<HTMLButtonElement>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
@@ -212,6 +230,22 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
           returnFocusRef={logoScaleButtonRef}
         />
       )}
+
+      <PlayerManagementModal
+        isOpen={Boolean(playerTeam)}
+        leagueId={activeLeagueId}
+        team={playerTeam}
+        matches={matches}
+        loading={loading}
+        onClose={() => setPlayerTeam(null)}
+        onGetPlayers={onGetPlayers}
+        onCreatePlayer={onCreatePlayer}
+        onUpdatePlayer={onUpdatePlayer}
+        onDeletePlayer={onDeletePlayer}
+        onGetStats={onGetPlayerStats}
+        onUpsertStat={onUpsertPlayerStat}
+        onDeleteStat={onDeletePlayerStat}
+      />
 
       {/* Add/Edit Team Modal */}
       {isTeamFormOpen && (
@@ -403,6 +437,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
                 leagueLogoSizing={effectiveLeagueLogoSizing}
                 disabled={loading}
                 onEdit={handleStartEditTeam}
+                onManagePlayers={setPlayerTeam}
                 onOpenCrop={(selectedTeam, context) => setCropEditor({ team: selectedTeam, context })}
                 onResetContext={async (selectedTeam, context) => {
                   await onUpdateTeam(selectedTeam.id, context === 'overlay'

@@ -66,6 +66,32 @@ export interface Match {
   updated_at?: string;
 }
 
+export type PlayerPosition = 'GK' | 'DF' | 'MF' | 'FW';
+
+export interface Player {
+  id: string;
+  league_id: string;
+  team_id: string;
+  jersey_number: number;
+  name: string;
+  position: PlayerPosition;
+  image_url?: string | null;
+  image_public_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlayerMatchStat {
+  id: string;
+  league_id: string;
+  match_id: string;
+  player_id: string;
+  team_id: string;
+  goals: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 

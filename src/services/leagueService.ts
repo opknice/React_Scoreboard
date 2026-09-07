@@ -1,12 +1,15 @@
-import { supabase, isSupabaseConfigured, type League, type Team, type Match } from '../config/supabaseClient';
+import { supabase, isSupabaseConfigured, type League, type Team, type Match, type Player, type PlayerMatchStat } from '../config/supabaseClient';
 import { retryWithBackoff } from '../utils/retry';
 import { isFinishedMatch } from '../utils/finishedMatch';
 import { LogoStorageService } from './logoStorageService';
+import { deletePlayerImage } from './playerImageStorageService';
 import type { LogoStorageProvider } from '../types/logoStorage';
 
 const LEAGUE_COLUMNS = 'id, name, slug, season, description, is_active, created_by, settings, created_at, updated_at';
 const TEAM_COLUMNS = 'id, league_id, name, short_name, logo_url, color_primary, color_secondary, overlay_crop_metadata, logo_browser_crop_metadata, created_at, updated_at';
 const MATCH_COLUMNS = 'id, league_id, match_number, team_a_id, team_b_id, team_a_name, team_b_name, score_a, score_b, status, label1, label2, label3, match_date, created_at, updated_at';
+const PLAYER_COLUMNS = 'id, league_id, team_id, jersey_number, name, position, image_url, image_public_id, created_at, updated_at';
+const PLAYER_STAT_COLUMNS = 'id, league_id, match_id, player_id, team_id, goals, created_at, updated_at';
 
 interface SupabaseRequestResult<T> {
   data: T;
@@ -19,6 +22,13 @@ async function executeSupabaseRequest<T>(
   const result = await retryWithBackoff(operation);
   if (result.error) throw result.error;
   return result.data;
+}
+
+function storagePathFromPublicUrl(imageUrl: string): string | null {
+  const marker = '/storage/v1/object/public/team-logos/';
+  const index = imageUrl.indexOf(marker);
+  if (index < 0) return null;
+  return decodeURIComponent(imageUrl.slice(index + marker.length));
 }
 
 export interface StandingsRow {
@@ -105,6 +115,8 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
+    const teams = await this.getTeamsByLeague(id);
+    await Promise.all(teams.map((team) => this.deletePlayerImagesByTeam(team.id, id)));
     await executeSupabaseRequest(() => supabase!
       .from('leagues')
       .delete()
@@ -161,6 +173,7 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
+    await this.deletePlayerImagesByTeam(id, expectedLeagueId);
     await executeSupabaseRequest(() => supabase!
       .from('teams')
       .delete()
@@ -178,6 +191,114 @@ export class LeagueService {
       throw new Error('Supabase is not configured.');
     }
     return LogoStorageService.upload(file, fileName, provider);
+  }
+
+  // ==========================================
+  // PLAYERS & PER-MATCH GOAL STATISTICS
+  // ==========================================
+
+  static async getPlayersByTeam(teamId: string, leagueId: string): Promise<Player[]> {
+    if (!isSupabaseConfigured() || !supabase || !teamId || !leagueId) return [];
+    const data = await executeSupabaseRequest(() => supabase!
+      .from('players')
+      .select(PLAYER_COLUMNS)
+      .eq('team_id', teamId)
+      .eq('league_id', leagueId)
+      .order('jersey_number', { ascending: true }));
+    return (data as unknown as Player[]) || [];
+  }
+
+  static async createPlayer(payload: Omit<Player, 'id' | 'created_at' | 'updated_at'>): Promise<Player> {
+    if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is not configured.');
+    const data = await executeSupabaseRequest(() => supabase!
+      .from('players')
+      .insert([{ ...payload, name: payload.name.trim(), updated_at: new Date().toISOString() }])
+      .select(PLAYER_COLUMNS)
+      .single());
+    return data as unknown as Player;
+  }
+
+  static async updatePlayer(id: string, updates: Partial<Player>, expectedTeamId: string, expectedLeagueId: string): Promise<Player> {
+    if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is not configured.');
+    if (updates.team_id !== undefined && updates.team_id !== expectedTeamId) throw new Error('ไม่สามารถย้ายนักเตะไปทีมอื่นได้');
+    if (updates.league_id !== undefined && updates.league_id !== expectedLeagueId) throw new Error('ไม่สามารถแก้ไขนักเตะข้ามลีกได้');
+    const previous = await executeSupabaseRequest(() => supabase!
+      .from('players')
+      .select('image_public_id')
+      .eq('id', id)
+      .eq('team_id', expectedTeamId)
+      .eq('league_id', expectedLeagueId)
+      .maybeSingle());
+    const previousPublicId = (previous as { image_public_id?: string | null } | null)?.image_public_id;
+    const data = await executeSupabaseRequest(() => supabase!
+      .from('players')
+      .update({ ...updates, name: updates.name?.trim(), updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('team_id', expectedTeamId)
+      .eq('league_id', expectedLeagueId)
+      .select(PLAYER_COLUMNS)
+      .single());
+    const updated = data as unknown as Player;
+    if (previousPublicId && previousPublicId !== updated.image_public_id) {
+      try {
+        await deletePlayerImage(previousPublicId);
+      } catch (cleanupError: unknown) {
+        console.error('[LeagueService] Failed to delete replaced player image:', cleanupError);
+      }
+    }
+    return updated;
+  }
+
+  static async deletePlayer(id: string, expectedTeamId: string, expectedLeagueId: string): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is not configured.');
+    const player = await executeSupabaseRequest(() => supabase!
+      .from('players').select('image_url, image_public_id').eq('id', id).eq('team_id', expectedTeamId).eq('league_id', expectedLeagueId).maybeSingle());
+    const playerRecord = player as { image_url?: string | null; image_public_id?: string | null } | null;
+    await deletePlayerImage(playerRecord?.image_public_id);
+    await this.deleteStorageImage(playerRecord?.image_url);
+    await executeSupabaseRequest(() => supabase!
+      .from('players').delete().eq('id', id).eq('team_id', expectedTeamId).eq('league_id', expectedLeagueId));
+  }
+
+  private static async deleteStorageImage(imageUrl?: string | null): Promise<void> {
+    if (!imageUrl || !supabase) return;
+    const path = storagePathFromPublicUrl(imageUrl);
+    if (!path) return;
+    await supabase.storage.from('team-logos').remove([path]);
+  }
+
+  private static async deletePlayerImagesByTeam(teamId: string, leagueId: string): Promise<void> {
+    if (!supabase) return;
+    const data = await executeSupabaseRequest(() => supabase!
+      .from('players').select('image_url, image_public_id').eq('team_id', teamId).eq('league_id', leagueId));
+    const records = (data as Array<{ image_url?: string | null; image_public_id?: string | null }>) || [];
+    await Promise.all(records.map((row) => deletePlayerImage(row.image_public_id)));
+    const paths = records
+      .map((row) => row.image_url ? storagePathFromPublicUrl(row.image_url) : null)
+      .filter((path): path is string => Boolean(path));
+    if (paths.length > 0) await supabase.storage.from('team-logos').remove(paths);
+  }
+
+  static async getPlayerMatchStats(teamId: string, leagueId: string): Promise<PlayerMatchStat[]> {
+    if (!isSupabaseConfigured() || !supabase || !teamId || !leagueId) return [];
+    const data = await executeSupabaseRequest(() => supabase!
+      .from('player_match_stats').select(PLAYER_STAT_COLUMNS)
+      .eq('team_id', teamId).eq('league_id', leagueId));
+    return (data as unknown as PlayerMatchStat[]) || [];
+  }
+
+  static async upsertPlayerMatchStat(payload: Omit<PlayerMatchStat, 'id' | 'created_at' | 'updated_at'>): Promise<PlayerMatchStat> {
+    if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is not configured.');
+    const data = await executeSupabaseRequest(() => supabase!
+      .from('player_match_stats')
+      .upsert([{ ...payload, updated_at: new Date().toISOString() }], { onConflict: 'match_id,player_id' })
+      .select(PLAYER_STAT_COLUMNS).single());
+    return data as unknown as PlayerMatchStat;
+  }
+
+  static async deletePlayerMatchStat(id: string, leagueId: string): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is not configured.');
+    await executeSupabaseRequest(() => supabase!.from('player_match_stats').delete().eq('id', id).eq('league_id', leagueId));
   }
 
   // ==========================================

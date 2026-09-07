@@ -789,10 +789,115 @@
 
 .league-team-card-actions {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.35fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
   padding-top: 11px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.league-player-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(4, 8, 16, 0.82);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: overlayFadeIn 0.18s ease-out;
+}
+
+.league-player-modal {
+  width: min(960px, 100%);
+  max-height: min(90vh, 860px);
+  overflow: auto;
+}
+
+.league-player-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.league-player-modal-team-logo {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.league-player-form,
+.league-player-stats-form {
+  padding: 14px 0;
+  border-bottom: 1px solid #1e293b;
+}
+
+.league-player-stats-form {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.league-player-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.league-player-name-cell img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #1e293b;
+}
+
+.league-player-quota-message,
+.league-player-upload-success {
+  display: block;
+  margin-bottom: 6px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.league-player-upload-success {
+  margin-top: 6px;
+  color: #4ade80;
+}
+
+.league-player-upload-error {
+  display: block;
+  margin-top: 6px;
+  color: #fca5a5;
+}
+
+.league-player-image-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 9px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.league-player-image-preview img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #1e293b;
 }
 
 .league-team-card-actions > button {

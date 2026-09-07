@@ -12,6 +12,7 @@ interface TeamCardProps {
   team: Team;
   disabled?: boolean;
   onEdit: (team: Team) => void;
+  onManagePlayers?: (team: Team) => void;
   onOpenCrop: (team: Team, context: LogoCropContext) => void;
   onResetContext: (team: Team, context: LogoCropContext) => Promise<void> | void;
   onDelete: (team: Team) => Promise<void> | void;
@@ -51,6 +52,7 @@ export default function TeamCard({
   team,
   disabled = false,
   onEdit,
+  onManagePlayers,
   onOpenCrop,
   onResetContext,
   onDelete,
@@ -168,6 +170,10 @@ export default function TeamCard({
         <button type="button" onClick={() => onEdit(team)} disabled={disabled}>
           <i className="fas fa-edit" aria-hidden="true"></i>
           <span>แก้ไขทีม</span>
+        </button>
+        <button type="button" onClick={() => onManagePlayers?.(team)} disabled={disabled || !onManagePlayers}>
+          <i className="fas fa-user-shield" aria-hidden="true"></i>
+          <span>จัดการนักเตะ</span>
         </button>
         <button
           type="button"

@@ -47,6 +47,13 @@ export default function LeagueManagementModal({
     createTeam,
     updateTeam,
     deleteTeam,
+    getPlayersByTeam,
+    createPlayer,
+    updatePlayer,
+    deletePlayer,
+    getPlayerMatchStats,
+    upsertPlayerMatchStat,
+    deletePlayerMatchStat,
     uploadTeamLogo,
     createMatch,
     updateMatch,
@@ -179,6 +186,7 @@ export default function LeagueManagementModal({
               activeLeagueId={activeLeagueId}
               activeLeague={activeLeague}
               teams={teams}
+              matches={matches}
               loading={loading}
               isQuotaExceeded={isQuotaExceeded}
               quotaLoading={quotaLoading}
@@ -186,6 +194,13 @@ export default function LeagueManagementModal({
               onUpdateTeam={updateTeam}
               onUpdateLeague={updateLeague}
               onDeleteTeam={deleteTeam}
+              onGetPlayers={getPlayersByTeam}
+              onCreatePlayer={createPlayer}
+              onUpdatePlayer={updatePlayer}
+              onDeletePlayer={deletePlayer}
+              onGetPlayerStats={getPlayerMatchStats}
+              onUpsertPlayerStat={upsertPlayerMatchStat}
+              onDeletePlayerStat={deletePlayerMatchStat}
               onUploadTeamLogo={uploadTeamLogo}
               onIncrementUploadCount={incrementUploadCount}
             />

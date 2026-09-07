@@ -182,6 +182,101 @@ export type Database = {
           },
         ]
       }
+      players: {
+        Row: {
+          id: string
+          league_id: string
+          team_id: string
+          jersey_number: number
+          name: string
+          position: string
+          image_url: string | null
+          image_public_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          league_id: string
+          team_id: string
+          jersey_number: number
+          name: string
+          position: string
+          image_url?: string | null
+          image_public_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          league_id?: string
+          team_id?: string
+          jersey_number?: number
+          name?: string
+          position?: string
+          image_url?: string | null
+          image_public_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "players_team_league_fkey"
+            columns: ["team_id", "league_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id", "league_id"]
+          }
+        ]
+      }
+      player_match_stats: {
+        Row: {
+          id: string
+          league_id: string
+          match_id: string
+          player_id: string
+          team_id: string
+          goals: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          league_id: string
+          match_id: string
+          player_id: string
+          team_id: string
+          goals?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          league_id?: string
+          match_id?: string
+          player_id?: string
+          team_id?: string
+          goals?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_match_stats_player_league_fkey"
+            columns: ["player_id", "league_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id", "league_id"]
+          },
+          {
+            foreignKeyName: "player_match_stats_match_league_fkey"
+            columns: ["match_id", "league_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id", "league_id"]
+          }
+        ]
+      }
       user_permissions: {
         Row: {
           created_at: string
@@ -194,6 +289,7 @@ export type Database = {
           trial_started_at: number | null
           updated_at: string
           uploaded_image_count: number
+          uploaded_player_image_count: number
         }
         Insert: {
           created_at?: string
@@ -206,6 +302,7 @@ export type Database = {
           trial_started_at?: number | null
           updated_at?: string
           uploaded_image_count?: number
+          uploaded_player_image_count?: number
         }
         Update: {
           created_at?: string
@@ -218,6 +315,7 @@ export type Database = {
           trial_started_at?: number | null
           updated_at?: string
           uploaded_image_count?: number
+          uploaded_player_image_count?: number
         }
         Relationships: []
       }
@@ -290,6 +388,8 @@ export type Database = {
         }
       }
       increment_uploaded_image_count: { Args: never; Returns: number }
+      can_upload_player_image: { Args: never; Returns: boolean }
+      increment_uploaded_player_image_count: { Args: never; Returns: number }
       is_super_admin_email: { Args: { p_email: string }; Returns: boolean }
     }
     Enums: {

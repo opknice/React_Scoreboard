@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import type { League, Team, Match } from '../config/supabaseClient';
+import type { League, Team, Match, Player, PlayerMatchStat } from '../config/supabaseClient';
 import { supabase, isSupabaseConfigured } from '../config/supabaseClient';
 import { LeagueService, type StandingsRow } from '../services/leagueService';
 import { dedupeRequest, leagueMemoryCache } from '../utils/memoryCache';
@@ -38,7 +38,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-type RealtimeTable = 'leagues' | 'teams' | 'matches';
+type RealtimeTable = 'leagues' | 'teams' | 'matches' | 'players' | 'player_match_stats';
 
 interface SharedRealtimeChange {
   table: RealtimeTable;
@@ -81,6 +81,13 @@ export interface UseSupabaseLeagueResult {
   createTeam: (payload: Omit<Team, 'id' | 'created_at' | 'updated_at'>) => Promise<Team>;
   updateTeam: (id: string, updates: Partial<Team>) => Promise<Team>;
   deleteTeam: (id: string) => Promise<void>;
+  getPlayersByTeam: (teamId: string) => Promise<Player[]>;
+  createPlayer: (payload: Omit<Player, 'id' | 'created_at' | 'updated_at'>) => Promise<Player>;
+  updatePlayer: (id: string, updates: Partial<Player>) => Promise<Player>;
+  deletePlayer: (id: string, teamId: string) => Promise<void>;
+  getPlayerMatchStats: (teamId: string) => Promise<PlayerMatchStat[]>;
+  upsertPlayerMatchStat: (payload: Omit<PlayerMatchStat, 'id' | 'created_at' | 'updated_at'>) => Promise<PlayerMatchStat>;
+  deletePlayerMatchStat: (id: string) => Promise<void>;
   uploadTeamLogo: (
     file: File | Blob,
     fileName: string,
@@ -135,6 +142,12 @@ function ensureSharedRealtimeChannel(): void {
         newLeagueId: readLeagueId(payload.new),
         oldLeagueId: readLeagueId(payload.old),
       });
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, (payload) => {
+      emitSharedRealtimeChange({ table: 'players', newLeagueId: readLeagueId(payload.new), oldLeagueId: readLeagueId(payload.old) });
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'player_match_stats' }, (payload) => {
+      emitSharedRealtimeChange({ table: 'player_match_stats', newLeagueId: readLeagueId(payload.new), oldLeagueId: readLeagueId(payload.old) });
     })
     .subscribe();
 }
@@ -384,7 +397,7 @@ export function useSupabaseLeague(
         : undefined;
       scheduleLeaguesRefresh();
       const currentId = activeLeagueIdRef.current;
-      if (currentId && (!changedLeagueId || changedLeagueId === currentId)) {
+      if (currentId && (!changedLeagueId || changedLeagueId === currentId) && detail?.type === 'data-changed') {
         scheduleDetailsRefresh(currentId);
       }
     };
@@ -415,6 +428,7 @@ export function useSupabaseLeague(
       ) {
         invalidateLeagueDetailsCache(currentId);
         scheduleDetailsRefresh(currentId);
+        dispatchLeagueChanged(currentId);
       }
     });
   }, [
@@ -586,6 +600,75 @@ export function useSupabaseLeague(
     }
   }, [notify]);
 
+  const getPlayersByTeam = useCallback(async (teamId: string) => {
+    const leagueId = activeLeagueIdRef.current;
+    if (!leagueId || !teamId) return [];
+    return LeagueService.getPlayersByTeam(teamId, leagueId);
+  }, []);
+
+  const createPlayer = useCallback(async (payload: Omit<Player, 'id' | 'created_at' | 'updated_at'>) => {
+    const leagueId = activeLeagueIdRef.current;
+    if (!leagueId || payload.league_id !== leagueId) throw new Error('ไม่สามารถเพิ่มนักเตะข้ามลีกได้');
+    try {
+      const created = await LeagueService.createPlayer(payload);
+      dispatchLeagueChanged(created.league_id);
+      notify?.(`เพิ่มนักเตะ "${created.name}" สำเร็จ`, 'success');
+      return created;
+    } catch (err: unknown) {
+      notify?.(`เพิ่มนักเตะไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
+      throw err;
+    }
+  }, [notify]);
+
+  const updatePlayer = useCallback(async (id: string, updates: Partial<Player>) => {
+    const leagueId = activeLeagueIdRef.current;
+    const teamId = updates.team_id;
+    if (!leagueId || !teamId) throw new Error('ต้องระบุทีมและลีกของนักเตะ');
+    try {
+      const updated = await LeagueService.updatePlayer(id, updates, teamId, leagueId);
+      dispatchLeagueChanged(updated.league_id);
+      notify?.(`อัปเดตนักเตะ "${updated.name}" สำเร็จ`, 'success');
+      return updated;
+    } catch (err: unknown) {
+      notify?.(`อัปเดตนักเตะไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
+      throw err;
+    }
+  }, [notify]);
+
+  const deletePlayer = useCallback(async (id: string, teamId: string) => {
+    const leagueId = activeLeagueIdRef.current;
+    if (!leagueId) throw new Error('กรุณาเลือกลีกก่อนลบนักเตะ');
+    try {
+      await LeagueService.deletePlayer(id, teamId, leagueId);
+      dispatchLeagueChanged(leagueId);
+      notify?.('ลบนักเตะเรียบร้อยแล้ว', 'info');
+    } catch (err: unknown) {
+      notify?.(`ลบนักเตะไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
+      throw err;
+    }
+  }, [notify]);
+
+  const getPlayerMatchStats = useCallback(async (teamId: string) => {
+    const leagueId = activeLeagueIdRef.current;
+    if (!leagueId || !teamId) return [];
+    return LeagueService.getPlayerMatchStats(teamId, leagueId);
+  }, []);
+
+  const upsertPlayerMatchStat = useCallback(async (payload: Omit<PlayerMatchStat, 'id' | 'created_at' | 'updated_at'>) => {
+    const leagueId = activeLeagueIdRef.current;
+    if (!leagueId || payload.league_id !== leagueId) throw new Error('ไม่สามารถบันทึกสถิติข้ามลีกได้');
+    const saved = await LeagueService.upsertPlayerMatchStat(payload);
+    dispatchLeagueChanged(saved.league_id);
+    return saved;
+  }, []);
+
+  const deletePlayerMatchStat = useCallback(async (id: string) => {
+    const leagueId = activeLeagueIdRef.current;
+    if (!leagueId) throw new Error('กรุณาเลือกลีกก่อนลบสถิติ');
+    await LeagueService.deletePlayerMatchStat(id, leagueId);
+    dispatchLeagueChanged(leagueId);
+  }, []);
+
   const uploadTeamLogo = useCallback(async (
     file: File | Blob,
     fileName: string,
@@ -698,6 +781,13 @@ export function useSupabaseLeague(
     createTeam,
     updateTeam,
     deleteTeam,
+    getPlayersByTeam,
+    createPlayer,
+    updatePlayer,
+    deletePlayer,
+    getPlayerMatchStats,
+    upsertPlayerMatchStat,
+    deletePlayerMatchStat,
     uploadTeamLogo,
     createMatch,
     updateMatch,
@@ -713,6 +803,13 @@ export function useSupabaseLeague(
     deleteLeague,
     deleteMatch,
     deleteTeam,
+    getPlayersByTeam,
+    createPlayer,
+    updatePlayer,
+    deletePlayer,
+    getPlayerMatchStats,
+    upsertPlayerMatchStat,
+    deletePlayerMatchStat,
     detailsLoadedLeagueId,
     detailsLoading,
     error,

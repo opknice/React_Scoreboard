@@ -1,0 +1,108 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.leagues (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  name text NOT NULL,
+  slug text,
+  season text,
+  description text,
+  is_active boolean NOT NULL DEFAULT true,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_by text,
+  overlay_logo_default_size_px integer CHECK (overlay_logo_default_size_px IS NULL OR overlay_logo_default_size_px >= 32 AND overlay_logo_default_size_px <= 800),
+  logo_browser_default_size_px integer CHECK (logo_browser_default_size_px IS NULL OR logo_browser_default_size_px >= 32 AND logo_browser_default_size_px <= 800),
+  CONSTRAINT leagues_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.teams (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  league_id uuid NOT NULL,
+  name text NOT NULL,
+  short_name text,
+  logo_url text,
+  color_primary text NOT NULL DEFAULT '#ffffff'::text,
+  color_secondary text NOT NULL DEFAULT '#000000'::text,
+  crop_metadata jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  overlay_crop_metadata jsonb,
+  logo_browser_crop_metadata jsonb,
+  overlay_logo_size_mode text NOT NULL DEFAULT 'inherit'::text,
+  overlay_logo_size_value numeric,
+  logo_browser_size_mode text NOT NULL DEFAULT 'inherit'::text,
+  logo_browser_size_value numeric,
+  CONSTRAINT teams_pkey PRIMARY KEY (id),
+  CONSTRAINT teams_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id)
+);
+CREATE TABLE public.matches (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  league_id uuid NOT NULL,
+  match_number integer NOT NULL CHECK (match_number > 0),
+  team_a_id uuid,
+  team_b_id uuid,
+  team_a_name text NOT NULL,
+  team_b_name text NOT NULL,
+  score_a integer NOT NULL DEFAULT 0,
+  score_b integer NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'scheduled'::text CHECK (status = ANY (ARRAY['scheduled'::text, 'in_progress'::text, 'finished'::text, 'postponed'::text])),
+  label1 text NOT NULL DEFAULT ''::text,
+  label2 text NOT NULL DEFAULT ''::text,
+  label3 text NOT NULL DEFAULT ''::text,
+  match_date timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT matches_pkey PRIMARY KEY (id),
+  CONSTRAINT matches_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT matches_team_a_id_fkey FOREIGN KEY (team_a_id) REFERENCES public.teams(id),
+  CONSTRAINT matches_team_b_id_fkey FOREIGN KEY (team_b_id) REFERENCES public.teams(id)
+);
+CREATE TABLE public.user_permissions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text NOT NULL UNIQUE,
+  display_name text NOT NULL DEFAULT ''::text,
+  photo_url text NOT NULL DEFAULT ''::text,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['allowed'::text, 'denied'::text, 'pending'::text])),
+  trial_started_at bigint,
+  last_login timestamp with time zone NOT NULL DEFAULT now(),
+  uploaded_image_count integer NOT NULL DEFAULT 0 CHECK (uploaded_image_count >= 0),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  uploaded_player_image_count integer NOT NULL DEFAULT 0 CHECK (uploaded_player_image_count >= 0),
+  CONSTRAINT user_permissions_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.players (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  league_id uuid NOT NULL,
+  team_id uuid NOT NULL,
+  jersey_number integer NOT NULL CHECK (jersey_number >= 0 AND jersey_number <= 99),
+  name text NOT NULL CHECK (char_length(TRIM(BOTH FROM name)) >= 1 AND char_length(TRIM(BOTH FROM name)) <= 120),
+  position text NOT NULL CHECK ("position" = ANY (ARRAY['GK'::text, 'DF'::text, 'MF'::text, 'FW'::text])),
+  image_url text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  image_public_id text,
+  CONSTRAINT players_pkey PRIMARY KEY (id),
+  CONSTRAINT players_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT players_team_league_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id),
+  CONSTRAINT players_team_league_fkey FOREIGN KEY (league_id) REFERENCES public.teams(league_id)
+);
+CREATE TABLE public.player_match_stats (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  league_id uuid NOT NULL,
+  match_id uuid NOT NULL,
+  player_id uuid NOT NULL,
+  team_id uuid NOT NULL,
+  goals integer NOT NULL DEFAULT 0 CHECK (goals >= 0),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT player_match_stats_pkey PRIMARY KEY (id),
+  CONSTRAINT player_match_stats_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT player_match_stats_match_league_fkey FOREIGN KEY (match_id) REFERENCES public.matches(id),
+  CONSTRAINT player_match_stats_match_league_fkey FOREIGN KEY (league_id) REFERENCES public.matches(league_id),
+  CONSTRAINT player_match_stats_player_league_fkey FOREIGN KEY (player_id) REFERENCES public.players(id),
+  CONSTRAINT player_match_stats_player_league_fkey FOREIGN KEY (league_id) REFERENCES public.players(league_id),
+  CONSTRAINT player_match_stats_team_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id),
+  CONSTRAINT player_match_stats_team_fkey FOREIGN KEY (league_id) REFERENCES public.teams(league_id)
+);
