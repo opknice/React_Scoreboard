@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import type { League } from '../../config/supabaseClient';
+import ModalBackdrop from '../ModalBackdrop';
 
 export interface LeagueTabProps {
   leagues: League[];
@@ -27,7 +28,6 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
   const [leagueSeason, setLeagueSeason] = useState('');
   const [leagueDesc, setLeagueDesc] = useState('');
   const [isLeagueFormOpen, setIsLeagueFormOpen] = useState(false);
-  const leagueModalOverlayMouseDownRef = useRef(false);
 
   const resetLeagueForm = () => {
     setIsEditingLeague(false);
@@ -83,32 +83,13 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
     closeLeagueForm();
   };
 
-  const handleLeagueModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    leagueModalOverlayMouseDownRef.current = e.target === e.currentTarget;
-  };
-
-  const handleLeagueModalMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (leagueModalOverlayMouseDownRef.current && e.target === e.currentTarget) {
-      closeLeagueForm();
-    }
-    leagueModalOverlayMouseDownRef.current = false;
-  };
-
   return (
     <div>
       {/* Create/Edit League Modal */}
       {isLeagueFormOpen && (
-        <div
+        <ModalBackdrop
           className="league-league-modal-overlay"
-          onMouseDown={handleLeagueModalMouseDown}
-          onMouseUp={handleLeagueModalMouseUp}
-          onKeyDownCapture={(e) => {
-            // Prevent the parent LeagueManagementModal from closing before this modal.
-            if (e.key === 'Escape') {
-              e.stopPropagation();
-              closeLeagueForm();
-            }
-          }}
+          onEscape={closeLeagueForm}
           role="presentation"
         >
           <div
@@ -178,7 +159,7 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
           </div>
         </form>
       </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* List of Leagues */}

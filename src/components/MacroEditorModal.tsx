@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import type { ActionStep, ActionType, CustomMacro, MacroEvent, MacroFilter } from '../types/macro';
+import ModalBackdrop from './ModalBackdrop';
 import {
   MACRO_EVENT_OPTIONS,
   OBS_HOTKEY_OPTIONS,
@@ -333,7 +334,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   };
 
   return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, maxHeight: '90vh', overflow: 'auto', padding: 0 }}>
         <div style={{ padding: '18px 24px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div><h3 style={{ margin: 0 }}>สร้าง Automation</h3><div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 5 }}>ตั้งค่าแบบง่าย: เมื่อเกิดอะไรขึ้น → ให้ทำอะไร</div></div>
@@ -351,7 +352,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
         </div>
         <div style={{ padding: '14px 24px', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'space-between', gap: 8 }}><button type="button" style={buttonStyle()} onClick={() => step === 0 ? onClose() : goTo(step - 1)}>{step === 0 ? 'ยกเลิก' : 'ย้อนกลับ'}</button>{step < 2 ? <button type="button" style={buttonStyle(true)} onClick={() => goTo(step + 1)}>ถัดไป</button> : <button type="button" style={buttonStyle(true)} onClick={save}>บันทึก Automation</button>}</div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 

@@ -1,3 +1,5 @@
+import ModalBackdrop from './ModalBackdrop';
+
 export interface SelectableTeam {
   id: string;
   name: string;
@@ -37,7 +39,7 @@ export default function TeamSelectModal({
   );
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '520px' }}>
         <h3>
           <i className="fas fa-users"></i> เลือกทีม {target}
@@ -135,6 +137,6 @@ export default function TeamSelectModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

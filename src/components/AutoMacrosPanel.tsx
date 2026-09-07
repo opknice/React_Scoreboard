@@ -3,6 +3,7 @@ import CustomMacroCard from './CustomMacroCard';
 import MacroEditorModal from './MacroEditorModal';
 import type { CustomMacro, MacroRuntimeStatus } from '../types/macro';
 import { MACRO_PRESETS } from '../macros/macroPresets';
+import ModalBackdrop from './ModalBackdrop';
 
 interface AutoMacrosPanelProps {
   obs: any;
@@ -39,7 +40,7 @@ export default function AutoMacrosPanel({ obs, onClose, customMacrosHook }: Auto
   };
 
   return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: '90vh', overflow: 'auto', padding: 0 }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 3, background: '#1e293b', borderBottom: '1px solid #334155', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div><h3 style={{ margin: 0 }}>Automation</h3><div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 4 }}>ตั้งค่าให้ Scoreboard และ OBS ทำงานแทนคุณ</div></div>
@@ -58,7 +59,7 @@ export default function AutoMacrosPanel({ obs, onClose, customMacrosHook }: Auto
         </div>
       </div>
       {editingMacro !== undefined && <MacroEditorModal obs={obs} macro={editingMacro} onSave={handleSaveMacro} onClose={() => setEditingMacro(undefined)} />}
-    </div>
+    </ModalBackdrop>
   );
 }
 

@@ -1,6 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { League, Match, Team } from '../../config/supabaseClient';
 import MatchEditModal from './MatchEditModal';
+import ModalBackdrop from '../ModalBackdrop';
 
 type MatchStatus = 'scheduled' | 'in_progress' | 'finished' | 'postponed';
 type StatusFilter = 'all' | MatchStatus;
@@ -56,7 +57,6 @@ export const LeagueDatabaseModal: React.FC<LeagueDatabaseModalProps> = ({
   const [sortKey, setSortKey] = useState<SortKey>('match_date');
   const [sortDescending, setSortDescending] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
-  const overlayMouseDownRef = useRef(false);
 
   const filteredMatches = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase('th');
@@ -93,28 +93,10 @@ export const LeagueDatabaseModal: React.FC<LeagueDatabaseModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    overlayMouseDownRef.current = e.target === e.currentTarget;
-  };
-
-  const handleOverlayMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (overlayMouseDownRef.current && e.target === e.currentTarget) {
-      onClose();
-    }
-    overlayMouseDownRef.current = false;
-  };
-
   return (
-    <div
+    <ModalBackdrop
       className="league-database-modal-overlay"
-      onMouseDown={handleOverlayMouseDown}
-      onMouseUp={handleOverlayMouseUp}
-      onKeyDownCapture={(e) => {
-        if (e.key === 'Escape') {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
+      onEscape={onClose}
       role="presentation"
     >
       <div
@@ -301,7 +283,7 @@ export const LeagueDatabaseModal: React.FC<LeagueDatabaseModalProps> = ({
         onSave={onUpdateMatch}
         onClose={() => setEditingMatch(null)}
       />
-    </div>
+    </ModalBackdrop>
   );
 };
 

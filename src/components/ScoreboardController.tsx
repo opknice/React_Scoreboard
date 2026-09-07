@@ -15,6 +15,7 @@ import {
 import { translations } from '../constants/translations';
 import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
+import ModalBackdrop from './ModalBackdrop';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useObsReplayBufferFolderRescan } from '../hooks/useObsReplayBufferFolderRescan';
@@ -1899,7 +1900,7 @@ export default function ScoreboardController() {
 
         {/* --- Logo Upload & Path Settings Modal --- */}
         {showLogoPathModal && (
-          <div className="modal-overlay" onClick={() => setShowLogoPathModal(false)}>
+          <ModalBackdrop className="modal-overlay" onEscape={() => setShowLogoPathModal(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
               <h3>
                 <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
@@ -2059,7 +2060,7 @@ export default function ScoreboardController() {
                 }}
               />
             </div>
-          </div>
+          </ModalBackdrop>
         )}
 
         {showPresetTimeModal && <PresetTimeModal

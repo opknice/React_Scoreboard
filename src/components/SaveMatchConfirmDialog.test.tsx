@@ -36,7 +36,7 @@ describe('SaveMatchConfirmDialog', () => {
     expect(baseElement.querySelector('.league-modal-overlay')).toBeNull();
   });
 
-  it('confirms once and closes on Escape or backdrop click', () => {
+  it('confirms once, closes on Escape, and ignores backdrop clicks', () => {
     const { baseElement, onConfirm, onClose } = renderDialog();
 
     fireEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }));
@@ -46,8 +46,8 @@ describe('SaveMatchConfirmDialog', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     const overlay = baseElement.querySelector('.save-match-confirm-overlay');
     expect(overlay).not.toBeNull();
-    fireEvent.mouseDown(overlay!);
+    fireEvent.click(overlay!);
 
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

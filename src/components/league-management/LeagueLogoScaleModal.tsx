@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent, RefObject } from 'react';
+import type { RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { League, Team } from '../../config/supabaseClient';
 import type { LeagueLogoSizingSettings } from '../../types/leagueLogoSizing';
 import LeagueLogoScaleControls from './LeagueLogoScaleControls';
+import ModalBackdrop from '../ModalBackdrop';
 
 interface LeagueLogoScaleModalProps {
   isOpen: boolean;
@@ -28,7 +29,6 @@ export default function LeagueLogoScaleModal({
 }: LeagueLogoScaleModalProps) {
   const [isDirty, setIsDirty] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const overlayMouseDownRef = useRef(false);
 
   const requestClose = () => {
     if (isDirty && !window.confirm('มีการแก้ไขขนาดโลโก้ที่ยังไม่ได้บันทึก ต้องการปิดและยกเลิกการแก้ไขหรือไม่?')) {
@@ -57,27 +57,11 @@ export default function LeagueLogoScaleModal({
 
   if (!isOpen) return null;
 
-  const handleOverlayMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    overlayMouseDownRef.current = event.target === event.currentTarget;
-  };
-
-  const handleOverlayMouseUp = (event: MouseEvent<HTMLDivElement>) => {
-    if (overlayMouseDownRef.current && event.target === event.currentTarget) requestClose();
-    overlayMouseDownRef.current = false;
-  };
-
   const modal = (
-    <div
+    <ModalBackdrop
       className="league-logo-scale-modal-overlay"
+      onEscape={requestClose}
       role="presentation"
-      onMouseDown={handleOverlayMouseDown}
-      onMouseUp={handleOverlayMouseUp}
-      onKeyDownCapture={(event) => {
-        if (event.key === 'Escape') {
-          event.stopPropagation();
-          requestClose();
-        }
-      }}
     >
       <div
         ref={dialogRef}
@@ -113,7 +97,7 @@ export default function LeagueLogoScaleModal({
           />
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 
   return createPortal(modal, document.body);

@@ -3,6 +3,7 @@ import type {
   LeagueDetailLabelKey,
   LeagueDetailLabels,
 } from '../types/leagueDetailLabels';
+import ModalBackdrop from './ModalBackdrop';
 
 interface LeagueDetailLabelsModalProps {
   isOpen: boolean;
@@ -52,12 +53,10 @@ export default function LeagueDetailLabelsModal({
   };
 
   return (
-    <div
+    <ModalBackdrop
       className="modal-overlay"
       style={{ zIndex: 1100 }}
-      onClick={() => {
-        if (!isSaving) onClose();
-      }}
+      onEscape={isSaving ? undefined : onClose}
       role="presentation"
     >
       <div
@@ -113,7 +112,6 @@ export default function LeagueDetailLabelsModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
-

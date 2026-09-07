@@ -13,6 +13,17 @@ function renderActionsStep() {
 }
 
 describe('MacroEditorModal event step', () => {
+  it('ignores clicks on the empty backdrop area', () => {
+    const onClose = vi.fn();
+    const { container } = render(<MacroEditorModal onSave={vi.fn()} onClose={onClose} />);
+
+    const backdrop = container.querySelector('.modal-overlay');
+    expect(backdrop).not.toBeNull();
+    fireEvent.click(backdrop!);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('keeps future steps disabled until they are reached', () => {
     render(<MacroEditorModal onSave={vi.fn()} onClose={vi.fn()} />);
 
@@ -30,6 +41,17 @@ describe('MacroEditorModal event step', () => {
     fireEvent.keyDown(keyInput, { key: 'a', code: 'KeyA' });
 
     expect(keyInput.value).toBe('KeyA');
+  });
+
+  it('does not close while Escape is being used to clear a keyboard filter', () => {
+    const onClose = vi.fn();
+    render(<MacroEditorModal onSave={vi.fn()} onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'KeyPressed' } });
+
+    fireEvent.keyDown(screen.getByPlaceholderText('เช่น F5, KeyA, Space'), { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('allows an unfiltered keyboard trigger and clears the previous validation error', () => {

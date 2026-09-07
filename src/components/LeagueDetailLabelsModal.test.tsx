@@ -55,4 +55,16 @@ describe('LeagueDetailLabelsModal', () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps the modal open when its backdrop is clicked', () => {
+    const onClose = vi.fn();
+    renderModal({ onClose });
+
+    const backdrop = document.querySelector('.modal-overlay');
+    expect(backdrop).not.toBeNull();
+    fireEvent.click(backdrop!);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
 });

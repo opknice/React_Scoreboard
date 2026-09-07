@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef } from 'react';
+import { useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import ModalBackdrop from './ModalBackdrop';
 import './SaveMatchConfirmDialog.css';
 
 export interface SaveMatchConfirmDialogProps {
@@ -29,17 +30,6 @@ export default function SaveMatchConfirmDialog({
   const descriptionId = useId();
   const isConfirmingRef = useRef(false);
 
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   const handleConfirm = () => {
@@ -57,12 +47,10 @@ export default function SaveMatchConfirmDialog({
   };
 
   return createPortal(
-    <div
+    <ModalBackdrop
       className="save-match-confirm-overlay"
+      onEscape={onClose}
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
     >
       <section
         className="save-match-confirm-dialog"
@@ -103,7 +91,7 @@ export default function SaveMatchConfirmDialog({
           </div>
         </div>
       </section>
-    </div>,
+    </ModalBackdrop>,
     document.body,
   );
 }

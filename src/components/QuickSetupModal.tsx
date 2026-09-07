@@ -26,6 +26,7 @@ import type {
 import LogoWithCrop from './LogoWithCrop';
 import LogoBrowserCropModal from './LogoBrowserCropModal';
 import TeamColorBrowserSourcePanel from './TeamColorBrowserSourcePanel';
+import ModalBackdrop from './ModalBackdrop';
 import './QuickSetupModal.css';
 
 interface LocalFontData {
@@ -139,6 +140,8 @@ export default function QuickSetupModal({
   onClose,
 }: QuickSetupModalProps) {
   const [openPanel, setOpenPanel] = useState<'team-name' | 'team-color' | 'score' | 'logo' | null>(null);
+  const [isCustomBrowserSourceOpen, setIsCustomBrowserSourceOpen] = useState(false);
+  const [isFootballLeagueTableOpen, setIsFootballLeagueTableOpen] = useState(false);
   const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
   const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
   const [logoPreviewSide, setLogoPreviewSide] = useState<'A' | 'B' | 'both'>('both');
@@ -207,7 +210,11 @@ export default function QuickSetupModal({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) setOpenPanel(null);
+    if (!isOpen) {
+      setOpenPanel(null);
+      setIsCustomBrowserSourceOpen(false);
+      setIsFootballLeagueTableOpen(false);
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -217,27 +224,44 @@ export default function QuickSetupModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(event) => event.stopPropagation()}>
         <h3><i className="fas fa-sliders"></i> Quick Setup</h3>
-        <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>คัดลอก Overlay URL ไปใส่เป็น Browser Source ใน OBS Studio</p>
-        <div className={`quick-setup-persistence-status is-${browserSettingsSaveStatus}`} role="status">
-          <span>
-            <i className={`fas ${activeLeagueName ? 'fa-trophy' : 'fa-globe'}`} aria-hidden="true"></i>{' '}
-            {activeLeagueName
-              ? browserSettingsScope === 'league'
-                ? `ค่าของลีก: ${activeLeagueName}`
-                : browserSettingsScope === 'mixed'
-                  ? `ค่าของลีก + Global fallback: ${activeLeagueName}`
-                  : `Global fallback: ${activeLeagueName} ยังไม่มีค่าของลีก`
-              : 'Global settings (เครื่องนี้)'}
-          </span>
-          <span className="quick-setup-persistence-save-state">
-            {browserSettingsSaveStatus === 'saving' && 'กำลังบันทึก...'}
-            {browserSettingsSaveStatus === 'saved' && (activeLeagueName ? 'บันทึกลง Supabase แล้ว' : 'บันทึกในเครื่องแล้ว')}
-            {browserSettingsSaveStatus === 'error' && 'บันทึกไม่สำเร็จ'}
-          </span>
+        <div style={{ display: 'flex', marginBottom: '10px' }}>
+          <button type="button" className="btn-primary" style={{ width: '100%', background: '#3b82f6', borderColor: '#3b82f6', fontWeight: 'bold' }} onClick={onOpenObsSetup}>
+            <i className="fas fa-download"></i> 📦 ดาวน์โหลด OBS Scene Collection
+          </button>
         </div>
+        <div className="quick-setup-panel quick-setup-panel--custom-browser-source">
+          <button
+            type="button"
+            className="quick-setup-panel-toggle"
+            aria-expanded={isCustomBrowserSourceOpen}
+            aria-controls="custom-browser-source-content"
+            onClick={() => setIsCustomBrowserSourceOpen((current) => !current)}
+          >
+            <span><i className="fas fa-code"></i> Custom Browser Source</span>
+            <i className={`fas fa-chevron-${isCustomBrowserSourceOpen ? 'up' : 'down'}`} aria-hidden="true"></i>
+          </button>
+          {isCustomBrowserSourceOpen ? <div id="custom-browser-source-content" className="quick-setup-panel-content">
+          <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>คัดลอก Overlay URL ไปใส่เป็น Browser Source ใน OBS Studio</p>
+          <div className={`quick-setup-persistence-status is-${browserSettingsSaveStatus}`} role="status">
+            <span>
+              <i className={`fas ${activeLeagueName ? 'fa-trophy' : 'fa-globe'}`} aria-hidden="true"></i>{' '}
+              {activeLeagueName
+                ? browserSettingsScope === 'league'
+                  ? `ค่าของลีก: ${activeLeagueName}`
+                  : browserSettingsScope === 'mixed'
+                    ? `ค่าของลีก + Global fallback: ${activeLeagueName}`
+                    : `Global fallback: ${activeLeagueName} ยังไม่มีค่าของลีก`
+                : 'Global settings (เครื่องนี้)'}
+            </span>
+            <span className="quick-setup-persistence-save-state">
+              {browserSettingsSaveStatus === 'saving' && 'กำลังบันทึก...'}
+              {browserSettingsSaveStatus === 'saved' && (activeLeagueName ? 'บันทึกลง Supabase แล้ว' : 'บันทึกในเครื่องแล้ว')}
+              {browserSettingsSaveStatus === 'error' && 'บันทึกไม่สำเร็จ'}
+            </span>
+          </div>
         <div className="quick-setup-panel quick-setup-panel--team-name">
           <button
             type="button"
@@ -740,10 +764,22 @@ export default function QuickSetupModal({
           </div>
           </div> : null}
         </div>
+        </div> : null}
+        </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button className="btn-primary" style={{ background: '#3b82f6', borderColor: '#3b82f6', fontWeight: 'bold' }} onClick={onOpenObsSetup}><i className="fas fa-download"></i> 📦 ดาวน์โหลด OBS Scene Collection</button>
-          <div style={{ height: '1px', background: 'var(--border-color)', margin: '8px 0' }}></div>
+        <div className="quick-setup-panel quick-setup-panel--football-league-table">
+          <button
+            type="button"
+            className="quick-setup-panel-toggle"
+            aria-expanded={isFootballLeagueTableOpen}
+            aria-controls="football-league-table-content"
+            onClick={() => setIsFootballLeagueTableOpen((current) => !current)}
+          >
+            <span><i className="fas fa-trophy"></i> Football League Table</span>
+            <i className={`fas fa-chevron-${isFootballLeagueTableOpen ? 'up' : 'down'}`} aria-hidden="true"></i>
+          </button>
+          {isFootballLeagueTableOpen ? <div id="football-league-table-content" className="quick-setup-panel-content">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button className="btn-primary" onClick={() => onCopyOverlay('table')}><i className="fas fa-table"></i> Copy League Table URL</button>
           <button className="btn-success" onClick={() => onCopyOverlay('results')}><i className="fas fa-list"></i> Copy Match Results URL</button>
           <button className="btn-primary" style={{ background: '#0ea5e9', borderColor: '#0ea5e9', fontWeight: 'bold' }} onClick={() => onCopyOverlay('combined', 'all-score-combined')}><i className="fas fa-trophy"></i> Copy Combined All Score & Table URL</button>
@@ -763,8 +799,10 @@ export default function QuickSetupModal({
             </button>
           )}
         </div>
+          </div> : null}
+        </div>
         <div style={{ marginTop: '16px', textAlign: 'right' }}><button className="btn-secondary" onClick={onClose}>{closeLabel}</button></div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

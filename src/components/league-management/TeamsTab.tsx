@@ -12,6 +12,7 @@ import LeagueLogoScaleModal from './LeagueLogoScaleModal';
 import LogoStorageProviderSelect from '../LogoStorageProviderSelect';
 import { validateLogoFile } from '../../services/logoStorageService';
 import type { LogoStorageProvider } from '../../types/logoStorage';
+import ModalBackdrop from '../ModalBackdrop';
 
 type LogoCropContext = 'overlay' | 'logo-browser';
 
@@ -62,7 +63,6 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
   const [storageProvider, setStorageProvider] = useState<LogoStorageProvider>('cloudinary');
   const logoScaleButtonRef = useRef<HTMLButtonElement>(null);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
-  const teamModalOverlayMouseDownRef = useRef(false);
   const leagueLogoSizing = parseLeagueLogoSizing(activeLeague?.settings);
   const effectiveLeagueLogoSizing = previewLogoSizing ?? leagueLogoSizing;
 
@@ -162,17 +162,6 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
     closeTeamForm();
   };
 
-  const handleTeamModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    teamModalOverlayMouseDownRef.current = e.target === e.currentTarget;
-  };
-
-  const handleTeamModalMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (teamModalOverlayMouseDownRef.current && e.target === e.currentTarget) {
-      closeTeamForm();
-    }
-    teamModalOverlayMouseDownRef.current = false;
-  };
-
   return (
     <div>
       {cropEditor && (
@@ -226,17 +215,9 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
 
       {/* Add/Edit Team Modal */}
       {isTeamFormOpen && (
-        <div
+        <ModalBackdrop
           className="league-team-modal-overlay"
-          onMouseDown={handleTeamModalMouseDown}
-          onMouseUp={handleTeamModalMouseUp}
-          onKeyDownCapture={(e) => {
-            // Prevent the parent LeagueManagementModal from closing before this modal.
-            if (e.key === 'Escape') {
-              e.stopPropagation();
-              closeTeamForm();
-            }
-          }}
+          onEscape={closeTeamForm}
           role="presentation"
         >
           <div
@@ -379,7 +360,7 @@ export const TeamsTab: React.FC<TeamsTabProps> = ({
           </div>
         </form>
       </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* Teams Cards Grid */}

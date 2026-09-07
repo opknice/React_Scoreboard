@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UseSupabaseLeagueResult } from '../hooks/useSupabaseLeague';
 import { useAuthAccess } from '../hooks/useAuthAccess';
@@ -7,6 +7,7 @@ import type { Match } from '../config/supabaseClient';
 import LeagueTab from './league-management/LeagueTab';
 import TeamsTab from './league-management/TeamsTab';
 import MatchesTab from './league-management/MatchesTab';
+import ModalBackdrop from './ModalBackdrop';
 import './LeagueManagementModal.css';
 
 
@@ -66,51 +67,25 @@ export default function LeagueManagementModal({
     }
   }, [isOpen, initialTab, leagues.length]);
 
-  // Handle ESC key and prevent body scroll when modal is open
+  // Prevent body scroll while the modal is open. Escape is handled by the
+  // shared ModalBackdrop so nested modals close one layer at a time.
   useEffect(() => {
     if (!isOpen) return;
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       document.body.style.overflow = originalOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, onClose]);
-
-  // Robust Click-Outside handling (prevents text-drag outside from accidentally closing modal)
-  const overlayMouseDownRef = useRef(false);
-
-  const handleOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      overlayMouseDownRef.current = true;
-    } else {
-      overlayMouseDownRef.current = false;
-    }
-  }, []);
-
-  const handleOverlayMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (overlayMouseDownRef.current && e.target === e.currentTarget) {
-      onClose();
-    }
-    overlayMouseDownRef.current = false;
-  }, [onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return createPortal(
-    <div
+    <ModalBackdrop
       className="league-modal-overlay"
-      onMouseDown={handleOverlayMouseDown}
-      onMouseUp={handleOverlayMouseUp}
+      onEscape={onClose}
       role="dialog"
       aria-modal="true"
       aria-labelledby="league-modal-title"
@@ -239,7 +214,7 @@ export default function LeagueManagementModal({
           </button>
         </div>
       </div>
-    </div>,
+    </ModalBackdrop>,
     document.body
   );
 }

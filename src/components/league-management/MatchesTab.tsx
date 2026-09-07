@@ -1,9 +1,10 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { League, Team, Match } from '../../config/supabaseClient';
 import { getTodayDateString, formatToDateInput } from './leagueDateUtils';
 import { getNextMatchNumber, getScheduledTeamIdsForDate, isUnplayedMatch } from './leagueMatchUtils';
 import LeagueDatabaseModal from './LeagueDatabaseModal';
 import LeagueDatePicker from './LeagueDatePicker';
+import ModalBackdrop from '../ModalBackdrop';
 
 export interface MatchesTabProps {
   activeLeagueId: string;
@@ -41,7 +42,6 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
   const [matchStatus, setMatchStatus] = useState<'scheduled' | 'in_progress' | 'finished' | 'postponed'>('scheduled');
   const [matchScoreA, setMatchScoreA] = useState<number>(0);
   const [matchScoreB, setMatchScoreB] = useState<number>(0);
-  const matchModalOverlayMouseDownRef = useRef(false);
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
 
   const unplayedMatches = useMemo(
@@ -142,32 +142,13 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
     resetMatchForm();
   };
 
-  const handleMatchModalMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    matchModalOverlayMouseDownRef.current = e.target === e.currentTarget;
-  };
-
-  const handleMatchModalMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (matchModalOverlayMouseDownRef.current && e.target === e.currentTarget) {
-      resetMatchForm();
-    }
-    matchModalOverlayMouseDownRef.current = false;
-  };
-
   return (
     <div>
       {/* Form for Adding / Editing Match */}
       {(showMatchForm || editingMatchId) && (
-        <div
+        <ModalBackdrop
           className="league-match-modal-overlay"
-          onMouseDown={handleMatchModalMouseDown}
-          onMouseUp={handleMatchModalMouseUp}
-          onKeyDownCapture={(e) => {
-            // Prevent the parent LeagueManagementModal from closing on Escape first.
-            if (e.key === 'Escape') {
-              e.stopPropagation();
-              resetMatchForm();
-            }
-          }}
+          onEscape={resetMatchForm}
           role="presentation"
         >
           <div
@@ -311,7 +292,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
             </div>
             </form>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* Match Table List */}

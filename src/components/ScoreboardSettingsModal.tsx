@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTimerSnapshot, type TimerStore } from '../hooks/useTimer';
+import ModalBackdrop from './ModalBackdrop';
 import type {
   LeagueDetailLabelKey,
   LeagueDetailLabels,
@@ -76,7 +77,7 @@ export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate
 
   return (
     <>
-      <div className="modal-overlay" onClick={onClose}>
+      <ModalBackdrop className="modal-overlay" onEscape={onClose}>
         <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '620px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
           <h3 style={{ margin: 0 }}><i className="fas fa-cog"></i> {trans.settings}</h3>
@@ -105,12 +106,12 @@ export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', color: 'var(--text-muted-color)', marginBottom: '10px' }}><div><code>&lt;TeamA&gt;</code> : ชื่อทีม A ({nameA})</div><div><code>&lt;TeamB&gt;</code> : ชื่อทีม B ({nameB})</div><div><code>&lt;score_team_a&gt;</code> : คะแนนทีม A ({scoreA})</div><div><code>&lt;score_team_b&gt;</code> : คะแนนทีม B ({scoreB})</div><div><code>&lt;thai_date&gt;</code> : วันที่ปัจจุบันรูปแบบไทย</div><div><code>&lt;time_counter&gt;</code> : เวลาแข่งขัน ({formattedTime})</div><div><code>&lt;half_text&gt;</code> : ครึ่งเวลา ({half})</div><div><code>&lt;label1&gt;</code> : ข้อความ Label 1 ({label1 || '-'})</div><div><code>&lt;label2&gt;</code> : ข้อความ Label 2 ({label2 || '-'})</div><div><code>&lt;label3&gt;</code> : ข้อความ Label 3 ({label3 || '-'})</div>{DETAIL_LABEL_FIELDS.map(([key, label]) => <div key={key}><code>&lt;{key}&gt;</code> : ข้อความ {label} ({detailLabels[key] || '-'})</div>)}</div>
         </div>
         </div>
-      </div>
+      </ModalBackdrop>
       {isPreviewOpen && (
-        <div
+        <ModalBackdrop
           className="modal-overlay"
           style={{ zIndex: 1100 }}
-          onClick={() => setIsPreviewOpen(false)}
+          onEscape={() => setIsPreviewOpen(false)}
           role="presentation"
         >
           <div
@@ -131,7 +132,7 @@ export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate
               <button type="button" className="btn-secondary" onClick={() => setIsPreviewOpen(false)}>ปิด</button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </>
   );

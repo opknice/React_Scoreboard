@@ -1,3 +1,5 @@
+import ModalBackdrop from './ModalBackdrop';
+
 interface PresetTimeModalProps {
   isOpen: boolean;
   minutes: number;
@@ -14,7 +16,7 @@ interface PresetTimeModalProps {
 export default function PresetTimeModal({ isOpen, minutes, seconds, title, closeLabel, onMinutesChange, onSecondsChange, onSetCountdown, onSetPreset, onClose }: PresetTimeModalProps) {
   if (!isOpen) return null;
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(event) => event.stopPropagation()}>
         <h3><i className="fas fa-clock"></i> {title}</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -32,6 +34,6 @@ export default function PresetTimeModal({ isOpen, minutes, seconds, title, close
         </div>
         <div style={{ marginTop: '12px', textAlign: 'right' }}><button className="btn-secondary" onClick={onClose}>{closeLabel}</button></div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

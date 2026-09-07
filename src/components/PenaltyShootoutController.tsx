@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { translations } from '../constants/translations';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
+import ModalBackdrop from './ModalBackdrop';
 
 interface PenaltyShots {
   A: (boolean | null)[][];
@@ -607,7 +608,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
       {/* --- Dots Settings Modal --- */}
       {showSettingsModal && (
-        <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
+        <ModalBackdrop className="modal-overlay" onEscape={() => setShowSettingsModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3><i className="fas fa-cog"></i> ตั้งค่าจุดยิงจุดโทษ</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -656,12 +657,12 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
               <button className="btn-secondary" onClick={() => setShowSettingsModal(false)}>ปิด</button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* --- OBS Scene Source Toggle Settings Modal --- */}
       {showSceneSettingsModal && (
-        <div className="modal-overlay" onClick={() => setShowSceneSettingsModal(false)}>
+        <ModalBackdrop className="modal-overlay" onEscape={() => setShowSceneSettingsModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
             <h3><i className="fas fa-tv"></i> ตั้งค่า OBS Scene Toggle</h3>
             <p style={{ color: 'var(--text-muted-color)', fontSize: '0.85rem', marginBottom: '16px' }}>
@@ -728,12 +729,12 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
               <button className="btn-secondary" onClick={() => setShowSceneSettingsModal(false)}>ปิด</button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* --- Help Modal --- */}
       {showHelpModal && (
-        <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
+        <ModalBackdrop className="modal-overlay" onEscape={() => setShowHelpModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3><i className="fas fa-question-circle"></i> วิธีตั้งค่าใน OBS Studio</h3>
             <div style={{ fontSize: '0.95rem', lineHeight: '1.5', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -763,7 +764,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
               <button className="btn-primary" onClick={() => setShowHelpModal(false)}>ตกลง</button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );

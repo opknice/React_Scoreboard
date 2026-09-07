@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1200">
+  <title>Canva Editable League Table</title>
+
+  <style>
+    :root {
+      --row-color-odd: 71, 110, 236;
+      --row-color-even: 169, 192, 255;
+      --row-alpha: .10;
+      --text-color: #fff;
+      --panel-bg: rgba(10, 14, 26, .82);
+      --panel-line: rgba(255, 255, 255, .18);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--text-color);
+      background: #101522;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 360px minmax(840px, 1fr);
+      min-height: 100vh;
+    }
+
+    .settings-panel {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      height: 100vh;
+      overflow: auto;
+      padding: 16px;
+      background: var(--panel-bg);
+      border-right: 1px solid var(--panel-line);
+      backdrop-filter: blur(10px);
+    }
+
+    .settings-panel h1 {
+      margin: 0 0 14px;
+      font-size: 20px;
+      line-height: 1.25;
+    }
+
+    .field-group {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    label {
+      display: grid;
+      gap: 5px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, .82);
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, .20);
+      border-radius: 6px;
+      padding: 8px 9px;
+      color: #fff;
+      background: rgba(255, 255, 255, .08);
+      font: 13px "Segoe UI", sans-serif;
+      outline: none;
+    }
+
+    select option { color: #111827; background: #fff; }
+
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: rgba(169, 192, 255, .9);
+      box-shadow: 0 0 0 2px rgba(71, 110, 236, .25);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 6px;
+      padding: 9px 12px;
+      color: #111827;
+      background: #fff;
+      font: 700 13px "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+
+    button:hover { background: #eaf0ff; }
+    button.primary { background: #a9c0ff; }
+    button.danger { background: #ffd0d0; }
+    button:disabled {
+      cursor: wait;
+      opacity: .62;
+    }
+
+    .status {
+      min-height: 36px;
+      padding: 8px 0;
+      color: rgba(255, 255, 255, .88);
+      font-size: 13px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .preview-wrap {
+      min-height: 100vh;
+      overflow: auto;
+      background: #0a0f1f;
+    }
+
+    .stage {
+      width: 1024px;
+      min-height: 768px;
+      margin: 0 auto;
+      padding: 20px;
+      background-image:
+        var(--main-logo-bg, none),
+        var(--stage-bg, url("../images/bg2.jpg"));
+      background-repeat: no-repeat, no-repeat;
+      background-position: center 20px, center center;
+      background-size: 250px auto, cover;
+      color: #fff;
+    }
+
+    .top-spacer { height: 112px; }
+
+    table {
+      width: 80%;
+      margin: 0 auto;
+      border-collapse: collapse;
+      background: transparent;
+      backdrop-filter: blur(4px);
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border: none;
+      text-align: center;
+      vertical-align: middle;
+      font-size: 1.2rem;
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+    }
+
+    td.team-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-left: 0;
+      text-align: left;
+    }
+
+    img.logo {
+      max-width: 35px;
+      width: 35px;
+      height: 35px;
+      object-fit: contain;
+      flex: 0 0 35px;
+    }
+
+    #tableBody tr:nth-child(odd) {
+      background: rgba(var(--row-color-odd), var(--row-alpha));
+    }
+
+    #tableBody tr:nth-child(even) {
+      background: rgba(var(--row-color-even), var(--row-alpha));
+    }
+
+    @keyframes slideInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    #tableBody tr {
+      opacity: 0;
+      transform: translateY(20px);
+      --delay: 0s;
+      animation: slideInUp .5s ease-out forwards;
+      animation-delay: var(--delay);
+    }
+
+    .no-data td {
+      font-size: 1.1rem;
+    }
+
+    body.exporting #tableBody tr {
+      opacity: 1 !important;
+      transform: none !important;
+      transition: none !important;
+      animation: none !important;
+    }
+
+    body.exporting .settings-panel { display: none !important; }
+    body.exporting .app-shell { display: block; }
+
+    @media (max-width: 1100px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .settings-panel {
+        position: relative;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--panel-line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="settings-panel" data-html2canvas-ignore="true">
+      <h1>Canva League Table</h1>
+
+      <div class="field-group">
+        <label>
+          League จาก Supabase
+          <select id="leagueSelect" aria-label="เลือก League">
+            <option value="">กำลังโหลด League...</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="field-group">
+        <div class="field-row">
+          <label>ชื่อไฟล์/ชื่อลีก <input id="leagueNameInput" value="league-table"></label>
+          <label>League ID <input id="leagueIdInput" value="" readonly></label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-row">
+          <label>พื้นหลัง <input id="backgroundInput" value="../images/bg2.jpg"></label>
+          <label>โลโก้หัวตาราง <input id="mainLogoInput" value="../images/logoalcohol2.png"></label>
+        </div>
+        <div class="field-row">
+          <label>แหล่งโลโก้ทีม <input id="logoBaseInput" value="Supabase team.logo_url" readonly></label>
+          <label>โลโก้สำรอง <input id="defaultLogoInput" value="../images/logo.png"></label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-row">
+          <label>สีแถวคี่ RGB <input id="oddColorInput" value="71,110,236"></label>
+          <label>สีแถวคู่ RGB <input id="evenColorInput" value="169,192,255"></label>
+        </div>
+        <label>ความโปร่งแสงแถว <input id="rowAlphaInput" type="number" value="0.10" min="0" max="1" step="0.01"></label>
+      </div>
+
+      <div class="button-row">
+        <button id="connectBtn" class="primary" type="button">โหลด League</button>
+        <button id="saveBtn" type="button">บันทึกค่า</button>
+        <button id="resetBtn" class="danger" type="button">ล้างค่า</button>
+      </div>
+
+      <div class="button-row">
+        <button id="copyPngBtn" type="button">Copy PNG</button>
+        <button id="downloadPngBtn" type="button">Download PNG</button>
+        <button id="copyEditableBtn" type="button">Copy แบบแก้ไขได้</button>
+        <button id="downloadPptxBtn" type="button">Download PPTX แก้ไขได้</button>
+      </div>
+
+      <div id="status" class="status" aria-live="polite"></div>
+    </aside>
+
+    <main class="preview-wrap">
+      <section id="stage" class="stage">
+        <div class="top-spacer"></div>
+        <table id="leagueTable">
+          <thead>
+            <tr>
+              <th>อันดับ</th>
+              <th>ทีม</th>
+              <th>แข่ง</th>
+              <th>ชนะ</th>
+              <th>เสมอ</th>
+              <th>แพ้</th>
+              <th>ได้</th>
+              <th>เสีย</th>
+              <th>ได้-เสีย</th>
+              <th>คะแนน</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js"></script>
+  <script>
+    const { createClient } = window.supabase;
+
+    // Supabase anon keys are safe to expose in a browser source only when RLS
+    // policies allow read access and deny all writes for the anon role.
+    const SUPABASE_URL = 'https://wolytfpaqwhyleostbpb.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndvbHl0ZnBhcXdoeWxlb3N0YnBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNzg2MjcsImV4cCI6MjEwMzc1NDYyN30.j12W_SX7RAauUMpbtnemeTODC2f5Ou9yF9VngVMkx74';
+    // Keep the client name distinct from the UMD bundle's global `supabase`
+    // variable. Re-declaring that global with `const supabase` would stop this
+    // standalone page before the League dropdown can be populated.
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const STORAGE_KEY = 'canva-league-table-settings';
+    const tableHeaders = ['อันดับ', 'ทีม', 'แข่ง', 'ชนะ', 'เสมอ', 'แพ้', 'ได้', 'เสีย', 'ได้-เสีย', 'คะแนน'];
+    const initTeam = () => ({ P: 0, W: 0, D: 0, L: 0, GF: 0, GA: 0, GD: 0, Pts: 0 });
+
+    const els = {
+      leagueSelect: document.getElementById('leagueSelect'),
+      leagueName: document.getElementById('leagueNameInput'),
+      leagueId: document.getElementById('leagueIdInput'),
+      background: document.getElementById('backgroundInput'),
+      mainLogo: document.getElementById('mainLogoInput'),
+      logoBase: document.getElementById('logoBaseInput'),
+      defaultLogo: document.getElementById('defaultLogoInput'),
+      oddColor: document.getElementById('oddColorInput'),
+      evenColor: document.getElementById('evenColorInput'),
+      rowAlpha: document.getElementById('rowAlphaInput'),
+      stage: document.getElementById('stage'),
+      tableBody: document.getElementById('tableBody'),
+      status: document.getElementById('status'),
+      connectBtn: document.getElementById('connectBtn'),
+      saveBtn: document.getElementById('saveBtn'),
+      resetBtn: document.getElementById('resetBtn'),
+      copyPngBtn: document.getElementById('copyPngBtn'),
+      downloadPngBtn: document.getElementById('downloadPngBtn'),
+      copyEditableBtn: document.getElementById('copyEditableBtn'),
+      downloadPptxBtn: document.getElementById('downloadPptxBtn')
+    };
+
+    let latestTableData = [];
+    let leagues = [];
+    let selectedLeague = null;
+    let supabaseChannel = null;
+
+    const setStatus = message => {
+      els.status.textContent = message;
+    };
+
+    const setBusy = busy => {
+      [
+      els.connectBtn,
+        els.leagueSelect,
+        els.saveBtn,
+        els.resetBtn,
+        els.copyPngBtn,
+        els.downloadPngBtn,
+        els.copyEditableBtn,
+        els.downloadPptxBtn
+      ].forEach(button => {
+        button.disabled = busy;
+      });
+    };
+
+    const settingsFromInputs = () => ({
+      leagueName: els.leagueName.value.trim() || 'league-table',
+      assets: {
+        background: els.background.value.trim() || '../images/bg2.jpg',
+        mainLogo: els.mainLogo.value.trim(),
+      defaultLogo: els.defaultLogo.value.trim() || '../images/logo.png'
+      },
+      colors: {
+        odd: els.oddColor.value.trim() || '71,110,236',
+        even: els.evenColor.value.trim() || '169,192,255',
+        alpha: Number(els.rowAlpha.value || 0.1)
+      }
+    });
+
+    const applySettingsToInputs = settings => {
+      if (!settings) return;
+      els.leagueName.value = settings.leagueName || 'league-table';
+      els.background.value = settings.assets?.background || '../images/bg2.jpg';
+      els.mainLogo.value = settings.assets?.mainLogo || '../images/logoalcohol2.png';
+      els.defaultLogo.value = settings.assets?.defaultLogo || '../images/logo.png';
+      els.oddColor.value = settings.colors?.odd || '71,110,236';
+      els.evenColor.value = settings.colors?.even || '169,192,255';
+      els.rowAlpha.value = Number.isFinite(settings.colors?.alpha) ? settings.colors.alpha : 0.1;
+    };
+
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
+
+    const fileSafe = value => String(value || 'league-table')
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '-')
+      .replace(/\s+/g, '-')
+      .slice(0, 80) || 'league-table';
+
+    const fileNameDate = () => new Date().toISOString().slice(0, 10);
+
+    const errorMessage = error => error instanceof Error ? error.message : String(error || 'ไม่ทราบสาเหตุ');
+
+    const normalizeAssetUrl = value => {
+      let raw = String(value || '').trim();
+      if (!raw) return '';
+      // This page lives in /html while the shared assets live in /images.
+      // Resolve legacy values such as `images/bg2.jpg` to the correct root path.
+      if (window.location.pathname.includes('/html/') && /^images\//i.test(raw)) {
+        raw = `../${raw}`;
+      }
+      try {
+        const parsed = new URL(raw, window.location.href);
+        if (!['http:', 'https:', 'data:', 'blob:'].includes(parsed.protocol)) return '';
+        return parsed.href;
+      } catch {
+        return '';
+      }
+    };
+
+    const cssAssetUrl = value => {
+      const safeUrl = normalizeAssetUrl(value);
+      return safeUrl ? `url("${safeUrl.replace(/"/g, '%22')}")` : 'none';
+    };
+
+    const updateStageStyle = settings => {
+      document.documentElement.style.setProperty('--row-color-odd', settings.colors.odd);
+      document.documentElement.style.setProperty('--row-color-even', settings.colors.even);
+      document.documentElement.style.setProperty('--row-alpha', Math.min(Math.max(settings.colors.alpha, 0), 1));
+      els.stage.style.setProperty('--stage-bg', cssAssetUrl(settings.assets.background));
+      els.stage.style.setProperty('--main-logo-bg', cssAssetUrl(settings.assets.mainLogo));
+    };
+
+    const renderNoData = message => {
+      latestTableData = [];
+      els.tableBody.innerHTML = `
+        <tr class="no-data">
+          <td colspan="10">${escapeHtml(message || 'ยังไม่มีข้อมูลการแข่งขัน')}</td>
+        </tr>
+      `;
+    };
+
+    const renderTable = (matches, teams, settings) => {
+      const stats = new Map();
+      const teamById = new Map(teams.map(team => [String(team.id), team]));
+      const teamByName = new Map(teams.map(team => [String(team.name || '').trim().toLocaleLowerCase('th'), team]));
+
+      const ensureTeam = (name, id, logo = '') => {
+        const normalizedName = String(name || '').trim();
+        if (!normalizedName) return null;
+        const registered = (id && teamById.get(String(id))) || teamByName.get(normalizedName.toLocaleLowerCase('th'));
+        const key = registered?.id ? `id:${registered.id}` : `name:${normalizedName.toLocaleLowerCase('th')}`;
+        if (!stats.has(key)) {
+          stats.set(key, {
+            teamId: registered?.id || id || null,
+            team: registered?.name || normalizedName,
+            logo: registered?.logo_url || logo || '',
+            ...initTeam()
+          });
+        } else if (!stats.get(key).logo && (registered?.logo_url || logo)) {
+          stats.get(key).logo = registered?.logo_url || logo;
+        }
+        return stats.get(key);
+      };
+
+      teams.forEach(team => ensureTeam(team.name, team.id, team.logo_url));
+
+      // Public standings intentionally include completed matches only.
+      matches.filter(match => match?.status === 'finished').forEach(match => {
+        const a = ensureTeam(match.team_a_name, match.team_a_id);
+        const b = ensureTeam(match.team_b_name, match.team_b_id);
+        const aScore = Number(match.score_a);
+        const bScore = Number(match.score_b);
+        if (!a || !b || !Number.isFinite(aScore) || !Number.isFinite(bScore)) return;
+
+        a.P++;
+        b.P++;
+        a.GF += aScore;
+        a.GA += bScore;
+        b.GF += bScore;
+        b.GA += aScore;
+
+        if (aScore > bScore) {
+          a.W++;
+          a.Pts += 3;
+          b.L++;
+        } else if (aScore < bScore) {
+          b.W++;
+          b.Pts += 3;
+          a.L++;
+        } else {
+          a.D++;
+          b.D++;
+          a.Pts++;
+          b.Pts++;
+        }
+      });
+
+      latestTableData = [...stats.values()].map(row => ({ ...row, GD: row.GF - row.GA })).sort((a, b) => {
+        if (b.Pts !== a.Pts) return b.Pts - a.Pts;
+        if (b.GD !== a.GD) return b.GD - a.GD;
+        if (b.GF !== a.GF) return b.GF - a.GF;
+        return a.team.localeCompare(b.team, 'th');
+      });
+
+      if (latestTableData.length === 0) {
+        renderNoData('ยังไม่มีแมตช์ที่มีผลสกอร์');
+        return;
+      }
+
+      els.tableBody.replaceChildren();
+      const fallbackLogo = normalizeAssetUrl(settings.assets.defaultLogo);
+      latestTableData.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.style.setProperty('--delay', `${i * 0.05}s`);
+        const values = [i + 1, row.P, row.W, row.D, row.L, row.GF, row.GA, row.GD, row.Pts];
+        const rankCell = document.createElement('td');
+        rankCell.textContent = String(values[0]);
+        tr.appendChild(rankCell);
+        const teamCell = document.createElement('td');
+        teamCell.className = 'team-cell';
+        const logo = document.createElement('img');
+        logo.className = 'logo';
+        logo.alt = `${row.team} logo`;
+        const logoSrc = normalizeAssetUrl(row.logo) || fallbackLogo;
+        if (logoSrc) {
+          logo.src = logoSrc;
+          if (fallbackLogo) logo.addEventListener('error', () => { logo.src = fallbackLogo; }, { once: true });
+        } else {
+          logo.hidden = true;
+        }
+        teamCell.append(logo, document.createTextNode(row.team));
+        tr.appendChild(teamCell);
+        values.slice(1).forEach(value => {
+          const cell = document.createElement('td');
+          cell.textContent = String(value);
+          tr.appendChild(cell);
+        });
+        els.tableBody.appendChild(tr);
+      });
+    };
+
+    const renderLeagueOptions = () => {
+      els.leagueSelect.replaceChildren();
+      leagues.forEach(league => {
+        const option = document.createElement('option');
+        option.value = league.id;
+        option.textContent = `${league.name}${league.season ? ` · ${league.season}` : ''}`;
+        els.leagueSelect.appendChild(option);
+      });
+      if (!leagues.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'ไม่พบ League';
+        els.leagueSelect.appendChild(option);
+      }
+    };
+
+    const syncLeagueUrl = leagueId => {
+      const url = new URL(window.location.href);
+      if (leagueId) url.searchParams.set('league', leagueId);
+      else url.searchParams.delete('league');
+      window.history.replaceState({}, '', url);
+    };
+
+    const subscribeToLeague = leagueId => {
+      if (supabaseChannel) {
+        void supabaseClient.removeChannel(supabaseChannel);
+        supabaseChannel = null;
+      }
+      if (!leagueId) return;
+      supabaseChannel = supabaseClient
+        .channel(`canva-standings-${leagueId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` }, () => void loadSelectedLeague(false))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` }, () => void loadSelectedLeague(false))
+        .subscribe();
+    };
+
+    let loadRequestId = 0;
+    const loadSelectedLeague = async (resubscribe = true) => {
+      const leagueId = String(els.leagueSelect.value || '').trim();
+      els.leagueId.value = leagueId;
+      syncLeagueUrl(leagueId);
+      if (!leagueId) {
+        renderNoData('กรุณาเลือก League');
+        return;
+      }
+
+      const requestId = ++loadRequestId;
+      const settings = settingsFromInputs();
+      updateStageStyle(settings);
+      setBusy(true);
+      setStatus('กำลังโหลดข้อมูล League...');
+      try {
+        const [leagueResult, teamsResult, matchesResult] = await Promise.all([
+          supabaseClient.from('leagues').select('id,name,season').eq('id', leagueId).single(),
+          supabaseClient.from('teams').select('id,league_id,name,logo_url').eq('league_id', leagueId).order('name', { ascending: true }),
+          supabaseClient.from('matches').select('id,league_id,team_a_id,team_b_id,team_a_name,team_b_name,score_a,score_b,status').eq('league_id', leagueId).order('match_number', { ascending: true })
+        ]);
+        if (leagueResult.error) throw leagueResult.error;
+        if (teamsResult.error) throw teamsResult.error;
+        if (matchesResult.error) throw matchesResult.error;
+        if (requestId !== loadRequestId) return;
+
+        selectedLeague = leagueResult.data;
+        const teamRows = teamsResult.data || [];
+        const matchRows = matchesResult.data || [];
+        els.leagueName.value = selectedLeague.name || settings.leagueName;
+        renderTable(matchRows, teamRows, settings);
+        setStatus(`โหลด ${selectedLeague.name} สำเร็จ · ${matchRows.filter(match => match.status === 'finished').length} แมตช์จบการแข่งขัน`);
+        if (resubscribe) subscribeToLeague(leagueId);
+      } catch (error) {
+        if (requestId !== loadRequestId) return;
+        console.error(error);
+        selectedLeague = null;
+        renderNoData('โหลดข้อมูล League ไม่สำเร็จ');
+        setStatus(`โหลด Supabase ไม่สำเร็จ: ${errorMessage(error)}`);
+      } finally {
+        if (requestId === loadRequestId) setBusy(false);
+      }
+    };
+
+    const loadLeagues = async () => {
+      setBusy(true);
+      setStatus('กำลังโหลดรายการ League...');
+      try {
+        const { data, error } = await supabaseClient
+          .from('leagues')
+          .select('id,name,season,is_active')
+          .order('is_active', { ascending: false })
+          .order('name', { ascending: true });
+        if (error) throw error;
+        leagues = data || [];
+        renderLeagueOptions();
+        const requestedLeagueId = new URLSearchParams(window.location.search).get('league');
+        const selected = leagues.find(league => league.id === requestedLeagueId) || leagues[0];
+        if (selected) els.leagueSelect.value = selected.id;
+        await loadSelectedLeague();
+      } catch (error) {
+        console.error(error);
+        renderLeagueOptions();
+        renderNoData('ไม่สามารถโหลดรายการ League');
+        setStatus(`เชื่อมต่อ Supabase ไม่สำเร็จ: ${errorMessage(error)}`);
+        setBusy(false);
+      }
+    };
+
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    const waitForImages = async () => {
+      await Promise.all(Array.from(document.images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => {
+          img.addEventListener('load', resolve, { once: true });
+          img.addEventListener('error', resolve, { once: true });
+        });
+      }));
+    };
+
+    const blobToDataUrl = blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    const assetToDataUrl = async (src, fallbackSrc = '') => {
+      const resolvedSrc = normalizeAssetUrl(src);
+      const resolvedFallback = normalizeAssetUrl(fallbackSrc);
+      try {
+        const response = await fetch(resolvedSrc);
+        if (!response.ok) throw new Error(resolvedSrc);
+        return await blobToDataUrl(await response.blob());
+      } catch (error) {
+        if (!resolvedFallback || resolvedFallback === resolvedSrc) throw error;
+        const response = await fetch(resolvedFallback);
+        if (!response.ok) throw new Error(resolvedFallback);
+        return await blobToDataUrl(await response.blob());
+      }
+    };
+
+    const getImageSize = dataUrl => new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+      img.onerror = () => resolve({ width: 1, height: 1 });
+      img.src = dataUrl;
+    });
+
+    const buildCanvasBlob = async () => {
+      if (!window.html2canvas) throw new Error('ไม่พบ html2canvas');
+      await waitForImages();
+      document.body.classList.add('exporting');
+      await wait(80);
+
+      try {
+        const canvas = await window.html2canvas(els.stage, {
+          backgroundColor: null,
+          scale: 2,
+          useCORS: true,
+          allowTaint: true
+        });
+        return await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1));
+      } finally {
+        document.body.classList.remove('exporting');
+      }
+    };
+
+    const downloadBlob = (blob, fileName) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const copyPng = async () => {
+      if (!navigator.clipboard || !window.ClipboardItem) {
+        setStatus('เบราว์เซอร์นี้ไม่รองรับ Copy PNG');
+        return;
+      }
+
+      setBusy(true);
+      setStatus('กำลัง Copy PNG...');
+      try {
+        const blob = await buildCanvasBlob();
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        setStatus('Copy PNG แล้ว');
+      } catch (error) {
+        console.error(error);
+        setStatus(`Copy PNG ไม่สำเร็จ: ${errorMessage(error)}`);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const downloadPng = async () => {
+      setBusy(true);
+      setStatus('กำลังสร้าง PNG...');
+      try {
+        const settings = settingsFromInputs();
+        const blob = await buildCanvasBlob();
+        downloadBlob(blob, `${fileSafe(settings.leagueName)}-${fileNameDate()}.png`);
+        setStatus('ดาวน์โหลด PNG แล้ว');
+      } catch (error) {
+        console.error(error);
+        setStatus(`สร้าง PNG ไม่สำเร็จ: ${errorMessage(error)}`);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const buildEditableHtml = async settings => {
+      if (latestTableData.length === 0) throw new Error('ยังไม่มีข้อมูลสำหรับ export');
+
+      const bgData = await assetToDataUrl(settings.assets.background);
+      const mainLogoData = settings.assets.mainLogo ? await assetToDataUrl(settings.assets.mainLogo) : '';
+      const teamLogoData = {};
+
+      for (const row of latestTableData) {
+        const logoSrc = normalizeAssetUrl(row.logo) || normalizeAssetUrl(settings.assets.defaultLogo);
+        if (logoSrc) teamLogoData[row.team] = await assetToDataUrl(logoSrc, normalizeAssetUrl(settings.assets.defaultLogo));
+      }
+
+      const headerHtml = tableHeaders.map(header => (
+        `<th style="padding:10px;border:0;text-align:center;vertical-align:middle;font:700 19px Segoe UI,sans-serif;color:#fff;">${escapeHtml(header)}</th>`
+      )).join('');
+
+      const rowsHtml = latestTableData.map((row, index) => {
+        const bgColor = index % 2 === 0
+          ? `rgba(${settings.colors.odd},${settings.colors.alpha})`
+          : `rgba(${settings.colors.even},${settings.colors.alpha})`;
+        const values = [index + 1, row.P, row.W, row.D, row.L, row.GF, row.GA, row.GD, row.Pts];
+        const cells = values.map(value => (
+          `<td style="padding:10px;border:0;text-align:center;vertical-align:middle;font:400 19px Segoe UI,sans-serif;color:#fff;">${escapeHtml(value)}</td>`
+        ));
+        const logoMarkup = teamLogoData[row.team]
+          ? `<img src="${teamLogoData[row.team]}" alt="" style="width:35px;height:35px;object-fit:contain;vertical-align:middle;margin-right:8px;">`
+          : '';
+        cells.splice(1, 0, `<td style="padding:10px 10px 10px 0;border:0;text-align:left;vertical-align:middle;font:400 19px Segoe UI,sans-serif;color:#fff;white-space:nowrap;">${logoMarkup}<span>${escapeHtml(row.team)}</span></td>`);
+        return `<tr style="background:${bgColor};">${cells.join('')}</tr>`;
+      }).join('');
+
+      const logoBg = mainLogoData ? `url('${mainLogoData}') no-repeat center 20px / 250px auto,` : '';
+      const html = `<div style="box-sizing:border-box;width:1024px;min-height:768px;padding:20px;background:${logoBg}url('${bgData}') no-repeat center center / cover;color:#fff;font-family:Segoe UI,sans-serif;"><div style="height:112px;"></div><table style="width:80%;margin:0 auto;border-collapse:collapse;background:transparent;"><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+      const plainText = [
+        tableHeaders.join('\t'),
+        ...latestTableData.map((row, index) => [index + 1, row.team, row.P, row.W, row.D, row.L, row.GF, row.GA, row.GD, row.Pts].join('\t'))
+      ].join('\n');
+
+      return { html, plainText };
+    };
+
+    const copyEditable = async () => {
+      if (!navigator.clipboard || !window.ClipboardItem) {
+        setStatus('เบราว์เซอร์นี้ไม่รองรับ Copy แบบแก้ไขได้');
+        return;
+      }
+
+      setBusy(true);
+      setStatus('กำลัง Copy แบบแก้ไขได้...');
+      try {
+        const settings = settingsFromInputs();
+        const { html, plainText } = await buildEditableHtml(settings);
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([plainText], { type: 'text/plain' })
+          })
+        ]);
+        setStatus('Copy แบบแก้ไขได้แล้ว');
+      } catch (error) {
+        console.error(error);
+        setStatus(`Copy แบบแก้ไขได้ไม่สำเร็จ: ${errorMessage(error)}`);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const addEditableText = (slide, text, options) => {
+      slide.addText(String(text), {
+        margin: 0,
+        fontFace: 'Segoe UI',
+        color: 'FFFFFF',
+        fit: 'shrink',
+        valign: 'mid',
+        breakLine: false,
+        ...options
+      });
+    };
+
+    const rgbToHex = value => {
+      const parts = String(value).split(',').map(part => Number(part.trim()));
+      if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return '476EEC';
+      return parts.map(part => Math.min(Math.max(part, 0), 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+    };
+
+    const downloadPptx = async () => {
+      if (latestTableData.length === 0) {
+        setStatus('ยังไม่มีข้อมูลสำหรับสร้าง PPTX');
+        return;
+      }
+
+      const PptxGen = window.pptxgen || window.PptxGenJS;
+      if (!PptxGen || !window.JSZip) {
+        setStatus('โหลดไลบรารี PPTX ไม่ครบ กรุณาเชื่อมต่ออินเทอร์เน็ตแล้วโหลดหน้าใหม่');
+        return;
+      }
+
+      setBusy(true);
+      setStatus('กำลังสร้าง PPTX...');
+      try {
+        const settings = settingsFromInputs();
+        const pptx = new PptxGen();
+        const rectShape = (pptx.ShapeType && pptx.ShapeType.rect) || 'rect';
+        const slideW = 10.24;
+        const rowH = 0.38;
+        const tableY = 1.28;
+        const slideH = Math.max(7.68, tableY + ((latestTableData.length + 1) * rowH) + 0.45);
+        pptx.defineLayout({ name: 'CANVA_TABLE', width: slideW, height: slideH });
+        pptx.layout = 'CANVA_TABLE';
+        pptx.author = 'Scoreboard';
+        pptx.title = settings.leagueName;
+        pptx.lang = 'th-TH';
+
+        const slide = pptx.addSlide();
+        const bgData = await assetToDataUrl(settings.assets.background);
+        slide.addImage({ data: bgData, x: 0, y: 0, w: slideW, h: slideH });
+
+        if (settings.assets.mainLogo) {
+          const logoData = await assetToDataUrl(settings.assets.mainLogo);
+          const logoSize = await getImageSize(logoData);
+          const logoW = 2.5;
+          const logoH = logoW * (logoSize.height / logoSize.width);
+          slide.addImage({ data: logoData, x: (slideW - logoW) / 2, y: 0.2, w: logoW, h: logoH });
+        }
+
+        const tableW = slideW * 0.8;
+        const tableX = (slideW - tableW) / 2;
+        const colW = [0.7, 2.55, 0.58, 0.58, 0.58, 0.58, 0.58, 0.58, 0.78, 0.68];
+        const colScale = tableW / colW.reduce((sum, w) => sum + w, 0);
+        const widths = colW.map(w => w * colScale);
+        const rowColors = [rgbToHex(settings.colors.odd), rgbToHex(settings.colors.even)];
+        const transparency = Math.round((1 - Math.min(Math.max(settings.colors.alpha, 0), 1)) * 100);
+
+        let x = tableX;
+        tableHeaders.forEach((header, colIndex) => {
+          addEditableText(slide, header, {
+            x,
+            y: tableY,
+            w: widths[colIndex],
+            h: rowH,
+            fontSize: 13,
+            bold: true,
+            align: 'center'
+          });
+          x += widths[colIndex];
+        });
+
+        for (const [rowIndex, row] of latestTableData.entries()) {
+          const y = tableY + ((rowIndex + 1) * rowH);
+          slide.addShape(rectShape, {
+            x: tableX,
+            y,
+            w: tableW,
+            h: rowH,
+            fill: { color: rowColors[rowIndex % 2], transparency },
+            line: { color: 'FFFFFF', transparency: 100 }
+          });
+
+        const logoSrc = normalizeAssetUrl(row.logo) || normalizeAssetUrl(settings.assets.defaultLogo);
+        const rowValues = [rowIndex + 1, row.team, row.P, row.W, row.D, row.L, row.GF, row.GA, row.GD, row.Pts];
+
+          x = tableX;
+          for (const [colIndex, value] of rowValues.entries()) {
+            if (colIndex === 1) {
+              if (logoSrc) {
+                const teamLogoData = await assetToDataUrl(logoSrc, normalizeAssetUrl(settings.assets.defaultLogo));
+                slide.addImage({ data: teamLogoData, x: x + 0.03, y: y + 0.055, w: 0.27, h: 0.27 });
+              }
+              addEditableText(slide, value, {
+                x: x + 0.36,
+                y,
+                w: widths[colIndex] - 0.38,
+                h: rowH,
+                fontSize: 12.5,
+                align: 'left'
+              });
+            } else {
+              addEditableText(slide, value, {
+                x,
+                y,
+                w: widths[colIndex],
+                h: rowH,
+                fontSize: 13,
+                align: 'center'
+              });
+            }
+            x += widths[colIndex];
+          }
+        }
+
+        await pptx.writeFile({ fileName: `${fileSafe(settings.leagueName)}-${fileNameDate()}-canva-editable.pptx` });
+        setStatus('ดาวน์โหลด PPTX แล้ว');
+      } catch (error) {
+        console.error(error);
+        setStatus(`สร้าง PPTX ไม่สำเร็จ: ${errorMessage(error)}`);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const saveSettings = () => {
+      const settings = settingsFromInputs();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      updateStageStyle(settings);
+      setStatus('บันทึกค่าแล้ว');
+    };
+
+    const loadSettings = () => {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try {
+          applySettingsToInputs(JSON.parse(raw));
+        } catch (error) {
+          console.error(error);
+        }
+      }
+      updateStageStyle(settingsFromInputs());
+    };
+
+    const resetSettings = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      applySettingsToInputs({
+        leagueName: 'league-table',
+        assets: { background: '../images/bg2.jpg', mainLogo: '../images/logoalcohol2.png', defaultLogo: '../images/logo.png' },
+        colors: { odd: '71,110,236', even: '169,192,255', alpha: 0.1 }
+      });
+      updateStageStyle(settingsFromInputs());
+      renderNoData('ยังไม่ได้โหลดข้อมูล');
+      setStatus('ล้างค่าแล้ว');
+    };
+
+    els.connectBtn.addEventListener('click', () => {
+      saveSettings();
+      void loadSelectedLeague();
+    });
+    els.leagueSelect.addEventListener('change', () => {
+      saveSettings();
+      void loadSelectedLeague();
+    });
+    els.saveBtn.addEventListener('click', saveSettings);
+    els.resetBtn.addEventListener('click', resetSettings);
+    els.copyPngBtn.addEventListener('click', copyPng);
+    els.downloadPngBtn.addEventListener('click', downloadPng);
+    els.copyEditableBtn.addEventListener('click', copyEditable);
+    els.downloadPptxBtn.addEventListener('click', downloadPptx);
+
+    [
+      els.background,
+      els.mainLogo,
+      els.oddColor,
+      els.evenColor,
+      els.rowAlpha
+    ].forEach(input => {
+      input.addEventListener('input', () => updateStageStyle(settingsFromInputs()));
+    });
+
+    loadSettings();
+    renderNoData('กำลังโหลดรายการ League จาก Supabase...');
+    void loadLeagues();
+  </script>
+</body>
+</html>

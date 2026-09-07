@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense } from 'react';
+import ModalBackdrop from './ModalBackdrop';
 
 const VarReplayV2Page = lazy(() => import('./var-replay-v2/VarReplayV2Page'));
 const InstantReplayControl = lazy(() => import('./InstantReplayControl'));
@@ -18,8 +19,8 @@ function ReplayControlModals({
 }: ReplayControlModalsProps) {
   return (
     <Suspense fallback={<div className="modal-overlay"><div className="modal-content">กำลังโหลด Replay...</div></div>}>
-      {showVarReplayV2 && <div className="modal-overlay" style={{ zIndex: 9999 }} onClick={(event) => { if (event.target === event.currentTarget) onCloseVarReplayV2(); }}><div className="modal-content replay-control-modal var-v2-replay-control-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="replay-modal-close" onClick={onCloseVarReplayV2} title="ปิด">×</button><VarReplayV2Page mode="control" onBack={onCloseVarReplayV2} /></div></div>}
-      {showInstantReplay && <div className="modal-overlay" style={{ zIndex: 9999 }} onClick={(event) => { if (event.target === event.currentTarget) onCloseInstantReplay(); }}><div className="modal-content replay-control-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="replay-modal-close" onClick={onCloseInstantReplay} title="ปิด">×</button><InstantReplayControl /></div></div>}
+      {showVarReplayV2 && <ModalBackdrop className="modal-overlay" style={{ zIndex: 9999 }} onEscape={onCloseVarReplayV2}><div className="modal-content replay-control-modal var-v2-replay-control-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="replay-modal-close" onClick={onCloseVarReplayV2} title="ปิด">×</button><VarReplayV2Page mode="control" onBack={onCloseVarReplayV2} /></div></ModalBackdrop>}
+      {showInstantReplay && <ModalBackdrop className="modal-overlay" style={{ zIndex: 9999 }} onEscape={onCloseInstantReplay}><div className="modal-content replay-control-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="replay-modal-close" onClick={onCloseInstantReplay} title="ปิด">×</button><InstantReplayControl /></div></ModalBackdrop>}
     </Suspense>
   );
 }

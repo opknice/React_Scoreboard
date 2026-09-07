@@ -15,7 +15,7 @@
   <script>
     (() => {
       const path = window.location.pathname.replace(/\/+$/, '') || '/';
-      const transparent = /\/(?:overlay|all-scores|league-table|all-score-combined|dots|goal-animation|var-replay(?:-v2)?\/screen|replay\/screen)$/.test(path);
+      const transparent = /\/(?:overlay|all-scores|league-table|all-score-combined|dots|goal-animation|team-color|var-replay(?:-v2)?\/screen|replay\/screen)$/.test(path);
       if (transparent) document.documentElement.dataset.surface = 'transparent';
     })();
   </script>

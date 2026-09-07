@@ -1,8 +1,14 @@
 .team-color-source-root {
-  width: 100vw;
-  height: 100vh;
+  /* Match the zoom-locked viewport used by the other OBS browser sources.
+     `useDisableZoom` updates these variables when OBS changes Browser Zoom;
+     using 100vw/100vh here would leave this source scaled or cropped. */
+  position: fixed;
+  inset: 0;
+  width: var(--zoom-locked-viewport-width, 100vw);
+  height: var(--zoom-locked-viewport-height, 100vh);
   overflow: hidden;
   background: transparent;
+  pointer-events: none;
 }
 
 .team-color-source-canvas {

@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Match, Team } from '../../config/supabaseClient';
 import { getTodayDateString } from './leagueDateUtils';
 import { getScheduledTeamIdsForDate } from './leagueMatchUtils';
 import LeagueDatePicker from './LeagueDatePicker';
+import ModalBackdrop from '../ModalBackdrop';
 
 type MatchStatus = 'scheduled' | 'in_progress' | 'finished' | 'postponed';
 
@@ -59,7 +60,6 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
   const [formData, setFormData] = useState<MatchEditFormData | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const overlayMouseDownRef = useRef(false);
 
   useEffect(() => {
     if (isOpen && match) {
@@ -130,28 +130,10 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
     }
   };
 
-  const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    overlayMouseDownRef.current = e.target === e.currentTarget;
-  };
-
-  const handleOverlayMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (overlayMouseDownRef.current && e.target === e.currentTarget && !isSaving) {
-      onClose();
-    }
-    overlayMouseDownRef.current = false;
-  };
-
   return (
-    <div
+    <ModalBackdrop
       className="league-match-edit-modal-overlay"
-      onMouseDown={handleOverlayMouseDown}
-      onMouseUp={handleOverlayMouseUp}
-      onKeyDownCapture={(e) => {
-        if (e.key === 'Escape' && !isSubmitting) {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
+      onEscape={isSubmitting ? undefined : onClose}
       role="presentation"
     >
       <div
@@ -305,7 +287,7 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };
 

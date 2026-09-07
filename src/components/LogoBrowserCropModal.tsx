@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import ModalBackdrop from './ModalBackdrop';
 import type { Team } from '../config/supabaseClient';
 import type { Json } from '../types/supabase';
 import {
@@ -253,9 +254,9 @@ export default function LogoBrowserCropModal({
   };
 
   return createPortal(
-    <div
+    <ModalBackdrop
       className="logo-crop-modal-overlay"
-      onClick={handleCancel}
+      onEscape={handleCancel}
       style={{
         position: 'fixed',
         top: 0,
@@ -537,7 +538,7 @@ export default function LogoBrowserCropModal({
           </div>
         </div>
       </div>
-    </div>,
+    </ModalBackdrop>,
     document.body
   );
 }

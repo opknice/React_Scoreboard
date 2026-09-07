@@ -1,3 +1,5 @@
+import ModalBackdrop from './ModalBackdrop';
+
 interface ObsSetupModalProps {
   isOpen: boolean;
   closeLabel: string;
@@ -9,7 +11,7 @@ export default function ObsSetupModal({ isOpen, closeLabel, onDownload, onClose 
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(event) => event.stopPropagation()}>
         <h3><i className="fas fa-download"></i> ดาวน์โหลด OBS Scene Collection</h3>
         <div style={{ marginBottom: '20px', padding: '20px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', textAlign: 'center', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)' }}>
@@ -24,6 +26,6 @@ export default function ObsSetupModal({ isOpen, closeLabel, onDownload, onClose 
         <div style={{ marginTop: '16px', padding: '12px', background: '#064e3b', borderRadius: '6px', borderLeft: '4px solid #10b981', fontSize: '0.85rem', color: '#a7f3d0' }}><strong style={{ color: '#6ee7b7' }}>เคล็ดลับ:</strong> หลัง Import แล้ว Sources ทั้งหมดจะเชื่อมต่อกับ Controller นี้อัตโนมัติผ่าน OBS WebSocket คุณสามารถปรับตำแหน่ง ขนาด หรือสีของ Sources ใน OBS ได้ตามต้องการ<br /><br /><strong style={{ color: '#fbbf24' }}>วิธีดาวน์โหลด:</strong> คลิกปุ่มดาวน์โหลด → เปิด Chrome → วาง URL ที่ Address Bar → กด Enter</div>
         <div style={{ marginTop: '20px', textAlign: 'right' }}><button className="btn-secondary" onClick={onClose}>{closeLabel}</button></div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

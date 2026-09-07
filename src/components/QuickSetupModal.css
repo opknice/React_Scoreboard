@@ -52,6 +52,27 @@
   border: 1px solid #f59e0b;
 }
 
+.quick-setup-panel--custom-browser-source {
+  border: 1px solid #38bdf8;
+}
+
+.quick-setup-panel--custom-browser-source > .quick-setup-panel-toggle {
+  color: #7dd3fc;
+}
+
+.quick-setup-panel--custom-browser-source > .quick-setup-panel-content {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-setup-panel--football-league-table {
+  border: 1px solid #f59e0b;
+}
+
+.quick-setup-panel--football-league-table > .quick-setup-panel-toggle {
+  color: #fcd34d;
+}
+
 .quick-setup-panel-toggle {
   display: flex;
   align-items: center;

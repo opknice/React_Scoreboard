@@ -1,0 +1,2241 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เครื่องมือลบพื้นหลังและแก้ไขรูปภาพ</title>
+<style>
+  :root{
+    --bg:#1e1f24; --panel:#26272e; --panel2:#2e3038; --border:#3a3c46;
+    --text:#e8e9ed; --muted:#9a9caa; --accent:#4f8cff; --accent2:#3a6fd8;
+    --danger:#e25555; --ok:#3fbf6f;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:'Segoe UI', Tahoma, 'Leelawadee UI', sans-serif;
+    background:var(--bg); color:var(--text); display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    display:flex; align-items:center; gap:8px; padding:8px 12px;
+    background:var(--panel); border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  header h1{font-size:15px; font-weight:600; margin-right:8px; white-space:nowrap;}
+  header h1 span{color:var(--accent);}
+  .spacer{flex:1;}
+  button{
+    background:var(--panel2); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer;
+    font-family:inherit; transition:background .15s, border-color .15s; white-space:nowrap;
+  }
+  button:hover:not(:disabled){background:#383a44; border-color:#4a4d5a;}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+  button.primary{background:var(--accent); border-color:var(--accent);}
+  button.primary:hover:not(:disabled){background:var(--accent2);}
+  button.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+  button.small{padding:4px 8px; font-size:12px;}
+  #main{flex:1; display:flex; min-height:0;}
+  /* ---------- Canvas area ---------- */
+  #canvasArea{
+    flex:1; position:relative; overflow:auto; background:#16171b;
+    display:flex; min-width:0;
+  }
+  #dropHint{
+    margin:auto; text-align:center; color:var(--muted); padding:40px;
+    border:2px dashed var(--border); border-radius:14px; max-width:420px;
+  }
+  #dropHint .big{font-size:42px; margin-bottom:12px;}
+  #dropHint p{margin:6px 0; font-size:14px;}
+  #stageWrap{margin:auto; padding:30px; display:none;}
+  #stage{
+    position:relative; display:inline-block; box-shadow:0 4px 24px rgba(0,0,0,.5);
+    /* checkerboard */
+    background-image:
+      linear-gradient(45deg,#777 25%,transparent 25%),
+      linear-gradient(-45deg,#777 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#777 75%),
+      linear-gradient(-45deg,transparent 75%,#777 75%);
+    background-size:20px 20px;
+    background-position:0 0,0 10px,10px -10px,-10px 0;
+    background-color:#aaa;
+  }
+  #work{display:block;}
+  #beforeCanvas{
+    position:absolute; left:0; top:0; width:100%; height:100%; z-index:1;
+    pointer-events:none; display:none;
+  }
+  #compareDivider{
+    position:absolute; top:0; bottom:0; left:50%; z-index:2; display:none;
+    width:2px; background:#fff; box-shadow:0 0 0 1px rgba(0,0,0,.65);
+    pointer-events:none;
+  }
+  #compareDivider::before{
+    content:'ก่อน'; position:absolute; top:8px; right:8px; padding:2px 6px;
+    border-radius:4px; color:#fff; background:rgba(0,0,0,.68); font:11px 'Segoe UI',sans-serif;
+  }
+  #compareDivider::after{
+    content:'หลัง'; position:absolute; top:8px; left:8px; padding:2px 6px;
+    border-radius:4px; color:#fff; background:rgba(0,0,0,.68); font:11px 'Segoe UI',sans-serif;
+  }
+  #ov{position:absolute; left:0; top:0; width:100%; height:100%; z-index:3;}
+  #stage[data-preview-bg="white"]{background:#fff; background-image:none;}
+  #stage[data-preview-bg="black"]{background:#000; background-image:none;}
+  #stage[data-preview-bg="green"]{background:#00b140; background-image:none;}
+  /* ---------- Sidebar ---------- */
+  #sidebar{
+    width:300px; flex:none; background:var(--panel); border-left:1px solid var(--border);
+    overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:10px;
+  }
+  .section{
+    background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 12px;
+  }
+  .section h2{
+    font-size:13px; font-weight:600; color:var(--accent); margin-bottom:8px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .row{display:flex; align-items:center; gap:8px; margin:6px 0; flex-wrap:wrap;}
+  .row label{font-size:12px; color:var(--muted);}
+  .row .val{font-size:12px; color:var(--text); min-width:30px; text-align:right;}
+  input[type=range]{flex:1; accent-color:var(--accent); min-width:80px;}
+  input[type=number], input[type=text], select{
+    background:var(--bg); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; padding:5px 8px; font-size:13px; font-family:inherit; width:70px;
+  }
+  input[type=text]{width:auto; flex:1; min-width:0;}
+  select{width:auto; flex:1;}
+  input[type=color]{
+    width:34px; height:28px; border:1px solid var(--border); border-radius:6px;
+    background:var(--bg); cursor:pointer; padding:2px;
+  }
+  input[type=checkbox], input[type=radio]{accent-color:var(--accent);}
+  .hint{font-size:11px; color:var(--muted); margin-top:4px; line-height:1.5;}
+  .btnGrid{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
+  .btnGrid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px;}
+  .anchorGrid{
+    display:grid; grid-template-columns:repeat(3,26px); grid-template-rows:repeat(3,26px); gap:3px;
+  }
+  .anchorGrid button{padding:0; font-size:11px; border-radius:4px;}
+  .toolBtns{display:flex; gap:6px; flex-wrap:wrap;}
+  .toolBtns button{flex:1;}
+  #status{
+    background:var(--panel); border-top:1px solid var(--border); padding:5px 12px;
+    font-size:12px; color:var(--muted); display:flex; gap:18px; flex-wrap:wrap;
+  }
+  /* ---------- Loading overlay ---------- */
+  #loading{
+    position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100;
+    display:none; align-items:center; justify-content:center; flex-direction:column; gap:16px;
+  }
+  #loading.show{display:flex;}
+  .spinner{
+    width:48px; height:48px; border:5px solid var(--border); border-top-color:var(--accent);
+    border-radius:50%; animation:spin 1s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loadingText{font-size:14px; color:var(--text); text-align:center; max-width:80%;}
+  kbd{
+    background:var(--bg); border:1px solid var(--border); border-radius:4px;
+    padding:1px 5px; font-size:11px; font-family:inherit;
+  }
+  hr.sep{border:none; border-top:1px solid var(--border); margin:8px 0;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🖼️ <span>BG</span> Remover &amp; Editor</h1>
+  <button id="btnOpen" class="primary">📂 เปิดภาพ</button>
+  <button id="btnUndo" disabled title="Ctrl+Z">↩ เลิกทำ</button>
+  <button id="btnRedo" disabled title="Ctrl+Y">↪ ทำซ้ำ</button>
+  <div class="spacer"></div>
+  <button id="btnZoomOut" class="small">−</button>
+  <span id="zoomLabel" style="font-size:12px; min-width:46px; text-align:center;">100%</span>
+  <button id="btnZoomIn" class="small">＋</button>
+  <button id="btnZoomFit" class="small">พอดีจอ</button>
+  <button id="btnZoom100" class="small">100%</button>
+</header>
+
+<div id="main">
+  <div id="canvasArea">
+    <div id="dropHint">
+      <div class="big">🖼️</div>
+      <p><b>ลากไฟล์ภาพมาวางที่นี่</b></p>
+      <p>หรือกดปุ่ม "เปิดภาพ" หรือวางจากคลิปบอร์ด (<kbd>Ctrl</kbd>+<kbd>V</kbd>)</p>
+      <p style="color:var(--muted); font-size:12px;">รองรับ PNG, JPG, GIF, WebP, BMP ฯลฯ</p>
+    </div>
+    <div id="stageWrap">
+      <div id="stage" data-preview-bg="checker">
+        <canvas id="work"></canvas>
+        <canvas id="beforeCanvas"></canvas>
+        <div id="compareDivider" aria-hidden="true"></div>
+        <canvas id="ov"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <aside id="sidebar">
+
+    <div class="section">
+      <h2>✨ ลบพื้นหลัง</h2>
+      <div class="row">
+        <label for="aiMode">โหมดประมวลผล</label>
+        <select id="aiMode">
+          <option value="auto" selected>อัตโนมัติ</option>
+          <option value="person">คน / นักฟุตบอล</option>
+          <option value="logo">โลโก้ทีม</option>
+        </select>
+      </div>
+      <div class="row" id="personModelRow">
+        <label for="personModel">โมเดลสำหรับคน</label>
+        <select id="personModel">
+          <option value="auto">ค่าเดิม (MODNet → IS-Net เมื่อผิดพลาด)</option>
+          <option value="modnet">MODNet เท่านั้น</option>
+          <option value="isnet">IS-Net เท่านั้น</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="toolSubject">▣ เลือกกรอบนักฟุตบอล</button>
+        <button id="clearSubject">ล้างกรอบ</button>
+      </div>
+      <div class="row">
+        <label for="subjectPadding">เผื่อรอบตัว (%)</label>
+        <input id="subjectPadding" type="number" min="0" max="30" value="10">
+      </div>
+      <div class="hint" id="subjectHint" role="status">ไม่มีกรอบ: ประมวลผลทั้งภาพ</div>
+      <div class="hint">ลากกรอบให้รวมมือและเท้าครบ กรอบใช้โหมดคน พื้นที่นอกกรอบเส้นประจะโปร่งใส โดยขนาดภาพส่งออกเท่าเดิม</div>
+      <button id="btnAI" class="primary" style="width:100%;">🤖 ลบพื้นหลังอัตโนมัติ (AI คุณภาพสูง)</button>
+      <div id="modelResult" class="hint" role="status">ยังไม่มีผลจากโมเดล</div>
+      <div class="row"><label><input type="checkbox" id="showRawMask" disabled> ดู AI Mask ดิบ (ขาว = เก็บ / ดำ = ลบ)</label></div>
+      <div class="hint">เปรียบเทียบโดยเลือกโมเดลแล้วกด AI อีกครั้ง ใช้ Undo/Redo สลับผลก่อนหน้าได้ การเลือกโมเดลแบบเจาะจงจะไม่สลับไปโมเดลอื่นเมื่อผิดพลาด</div>
+      <div id="aiModeHint" class="hint">อัตโนมัติจะตรวจสอบ Transparency สี และขอบภาพ แล้วเลือกวิธีที่เหมาะสม</div>
+      <div class="hint">ประมวลผลบนเครื่องของคุณทั้งหมด ครั้งแรกต้องต่ออินเทอร์เน็ตเพื่อโหลดโมเดล จากนั้นเบราว์เซอร์จะใช้ข้อมูลที่แคชไว้</div>
+      <hr class="sep">
+      <div class="toolBtns">
+        <button id="toolWand">🪄 ไม้กายสิทธิ์</button>
+      </div>
+      <div class="row">
+        <label>ความคล้ายสี</label>
+        <input type="range" id="tolerance" min="1" max="100" value="30">
+        <span class="val" id="toleranceVal">30</span>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="contiguous" checked> เฉพาะบริเวณที่ติดกัน</label>
+      </div>
+      <div class="hint">เลือกเครื่องมือไม้กายสิทธิ์ แล้วคลิกบนสีพื้นหลังในภาพเพื่อลบสีนั้นออก</div>
+    </div>
+
+    <div class="section">
+      <h2>🧪 ปรับขอบอัตโนมัติ</h2>
+      <div class="row">
+        <label><input type="checkbox" id="autoRefine" checked> ใช้การปรับขอบ</label>
+      </div>
+      <div class="row">
+        <label>Foreground Threshold</label>
+        <input type="range" id="maskThreshold" min="5" max="95" value="40">
+        <span class="val" id="maskThresholdVal">40</span>
+      </div>
+      <div class="row">
+        <label>ความนุ่มขอบ</label>
+        <input type="range" id="edgeSoftness" min="0" max="8" value="2">
+        <span class="val" id="edgeSoftnessVal">2</span>
+      </div>
+      <div class="row">
+        <label>ขยาย / หด Mask</label>
+        <input type="range" id="maskOffset" min="-8" max="8" value="0">
+        <span class="val" id="maskOffsetVal">0</span>
+      </div>
+      <div class="row">
+        <label>ลดสีพื้นหลังปนขอบ</label>
+        <input type="range" id="colorSpill" min="0" max="100" value="65">
+        <span class="val" id="colorSpillVal">65</span>
+      </div>
+      <button id="btnApplyRefine" style="width:100%;" disabled>✨ ปรับขอบใหม่จาก AI Mask</button>
+      <div class="hint">Threshold ต่ำช่วยรักษาผมบาง · ค่าสูงช่วยตัดเศษพื้นหลัง · Mask บวกขยาย / ลบหด</div>
+      <div class="hint">การปรับใหม่ใช้ AI Mask ล่าสุดรวมจุดซ่อมที่ยอมรับ และรักษาส่วนที่ระบายเก็บไว้ การลบหรือเกลี่ยขอบด้วยมืออาจต้องทำใหม่</div>
+    </div>
+
+    <div class="section">
+      <h2>🖌️ แปรงแก้ไข</h2>
+      <div class="toolBtns"><button id="toolRepair">▣ เลือกจุดซ่อม</button><button id="runRepair">AI ซ่อมจุดนี้</button></div>
+      <div class="hint">เลือกกรอบมือหรือเท้ารวมแขนหรือขาบางส่วนเพื่อให้ AI เห็นบริบท แล้วกดซ่อม ใช้โมเดลคนที่เลือกด้านบน</div>
+      <div id="repairStatus" class="hint" role="status">ยังไม่ได้เลือกจุดซ่อม</div>
+      <div class="hint">ส่วนที่ระบาย “เก็บส่วนนี้” จะได้รับการรักษาเมื่อปรับขอบใหม่ ใช้แปรงลบเพื่อยกเลิกการเก็บบริเวณนั้น</div>
+      <div class="toolBtns">
+        <button id="toolKeep">➕ เก็บส่วนนี้</button>
+        <button id="toolRemove">➖ ลบส่วนนี้</button>
+        <button id="toolRefine">✨ เกลี่ยขอบ</button>
+      </div>
+      <div class="row">
+        <label>ขนาดแปรง</label>
+        <input type="range" id="brushSize" min="2" max="200" value="40">
+        <span class="val" id="brushSizeVal">40</span>
+      </div>
+      <div class="row">
+        <label>ความแข็งขอบ</label>
+        <input type="range" id="brushHardness" min="0" max="100" value="70">
+        <span class="val" id="brushHardnessVal">70%</span>
+      </div>
+      <div class="row">
+        <label>ความเข้ม</label>
+        <input type="range" id="brushOpacity" min="1" max="100" value="100">
+        <span class="val" id="brushOpacityVal">100%</span>
+      </div>
+      <div class="hint">เก็บ = เพิ่ม Alpha · ลบ = ลด Alpha · เกลี่ยขอบ = ปรับเฉพาะแนวขอบด้วยสีภาพต้นฉบับและ AI Mask</div>
+    </div>
+
+    <div class="section">
+      <h2>🔎 ตรวจสอบขอบ</h2>
+      <div class="row">
+        <label><input type="checkbox" id="showMaskOverlay"> แสดง Mask Overlay สีแดง</label>
+      </div>
+      <div class="row">
+        <label for="previewBackground">พื้นหลังตัวอย่าง</label>
+        <select id="previewBackground">
+          <option value="checker" selected>ตารางโปร่งใส</option>
+          <option value="white">สีขาว</option>
+          <option value="black">สีดำ</option>
+          <option value="green">สีเขียว Chroma Key</option>
+          <option value="export">ตามค่าที่ส่งออก</option>
+        </select>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="compareBeforeAfter"> เปรียบเทียบก่อน / หลัง</label>
+      </div>
+      <div class="row">
+        <label>เส้นแบ่งภาพ</label>
+        <input type="range" id="compareSplit" min="5" max="95" value="50">
+        <span class="val" id="compareSplitVal">50%</span>
+      </div>
+      <div class="hint">เครื่องมือตรวจสอบทั้งหมดมีผลเฉพาะ Preview และไม่ติดไปกับไฟล์ที่บันทึก</div>
+    </div>
+
+    <div class="section">
+      <h2>🎨 พื้นหลัง</h2>
+      <div class="row">
+        <label><input type="radio" name="bgMode" value="transparent" checked> โปร่งใส (Transparent)</label>
+      </div>
+      <div class="row">
+        <label><input type="radio" name="bgMode" value="color"> สีพื้น</label>
+        <input type="color" id="bgColor" value="#ffffff">
+      </div>
+      <div class="hint">มีผลกับภาพตัวอย่างและไฟล์ที่ส่งออก (JPG ไม่รองรับโปร่งใส จะใช้สีขาวแทน)</div>
+    </div>
+
+    <div class="section">
+      <h2>✂️ ครอบตัด (Crop)</h2>
+      <div class="toolBtns">
+        <button id="toolCrop">✂️ เลือกพื้นที่</button>
+      </div>
+      <div class="btnGrid" style="margin-top:6px;">
+        <button id="btnCropApply" disabled>✔ ตัดตามที่เลือก</button>
+        <button id="btnCropCancel" disabled>✖ ยกเลิก</button>
+      </div>
+      <div class="hint">เลือกเครื่องมือแล้วลากบนภาพเพื่อกำหนดพื้นที่</div>
+    </div>
+
+    <div class="section">
+      <h2>🔄 หมุน / พลิก</h2>
+      <div class="btnGrid">
+        <button id="btnRotL">⟲ หมุนซ้าย 90°</button>
+        <button id="btnRotR">⟳ หมุนขวา 90°</button>
+        <button id="btnFlipH">⇋ พลิกแนวนอน</button>
+        <button id="btnFlipV">⇵ พลิกแนวตั้ง</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <label>องศา</label>
+        <input type="number" id="rotAngle" value="15" step="1">
+        <button id="btnRotCustom" class="small">หมุน</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>📐 ปรับขนาดภาพ (Resize)</h2>
+      <div class="row">
+        <label>กว้าง</label><input type="number" id="resizeW" min="1">
+        <label>สูง</label><input type="number" id="resizeH" min="1">
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="lockAspect" checked> ล็อกสัดส่วน</label>
+        <div class="spacer"></div>
+        <button id="btnResize" class="small">✔ ปรับขนาด</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>🖼️ ปรับขนาดผืนผ้าใบ (Canvas)</h2>
+      <div class="row">
+        <label>กว้าง</label><input type="number" id="canvasW" min="1">
+        <label>สูง</label><input type="number" id="canvasH" min="1">
+      </div>
+      <div class="row">
+        <label>ยึดตำแหน่ง</label>
+        <div class="anchorGrid" id="anchorGrid">
+          <button data-a="0,0">↖</button><button data-a="0.5,0">↑</button><button data-a="1,0">↗</button>
+          <button data-a="0,0.5">←</button><button data-a="0.5,0.5" class="active">•</button><button data-a="1,0.5">→</button>
+          <button data-a="0,1">↙</button><button data-a="0.5,1">↓</button><button data-a="1,1">↘</button>
+        </div>
+        <div class="spacer"></div>
+        <button id="btnCanvasResize" class="small">✔ ปรับ</button>
+      </div>
+      <div class="hint">ขยายผืนผ้าใบ = เพิ่มขอบโปร่งใสรอบภาพ / ลด = ตัดส่วนเกินทิ้ง</div>
+    </div>
+
+    <div class="section">
+      <h2>💾 บันทึก / ส่งออก</h2>
+      <div class="row">
+        <label>ชื่อไฟล์</label>
+        <input type="text" id="fileName" value="image" spellcheck="false">
+      </div>
+      <div class="row">
+        <label>ชนิดไฟล์</label>
+        <select id="format">
+          <option value="png" selected>PNG (รองรับโปร่งใส)</option>
+          <option value="jpeg">JPG / JPEG</option>
+          <option value="webp">WebP (รองรับโปร่งใส)</option>
+          <option value="gif">GIF (รองรับโปร่งใส)</option>
+          <option value="bmp">BMP</option>
+        </select>
+      </div>
+      <div class="row" id="qualityRow" style="display:none;">
+        <label>คุณภาพ</label>
+        <input type="range" id="quality" min="10" max="100" value="92">
+        <span class="val" id="qualityVal">92</span>
+      </div>
+      <button id="btnExport" class="primary" style="width:100%; margin-top:6px;">💾 บันทึกไฟล์</button>
+      <button id="btnCopy" style="width:100%; margin-top:6px;">📋 คัดลอกไปคลิปบอร์ด (PNG)</button>
+    </div>
+
+  </aside>
+</div>
+
+<div id="status">
+  <span id="statDims">ยังไม่ได้เปิดภาพ</span>
+  <span id="statTool">เครื่องมือ: เลื่อนดูภาพ</span>
+  <span style="margin-left:auto;">⌨ <kbd>Ctrl+Z</kbd> เลิกทำ | <kbd>Ctrl+Y</kbd> ทำซ้ำ | <kbd>Ctrl+V</kbd> วางภาพ</span>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadingText">กำลังประมวลผล...</div>
+</div>
+
+<dialog id="repairDialog" style="margin:auto; padding:16px; background:#26272e; color:white; max-width:90vw; border:1px solid #777;" aria-labelledby="repairTitle">
+  <h3 id="repairTitle">ตัวอย่างซ่อมเฉพาะจุด</h3>
+  <p>ซ้าย: ปัจจุบัน · ขวา: ผล AI ที่เสนอ (พื้นดำใช้ตรวจขอบ)</p>
+  <div style="display:flex; gap:8px;"><canvas id="repairBefore" style="max-width:40vw; max-height:65vh; object-fit:contain; background:#000;"></canvas><canvas id="repairAfter" style="max-width:40vw; max-height:65vh; object-fit:contain; background:#000;"></canvas></div>
+  <button id="acceptRepair">ยอมรับผล</button><button id="cancelRepair">ยกเลิก</button>
+</dialog>
+<input type="file" id="fileInput" accept="image/*" hidden>
+
+<script type="module">
+/* =========================================================
+   เครื่องมือลบพื้นหลังและแก้ไขรูปภาพ — ไฟล์เดียวจบ
+   ========================================================= */
+const $ = id => document.getElementById(id);
+
+const work = $('work');            // ผืนงานหลัก (แสดงผลจริง, มี alpha)
+const beforeCanvas = $('beforeCanvas'); // ภาพต้นฉบับสำหรับ Before/After Preview
+const beforeCtx = beforeCanvas.getContext('2d');
+const compareDivider = $('compareDivider');
+const ov   = $('ov');              // overlay สำหรับ crop rect / brush cursor
+const wctx = work.getContext('2d', { willReadFrequently: true });
+const octx_ov = ov.getContext('2d');
+
+const orig = document.createElement('canvas');   // สำเนาต้นฉบับสำหรับ Preview และการแก้ Mask
+const octx = orig.getContext('2d');
+const mask = document.createElement('canvas');   // Alpha Mask แยกจากภาพต้นฉบับ
+const mctx = mask.getContext('2d', { willReadFrequently: true });
+const rawMask = document.createElement('canvas'); // Mask ดิบจาก AI สำหรับปรับขอบซ้ำ
+const rawMaskCtx = rawMask.getContext('2d', { willReadFrequently: true });
+const renderSource = document.createElement('canvas'); // RGB ที่ผ่านการลด Color Spill
+const renderSourceCtx = renderSource.getContext('2d', { willReadFrequently: true });
+const maskOverlay = document.createElement('canvas'); // Overlay สีแดงสำหรับตรวจพื้นที่ที่ถูกลบ
+const maskOverlayCtx = maskOverlay.getContext('2d', { willReadFrequently: true });
+
+let hasImage = false;
+let imageRevision = 0;
+let hasRawMask = false;
+let lastModelResult = '';
+let lastAiResolvedMode = null;
+let lastDetectedBackgroundColor = null;
+let zoom = 1;
+let tool = 'none';          // none | wand | keep | remove | refine | crop
+let cropRect = null;        // {x,y,w,h} ในพิกัดภาพ
+let subjectRect = null;
+let repairRect = null;
+let pendingRepair = null;
+let maskRevision = 0;
+const keepMask = document.createElement('canvas');
+let anchor = [0.5, 0.5];
+let cursorPos = null;       // ตำแหน่งเมาส์ (พิกัดภาพ) สำหรับวาดวงแปรง
+let maskOverlayDirty = true;
+const undoStack = [], redoStack = [];
+const MAX_HISTORY = 20;
+
+/* ---------- helpers ---------- */
+function mk(w, h) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w));
+  c.height = Math.max(1, Math.round(h));
+  return c;
+}
+function snap(c) { const n = mk(c.width, c.height); n.getContext('2d').drawImage(c, 0, 0); return n; }
+function replaceWith(c, nc) {
+  c.width = nc.width; c.height = nc.height;
+  c.getContext('2d').drawImage(nc, 0, 0);
+}
+function showLoading(t) { $('loadingText').textContent = t; $('loading').classList.add('show'); }
+function hideLoading() { $('loading').classList.remove('show'); }
+
+function resetMask(width, height) {
+  keepMask.width = width;
+  keepMask.height = height;
+  repairRect = null;
+  pendingRepair = null;
+  mask.width = Math.max(1, Math.round(width));
+  mask.height = Math.max(1, Math.round(height));
+  mctx.clearRect(0, 0, mask.width, mask.height);
+  mctx.fillStyle = '#ffffff';
+  mctx.fillRect(0, 0, mask.width, mask.height);
+  markMaskOverlayDirty();
+}
+
+function resetRenderSource() {
+  renderSource.width = orig.width;
+  renderSource.height = orig.height;
+  renderSourceCtx.clearRect(0, 0, renderSource.width, renderSource.height);
+  renderSourceCtx.drawImage(orig, 0, 0);
+}
+
+// `work` เป็นภาพ Preview/Export ที่ประกอบใหม่จากภาพต้นฉบับและ Alpha Mask เสมอ
+// จึงสามารถเปลี่ยน Mask ภายหลังได้โดยไม่ทำลาย RGB ของภาพต้นฉบับ
+function applyMaskToWork() {
+  maskRevision++;
+  work.width = orig.width;
+  work.height = orig.height;
+  wctx.clearRect(0, 0, work.width, work.height);
+  const source = renderSource.width === orig.width && renderSource.height === orig.height
+    ? renderSource
+    : orig;
+  wctx.drawImage(source, 0, 0);
+  wctx.save();
+  wctx.globalCompositeOperation = 'destination-in';
+  wctx.drawImage(mask, 0, 0, work.width, work.height);
+  wctx.restore();
+}
+
+/* ---------- history ---------- */
+function createHistorySnapshot() {
+  return {
+    o: snap(orig),
+    m: snap(mask),
+    keep: snap(keepMask),
+    r: hasRawMask ? snap(rawMask) : null,
+    p: snap(renderSource),
+    hasRawMask,
+    modelResult: lastModelResult,
+    aiMode: lastAiResolvedMode,
+    backgroundColor: lastDetectedBackgroundColor ? [...lastDetectedBackgroundColor] : null
+  };
+}
+function pushHistory() {
+  undoStack.push(createHistorySnapshot());
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack.length = 0;
+  updateHistoryBtns();
+}
+function applySnap(s) {
+  replaceWith(orig, s.o);
+  replaceWith(mask, s.m);
+  replaceWith(keepMask, s.keep);
+  if (s.r) replaceWith(rawMask, s.r);
+  replaceWith(renderSource, s.p);
+  hasRawMask = s.hasRawMask;
+  lastModelResult = s.modelResult || '';
+  updateModelResult();
+  lastAiResolvedMode = s.aiMode;
+  lastDetectedBackgroundColor = s.backgroundColor;
+  $('btnApplyRefine').disabled = !hasRawMask;
+  markMaskOverlayDirty();
+  applyMaskToWork();
+  afterGeometry(false);
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(createHistorySnapshot());
+  applySnap(undoStack.pop());
+  updateHistoryBtns();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(createHistorySnapshot());
+  applySnap(redoStack.pop());
+  updateHistoryBtns();
+}
+function updateHistoryBtns() {
+  $('btnUndo').disabled = !undoStack.length;
+  $('btnRedo').disabled = !redoStack.length;
+}
+
+/* ---------- layout / zoom ---------- */
+function syncLayout() {
+  ov.width = work.width; ov.height = work.height;
+  beforeCanvas.width = work.width; beforeCanvas.height = work.height;
+  beforeCtx.clearRect(0, 0, beforeCanvas.width, beforeCanvas.height);
+  beforeCtx.drawImage(orig, 0, 0, beforeCanvas.width, beforeCanvas.height);
+  setZoom(zoom);
+  updateComparisonPreview();
+  drawOverlay();
+}
+function setZoom(z) {
+  zoom = Math.min(16, Math.max(0.02, z));
+  work.style.width = (work.width * zoom) + 'px';
+  work.style.height = (work.height * zoom) + 'px';
+  $('zoomLabel').textContent = Math.round(zoom * 100) + '%';
+}
+function zoomFit() {
+  const area = $('canvasArea');
+  const aw = area.clientWidth - 70, ah = area.clientHeight - 70;
+  setZoom(Math.min(aw / work.width, ah / work.height, 1));
+}
+function updateComparisonPreview() {
+  const enabled = hasImage && $('compareBeforeAfter').checked;
+  const split = +$('compareSplit').value;
+  beforeCanvas.style.display = enabled ? 'block' : 'none';
+  compareDivider.style.display = enabled ? 'block' : 'none';
+  beforeCanvas.style.clipPath = enabled ? `inset(0 ${100 - split}% 0 0)` : '';
+  compareDivider.style.left = `${split}%`;
+  $('compareSplit').disabled = !enabled;
+  $('compareSplitVal').textContent = `${split}%`;
+}
+function updateDims() {
+  $('statDims').textContent = `ขนาดภาพ: ${work.width} × ${work.height} px`;
+  $('resizeW').value = work.width; $('resizeH').value = work.height;
+  $('canvasW').value = work.width; $('canvasH').value = work.height;
+}
+function afterGeometry(resetCrop = true) {
+  repairRect = null;
+  pendingRepair = null;
+  $('repairStatus').textContent = 'ยังไม่ได้เลือกจุดซ่อม';
+  subjectRect = null;
+  updateSubjectHint();
+  if (resetCrop) { cropRect = null; updateCropBtns(); }
+  syncLayout();
+  updateDims();
+}
+
+/* ---------- เปิดภาพ ---------- */
+async function loadImage(blob) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(blob);
+  } catch (e) {
+    alert('ไม่สามารถเปิดไฟล์นี้ได้: ' + e.message);
+    return;
+  }
+  orig.width = bmp.width; orig.height = bmp.height;
+  octx.drawImage(bmp, 0, 0);
+  resetMask(bmp.width, bmp.height);
+  resetRenderSource();
+  rawMask.width = 1;
+  rawMask.height = 1;
+  hasRawMask = false;
+  lastModelResult = '';
+  $('showRawMask').checked = false;
+  updateModelResult();
+  lastAiResolvedMode = null;
+  lastDetectedBackgroundColor = null;
+  $('btnApplyRefine').disabled = true;
+  applyMaskToWork();
+  bmp.close?.();
+  hasImage = true;
+  imageRevision++;
+  undoStack.length = 0; redoStack.length = 0;
+  cropRect = null;
+  subjectRect = null;
+  updateSubjectHint();
+  updateHistoryBtns(); updateCropBtns();
+  $('dropHint').style.display = 'none';
+  $('stageWrap').style.display = 'block';
+  syncLayout(); updateDims(); zoomFit();
+}
+
+$('btnOpen').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => { if (e.target.files[0]) loadImage(e.target.files[0]); e.target.value = ''; };
+
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (f) loadImage(f);
+});
+window.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) loadImage(item.getAsFile());
+});
+
+/* ---------- เลือกเครื่องมือ ---------- */
+const toolBtnIds = {
+  repair: 'toolRepair',
+  subject: 'toolSubject', wand: 'toolWand', keep: 'toolKeep', remove: 'toolRemove', refine: 'toolRefine', crop: 'toolCrop'
+};
+const toolNames = {
+  repair: 'ลากกรอบบริเวณที่ต้องการซ่อม',
+  subject: 'ลากกรอบนักฟุตบอลให้รวมมือและเท้า',
+  none: 'เลื่อนดูภาพ', wand: 'ไม้กายสิทธิ์ (คลิกสีที่ต้องการลบ)',
+  keep: 'แปรงเก็บส่วนภาพ', remove: 'แปรงลบส่วนภาพ',
+  refine: 'แปรงเกลี่ยขอบ', crop: 'ครอบตัด (ลากเลือกพื้นที่)'
+};
+function setTool(t) {
+  if (t === 'repair') $('showRawMask').checked = false;
+  if (t === 'subject') {
+    $('showRawMask').checked = false;
+    $('aiMode').value = 'person';
+    updateAiModeHint();
+  }
+  tool = (tool === t) ? 'none' : t;
+  for (const [k, id] of Object.entries(toolBtnIds)) $(id).classList.toggle('active', tool === k);
+  if (tool !== 'crop') { cropRect = null; updateCropBtns(); }
+  $('statTool').textContent = 'เครื่องมือ: ' + toolNames[tool];
+  ov.style.cursor = tool === 'none' ? 'grab' : 'crosshair';
+  drawOverlay();
+}
+for (const [k, id] of Object.entries(toolBtnIds)) $(id).onclick = () => setTool(k);
+
+function subjectBounds() {
+  if (!subjectRect || subjectRect.w < 2 || subjectRect.h < 2) return null;
+  const padding = Math.min(30, Math.max(0, Number($('subjectPadding').value) || 0)) / 100;
+  const x = Math.max(0, Math.floor(subjectRect.x - subjectRect.w * padding));
+  const y = Math.max(0, Math.floor(subjectRect.y - subjectRect.h * padding));
+  const right = Math.min(orig.width, Math.ceil(subjectRect.x + subjectRect.w * (1 + padding)));
+  const bottom = Math.min(orig.height, Math.ceil(subjectRect.y + subjectRect.h * (1 + padding)));
+  return { x, y, w: right - x, h: bottom - y };
+}
+function updateSubjectHint() {
+  const bounds = subjectBounds();
+  $('subjectHint').textContent = bounds
+    ? `พื้นที่ประมวลผล: ${bounds.w} × ${bounds.h} px · ใช้โมเดลคน`
+    : 'ไม่มีกรอบ: ประมวลผลทั้งภาพ';
+}
+$('clearSubject').onclick = () => { subjectRect = null; updateSubjectHint(); drawOverlay(); };
+$('subjectPadding').oninput = () => { updateSubjectHint(); drawOverlay(); };
+
+/* ---------- พิกัดเมาส์ → พิกัดภาพ ---------- */
+function toImg(e) {
+  const r = ov.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (work.width / r.width),
+    y: (e.clientY - r.top) * (work.height / r.height)
+  };
+}
+
+/* ---------- overlay ---------- */
+function markMaskOverlayDirty() {
+  maskOverlayDirty = true;
+}
+
+function rebuildMaskOverlay() {
+  maskOverlay.width = mask.width;
+  maskOverlay.height = mask.height;
+  const alpha = alphaFromCanvas(mask);
+  const overlay = maskOverlayCtx.createImageData(mask.width, mask.height);
+  for (let i = 0; i < alpha.length; i++) {
+    const offset = i * 4;
+    overlay.data[offset] = 255;
+    overlay.data[offset + 1] = 38;
+    overlay.data[offset + 2] = 38;
+    overlay.data[offset + 3] = Math.round((255 - alpha[i]) * 0.58);
+  }
+  maskOverlayCtx.putImageData(overlay, 0, 0);
+  maskOverlayDirty = false;
+}
+
+function drawOverlay() {
+  octx_ov.clearRect(0, 0, ov.width, ov.height);
+  // วาดเฉพาะชั้น Preview: ไม่เปลี่ยน Mask ที่แก้ไขหรือภาพส่งออก
+  if (hasRawMask && $('showRawMask').checked) {
+    const preview = rawMaskCtx.getImageData(0, 0, rawMask.width, rawMask.height);
+    for (let i = 0; i < preview.data.length; i += 4) {
+      const alpha = preview.data[i + 3];
+      preview.data[i] = preview.data[i + 1] = preview.data[i + 2] = alpha;
+      preview.data[i + 3] = 255;
+    }
+    octx_ov.putImageData(preview, 0, 0);
+    return;
+  }
+  if (hasImage && $('showMaskOverlay').checked) {
+    if (maskOverlayDirty || maskOverlay.width !== mask.width || maskOverlay.height !== mask.height) {
+      rebuildMaskOverlay();
+    }
+    octx_ov.drawImage(maskOverlay, 0, 0, ov.width, ov.height);
+  }
+  if (repairRect) {
+    octx_ov.strokeStyle = '#ff74dc';
+    octx_ov.lineWidth = Math.max(1, 2 / zoom);
+    octx_ov.strokeRect(repairRect.x, repairRect.y, repairRect.w, repairRect.h);
+  }
+  if (subjectRect) {
+    octx_ov.save();
+    octx_ov.strokeStyle = '#ffcf40';
+    octx_ov.lineWidth = Math.max(1, 2 / zoom);
+    octx_ov.strokeRect(subjectRect.x, subjectRect.y, subjectRect.w, subjectRect.h);
+    const bounds = subjectBounds();
+    if (bounds) {
+      octx_ov.setLineDash([6 / zoom, 4 / zoom]);
+      octx_ov.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+    }
+    octx_ov.restore();
+  }
+  if (tool === 'crop' && cropRect) {
+    const { x, y, w, h } = cropRect;
+    octx_ov.fillStyle = 'rgba(0,0,0,0.55)';
+    octx_ov.fillRect(0, 0, ov.width, ov.height);
+    octx_ov.clearRect(x, y, w, h);
+    octx_ov.strokeStyle = '#4f8cff';
+    octx_ov.lineWidth = Math.max(1, 2 / zoom);
+    octx_ov.setLineDash([8 / zoom, 5 / zoom]);
+    octx_ov.strokeRect(x, y, w, h);
+    octx_ov.setLineDash([]);
+  } else if ((tool === 'keep' || tool === 'remove' || tool === 'refine') && cursorPos) {
+    octx_ov.beginPath();
+    octx_ov.arc(cursorPos.x, cursorPos.y, +$('brushSize').value / 2, 0, Math.PI * 2);
+    octx_ov.strokeStyle = tool === 'remove' ? '#ff6b6b' : tool === 'keep' ? '#3fbf6f' : '#4f8cff';
+    octx_ov.lineWidth = Math.max(1, 1.5 / zoom);
+    octx_ov.stroke();
+  }
+}
+
+/* ---------- pointer events ---------- */
+let dragging = false, dragStart = null, lastPt = null, panStart = null;
+
+ov.addEventListener('pointerdown', e => {
+  if (!hasImage) return;
+  if ($('showRawMask').checked) return;
+  ov.setPointerCapture(e.pointerId);
+  const p = toImg(e);
+  if (tool === 'none' || e.button === 1) {
+    panStart = { x: e.clientX, y: e.clientY,
+      sl: $('canvasArea').scrollLeft, st: $('canvasArea').scrollTop };
+    ov.style.cursor = 'grabbing';
+    return;
+  }
+  if (e.button !== 0) return;
+  dragging = true;
+  dragStart = p; lastPt = p;
+  if (tool === 'wand') {
+    magicWand(Math.floor(p.x), Math.floor(p.y));
+    dragging = false;
+  } else if (tool === 'keep' || tool === 'remove' || tool === 'refine') {
+    pushHistory();
+    brushSegment(p, p);
+  } else if (tool === 'repair') {
+    repairRect = normRect(p, p);
+  } else if (tool === 'subject') {
+    subjectRect = normRect(p, p);
+    drawOverlay();
+  } else if (tool === 'crop') {
+    cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+    drawOverlay();
+  }
+});
+ov.addEventListener('pointermove', e => {
+  if ($('showRawMask').checked) return;
+  if (panStart) {
+    $('canvasArea').scrollLeft = panStart.sl - (e.clientX - panStart.x);
+    $('canvasArea').scrollTop = panStart.st - (e.clientY - panStart.y);
+    return;
+  }
+  const p = toImg(e);
+  cursorPos = p;
+  if (dragging) {
+    if (tool === 'keep' || tool === 'remove' || tool === 'refine') {
+      brushSegment(lastPt, p);
+      lastPt = p;
+    } else if (tool === 'repair') {
+      repairRect = normRect(dragStart, p);
+    } else if (tool === 'subject') {
+      subjectRect = normRect(dragStart, p);
+      updateSubjectHint();
+    } else if (tool === 'crop') {
+      cropRect = normRect(dragStart, p);
+    }
+  }
+  drawOverlay();
+});
+function endPointer() {
+  if (dragging && tool === 'repair') {
+    if (repairRect && (repairRect.w < 2 || repairRect.h < 2)) repairRect = null;
+    $('repairStatus').textContent = repairRect ? 'เลือกจุดซ่อมแล้ว กด AI ซ่อมจุดนี้' : 'ยังไม่ได้เลือกจุดซ่อม';
+  }
+  if (dragging && tool === 'subject') {
+    if (!subjectBounds()) subjectRect = null;
+    updateSubjectHint();
+  }
+  if (panStart) { panStart = null; ov.style.cursor = tool === 'none' ? 'grab' : 'crosshair'; }
+  if (dragging && tool === 'crop') {
+    if (cropRect && (cropRect.w < 2 || cropRect.h < 2)) cropRect = null;
+    updateCropBtns();
+  }
+  dragging = false;
+  drawOverlay();
+}
+ov.addEventListener('pointerup', endPointer);
+ov.addEventListener('pointercancel', endPointer);
+ov.addEventListener('pointerleave', () => { cursorPos = null; drawOverlay(); });
+
+function normRect(a, b) {
+  const x = Math.max(0, Math.min(a.x, b.x)), y = Math.max(0, Math.min(a.y, b.y));
+  return {
+    x, y,
+    w: Math.min(work.width, Math.max(a.x, b.x)) - x,
+    h: Math.min(work.height, Math.max(a.y, b.y)) - y
+  };
+}
+
+/* zoom ด้วย Ctrl+ล้อเมาส์ */
+$('canvasArea').addEventListener('wheel', e => {
+  if (!e.ctrlKey || !hasImage) return;
+  e.preventDefault();
+  setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+}, { passive: false });
+
+$('btnZoomIn').onclick = () => setZoom(zoom * 1.25);
+$('btnZoomOut').onclick = () => setZoom(zoom / 1.25);
+$('btnZoomFit').onclick = () => hasImage && zoomFit();
+$('btnZoom100').onclick = () => setZoom(1);
+
+/* ---------- ไม้กายสิทธิ์ (ลบสีคล้ายกัน) ---------- */
+function magicWand(px, py) {
+  if (px < 0 || py < 0 || px >= work.width || py >= work.height) return;
+  pushHistory();
+  const W = work.width, H = work.height;
+  const sourceData = octx.getImageData(0, 0, W, H).data;
+  const maskImage = mctx.getImageData(0, 0, W, H);
+  const d = maskImage.data;
+  const si = (py * W + px) * 4;
+  if (sourceData[si + 3] === 0 || d[si + 3] === 0) { undoStack.pop(); updateHistoryBtns(); return; }
+  const sr = sourceData[si], sg = sourceData[si + 1], sb = sourceData[si + 2];
+  const tol = +$('tolerance').value;
+  const thr = (tol / 100) * 441.7;           // ระยะสีสูงสุด = sqrt(3*255^2)
+  const soft = thr * 0.35;                   // ขอบนุ่มเล็กน้อยกัน halo
+
+  const dist = i => {
+    const dr = sourceData[i] - sr, dg = sourceData[i + 1] - sg, db = sourceData[i + 2] - sb;
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  };
+  const fade = (i, ds) => {
+    if (ds <= thr) d[i + 3] = 0;
+    else if (ds <= thr + soft) d[i + 3] = Math.round(d[i + 3] * (ds - thr) / soft);
+  };
+
+  if ($('contiguous').checked) {
+    const visited = new Uint8Array(W * H);
+    const stack = [py * W + px];
+    visited[py * W + px] = 1;
+    while (stack.length) {
+      const n = stack.pop();
+      const i = n * 4;
+      const ds = dist(i);
+      if (ds > thr + soft) continue;
+      fade(i, ds);
+      const x = n % W, y = (n / W) | 0;
+      if (x > 0 && !visited[n - 1]) { visited[n - 1] = 1; stack.push(n - 1); }
+      if (x < W - 1 && !visited[n + 1]) { visited[n + 1] = 1; stack.push(n + 1); }
+      if (y > 0 && !visited[n - W]) { visited[n - W] = 1; stack.push(n - W); }
+      if (y < H - 1 && !visited[n + W]) { visited[n + W] = 1; stack.push(n + W); }
+    }
+  } else {
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      fade(i, dist(i));
+    }
+  }
+  mctx.putImageData(maskImage, 0, 0);
+  markMaskOverlayDirty();
+  applyMaskToWork();
+  drawOverlay();
+}
+
+/* ---------- แปรงแก้ Mask แบบไม่ทำลายภาพต้นฉบับ ---------- */
+function brushSettings() {
+  return {
+    size: +$('brushSize').value,
+    hardness: +$('brushHardness').value / 100,
+    opacity: +$('brushOpacity').value / 100
+  };
+}
+
+function brushDabs(a, b, size) {
+  const distance = Math.hypot(b.x - a.x, b.y - a.y);
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, size * 0.16)));
+  const dabs = [];
+  for (let step = 0; step <= steps; step++) {
+    const t = step / steps;
+    dabs.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  return dabs;
+}
+
+function brushInfluence(distance, radius, hardness, opacity) {
+  const normalized = distance / radius;
+  if (normalized >= 1) return 0;
+  if (hardness >= 0.999 || normalized <= hardness) return opacity;
+  return opacity * (1 - normalized) / (1 - hardness);
+}
+
+function brushSegment(a, b) {
+  const settings = brushSettings();
+  const dabs = brushDabs(a, b, settings.size);
+  const radius = settings.size / 2;
+  const x0 = Math.max(0, Math.floor(Math.min(a.x, b.x) - radius - 1));
+  const y0 = Math.max(0, Math.floor(Math.min(a.y, b.y) - radius - 1));
+  const x1 = Math.min(mask.width, Math.ceil(Math.max(a.x, b.x) + radius + 1));
+  const y1 = Math.min(mask.height, Math.ceil(Math.max(a.y, b.y) + radius + 1));
+  const width = x1 - x0;
+  const height = y1 - y0;
+  if (width <= 0 || height <= 0) return;
+
+  const maskImage = mctx.getImageData(x0, y0, width, height);
+  if (tool === 'refine') {
+    refineEdgeRegion(maskImage, x0, y0, width, height, dabs, settings);
+  } else {
+    paintMaskRegion(maskImage, x0, y0, width, height, dabs, settings, tool === 'keep');
+    const context = keepMask.getContext('2d');
+    const protectedRegion = context.getImageData(x0, y0, width, height);
+    paintMaskRegion(protectedRegion, x0, y0, width, height, dabs, settings, tool === 'keep');
+    context.putImageData(protectedRegion, x0, y0);
+  }
+  mctx.putImageData(maskImage, x0, y0);
+  markMaskOverlayDirty();
+  applyMaskToWork();
+  drawOverlay();
+}
+
+function paintMaskRegion(maskImage, x0, y0, width, height, dabs, settings, keep) {
+  const radius = settings.size / 2;
+  for (const dab of dabs) {
+    const left = Math.max(0, Math.floor(dab.x - radius) - x0);
+    const top = Math.max(0, Math.floor(dab.y - radius) - y0);
+    const right = Math.min(width - 1, Math.ceil(dab.x + radius) - x0);
+    const bottom = Math.min(height - 1, Math.ceil(dab.y + radius) - y0);
+    for (let y = top; y <= bottom; y++) {
+      for (let x = left; x <= right; x++) {
+        const strength = brushInfluence(
+          Math.hypot(x + x0 + 0.5 - dab.x, y + y0 + 0.5 - dab.y),
+          radius, settings.hardness, settings.opacity
+        );
+        if (strength <= 0) continue;
+        const offset = (y * width + x) * 4;
+        maskImage.data[offset] = maskImage.data[offset + 1] = maskImage.data[offset + 2] = 255;
+        const current = maskImage.data[offset + 3];
+        maskImage.data[offset + 3] = keep
+          ? Math.round(current + (255 - current) * strength)
+          : Math.round(current * (1 - strength));
+      }
+    }
+  }
+}
+
+function refineEdgeRegion(maskImage, x0, y0, width, height, dabs, settings) {
+  const radius = settings.size / 2;
+  const original = octx.getImageData(x0, y0, width, height).data;
+  const sourceAlpha = new Uint8ClampedArray(width * height);
+  for (let i = 0; i < sourceAlpha.length; i++) sourceAlpha[i] = maskImage.data[i * 4 + 3];
+  let rawAlpha = null;
+  if (hasRawMask && rawMask.width === mask.width && rawMask.height === mask.height) {
+    const raw = rawMaskCtx.getImageData(x0, y0, width, height).data;
+    rawAlpha = new Uint8ClampedArray(width * height);
+    for (let i = 0; i < rawAlpha.length; i++) rawAlpha[i] = raw[i * 4 + 3];
+  }
+
+  for (const dab of dabs) {
+    const left = Math.max(1, Math.floor(dab.x - radius) - x0);
+    const top = Math.max(1, Math.floor(dab.y - radius) - y0);
+    const right = Math.min(width - 2, Math.ceil(dab.x + radius) - x0);
+    const bottom = Math.min(height - 2, Math.ceil(dab.y + radius) - y0);
+    for (let y = top; y <= bottom; y++) {
+      for (let x = left; x <= right; x++) {
+        const strength = brushInfluence(
+          Math.hypot(x + x0 + 0.5 - dab.x, y + y0 + 0.5 - dab.y),
+          radius, settings.hardness, settings.opacity
+        );
+        if (strength <= 0) continue;
+        const index = y * width + x;
+        let minAlpha = 255;
+        let maxAlpha = 0;
+        for (let ny = y - 1; ny <= y + 1; ny++) {
+          for (let nx = x - 1; nx <= x + 1; nx++) {
+            const alpha = sourceAlpha[ny * width + nx];
+            minAlpha = Math.min(minAlpha, alpha);
+            maxAlpha = Math.max(maxAlpha, alpha);
+          }
+        }
+        if (sourceAlpha[index] <= 4 && maxAlpha - minAlpha <= 10) continue;
+        if (sourceAlpha[index] >= 251 && maxAlpha - minAlpha <= 10) continue;
+
+        const colorOffset = index * 4;
+        const centerR = original[colorOffset];
+        const centerG = original[colorOffset + 1];
+        const centerB = original[colorOffset + 2];
+        let weightedAlpha = 0;
+        let totalWeight = 0;
+        for (let ny = y - 1; ny <= y + 1; ny++) {
+          for (let nx = x - 1; nx <= x + 1; nx++) {
+            const neighborIndex = ny * width + nx;
+            const neighborOffset = neighborIndex * 4;
+            const dr = original[neighborOffset] - centerR;
+            const dg = original[neighborOffset + 1] - centerG;
+            const db = original[neighborOffset + 2] - centerB;
+            const colorWeight = Math.exp(-(dr * dr + dg * dg + db * db) / 3200);
+            const spatialWeight = nx === x && ny === y ? 1.5 : (nx === x || ny === y ? 1 : 0.7);
+            const weight = colorWeight * spatialWeight;
+            weightedAlpha += sourceAlpha[neighborIndex] * weight;
+            totalWeight += weight;
+          }
+        }
+        let target = totalWeight ? weightedAlpha / totalWeight : sourceAlpha[index];
+        if (rawAlpha) target = target * 0.75 + rawAlpha[index] * 0.25;
+        const currentOffset = index * 4 + 3;
+        const blend = strength * 0.82;
+        maskImage.data[currentOffset] = Math.round(maskImage.data[currentOffset] * (1 - blend) + target * blend);
+      }
+    }
+  }
+}
+
+/* ---------- AI ลบพื้นหลัง ---------- */
+const AI_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm';
+const PERSON_AI_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1/+esm';
+const PERSON_AI_MODEL = 'Xenova/modnet';
+const AI_MODE_STORAGE_KEY = 'bg-remover-ai-mode';
+const REFINE_SETTINGS_STORAGE_KEY = 'bg-remover-refine-settings';
+const AI_MODE_LABELS = {
+  auto: 'อัตโนมัติ',
+  person: 'คน / นักฟุตบอล',
+  logo: 'โลโก้ทีม'
+};
+const AI_MODE_HINTS = {
+  auto: 'ตรวจสอบ Transparency จำนวนสี และสีบริเวณขอบภาพ แล้วเลือกโหมดให้อัตโนมัติ',
+  person: 'ใช้โมเดล Portrait Matting เพื่อรักษาเส้นผมและขอบคน โดยมี IS-Net เป็น fallback',
+  logo: 'เน้นขอบคมและตัวอักษร ใช้การลบพื้นหลังที่เชื่อมกับขอบภาพ และ fallback เป็น IS-Net'
+};
+const REFINE_PRESETS = {
+  auto: { enabled: true, threshold: 42, softness: 1, offset: 0, spill: 55 },
+  person: { enabled: true, threshold: 38, softness: 2, offset: 0, spill: 70 },
+  logo: { enabled: true, threshold: 50, softness: 0, offset: 0, spill: 0 }
+};
+const aiReadyByDevice = new Map();
+let aiModulePromise = null;
+let personAiModulePromise = null;
+let personAiReadyPromise = null;
+let aiRunning = false;
+
+const savedAiMode = localStorage.getItem(AI_MODE_STORAGE_KEY);
+const savedPersonModel = localStorage.getItem('bg-remover-person-model');
+if (['auto', 'modnet', 'isnet'].includes(savedPersonModel)) $('personModel').value = savedPersonModel;
+$('personModel').onchange = () => localStorage.setItem('bg-remover-person-model', $('personModel').value);
+$('showRawMask').onchange = drawOverlay;
+function updateModelResult() {
+  $('modelResult').textContent = lastModelResult || 'ยังไม่มีผลจากโมเดล';
+  $('showRawMask').disabled = !hasRawMask;
+  if (!hasRawMask) $('showRawMask').checked = false;
+}
+if (savedAiMode && Object.hasOwn(AI_MODE_LABELS, savedAiMode)) $('aiMode').value = savedAiMode;
+function updateAiModeHint() {
+  $('aiModeHint').textContent = AI_MODE_HINTS[$('aiMode').value] || AI_MODE_HINTS.auto;
+  $('personModelRow').hidden = $('aiMode').value === 'logo';
+}
+function setRefineInputs(settings) {
+  $('autoRefine').checked = settings.enabled;
+  $('maskThreshold').value = settings.threshold;
+  $('edgeSoftness').value = settings.softness;
+  $('maskOffset').value = settings.offset;
+  $('colorSpill').value = settings.spill;
+  updateRefineLabels();
+}
+function getRefineSettings() {
+  return {
+    enabled: $('autoRefine').checked,
+    threshold: +$('maskThreshold').value,
+    softness: +$('edgeSoftness').value,
+    offset: +$('maskOffset').value,
+    spill: +$('colorSpill').value
+  };
+}
+function updateRefineLabels() {
+  $('maskThresholdVal').textContent = $('maskThreshold').value;
+  $('edgeSoftnessVal').textContent = $('edgeSoftness').value;
+  $('maskOffsetVal').textContent = $('maskOffset').value;
+  $('colorSpillVal').textContent = $('colorSpill').value;
+}
+function saveRefineSettings() {
+  localStorage.setItem(REFINE_SETTINGS_STORAGE_KEY, JSON.stringify(getRefineSettings()));
+}
+function applyRefinePreset(mode) {
+  setRefineInputs(REFINE_PRESETS[mode] || REFINE_PRESETS.auto);
+  saveRefineSettings();
+}
+function loadRefineSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(REFINE_SETTINGS_STORAGE_KEY) || 'null');
+    if (saved && typeof saved === 'object') {
+      setRefineInputs({
+        enabled: saved.enabled !== false,
+        threshold: Math.min(95, Math.max(5, Number(saved.threshold) || 40)),
+        softness: Math.min(8, Math.max(0, Number(saved.softness) || 0)),
+        offset: Math.min(8, Math.max(-8, Number(saved.offset) || 0)),
+        spill: Math.min(100, Math.max(0, Number(saved.spill) || 0))
+      });
+      return;
+    }
+  } catch (error) {
+    console.warn('Cannot load edge refinement settings.', error);
+  }
+  applyRefinePreset($('aiMode').value);
+}
+$('aiMode').onchange = () => {
+  localStorage.setItem(AI_MODE_STORAGE_KEY, $('aiMode').value);
+  updateAiModeHint();
+  applyRefinePreset($('aiMode').value);
+};
+updateAiModeHint();
+loadRefineSettings();
+['maskThreshold', 'edgeSoftness', 'maskOffset', 'colorSpill'].forEach(id => {
+  $(id).addEventListener('input', updateRefineLabels);
+  $(id).addEventListener('change', saveRefineSettings);
+});
+$('autoRefine').addEventListener('change', saveRefineSettings);
+
+function loadAiModule() {
+  if (!aiModulePromise) aiModulePromise = import(AI_MODULE_URL);
+  return aiModulePromise;
+}
+
+function updateAiProgress(key, current, total) {
+  if (!total) return;
+  const percent = Math.min(100, Math.max(0, Math.round(current / total * 100)));
+  const phase = String(key).startsWith('fetch:') ? 'กำลังดาวน์โหลดโมเดล' : 'กำลังประมวลผลภาพ';
+  showLoading(`${phase}... ${percent}%\n(${key})`);
+}
+
+function createAiConfig(device) {
+  return {
+    model: 'isnet',
+    device,
+    // ONNX Runtime รองรับการ proxy ไป Worker เฉพาะ WebGPU ในแพ็กเกจนี้
+    proxyToWorker: device === 'gpu',
+    output: { format: 'image/png', quality: 1 },
+    progress: updateAiProgress
+  };
+}
+
+async function ensureAiReady(device) {
+  if (!aiReadyByDevice.has(device)) {
+    const ready = (async () => {
+      const mod = await loadAiModule();
+      await mod.preload(createAiConfig(device));
+      return mod;
+    })();
+    aiReadyByDevice.set(device, ready);
+    ready.catch(() => aiReadyByDevice.delete(device));
+  }
+  return aiReadyByDevice.get(device);
+}
+
+async function createIsnetMask(imageBlob) {
+  const preferredDevice = navigator.gpu ? 'gpu' : 'cpu';
+  try {
+    const mod = await ensureAiReady(preferredDevice);
+    return {
+      maskSource: await mod.segmentForeground(imageBlob, createAiConfig(preferredDevice)),
+      device: preferredDevice,
+      engine: 'IS-Net',
+      note: ''
+    };
+  } catch (gpuError) {
+    if (preferredDevice !== 'gpu') throw gpuError;
+    console.warn('WebGPU background removal failed. Retrying with CPU/WASM.', gpuError);
+    showLoading('WebGPU ใช้งานไม่ได้ กำลังลองใหม่ด้วย CPU...');
+    const mod = await ensureAiReady('cpu');
+    return {
+      maskSource: await mod.segmentForeground(imageBlob, createAiConfig('cpu')),
+      device: 'cpu',
+      engine: 'IS-Net',
+      note: 'WebGPU fallback'
+    };
+  }
+}
+
+function updatePersonAiProgress(event) {
+  if (!event || event.status !== 'progress') return;
+  const percent = Number.isFinite(event.progress) ? Math.round(event.progress) : null;
+  showLoading(percent === null
+    ? 'กำลังโหลดโมเดลสำหรับคน / นักฟุตบอล...'
+    : `กำลังโหลดโมเดลสำหรับคน / นักฟุตบอล... ${percent}%`);
+}
+
+function loadPersonAiModule() {
+  if (!personAiModulePromise) personAiModulePromise = import(PERSON_AI_MODULE_URL);
+  return personAiModulePromise;
+}
+
+async function ensurePersonAiReady() {
+  if (!navigator.gpu) throw new Error('เบราว์เซอร์นี้ไม่รองรับ WebGPU');
+  if (!personAiReadyPromise) {
+    personAiReadyPromise = (async () => {
+      const mod = await loadPersonAiModule();
+      mod.env.backends.onnx.wasm.proxy = false;
+      const [model, processor] = await Promise.all([
+        mod.AutoModel.from_pretrained(PERSON_AI_MODEL, {
+          device: 'webgpu',
+          progress_callback: updatePersonAiProgress
+        }),
+        mod.AutoProcessor.from_pretrained(PERSON_AI_MODEL, {
+          progress_callback: updatePersonAiProgress
+        })
+      ]);
+      return { mod, model, processor };
+    })();
+    personAiReadyPromise.catch(() => { personAiReadyPromise = null; });
+  }
+  return personAiReadyPromise;
+}
+
+async function createPersonMask(imageBlob) {
+  const selectedModel = $('personModel').value;
+  if (selectedModel === 'isnet') return createIsnetMask(imageBlob);
+  try {
+    showLoading('กำลังเตรียมโมเดลสำหรับคน / นักฟุตบอล...');
+    const { mod, model, processor } = await ensurePersonAiReady();
+    const objectUrl = URL.createObjectURL(imageBlob);
+    try {
+      const image = await mod.RawImage.fromURL(objectUrl);
+      const { pixel_values } = await processor(image);
+      showLoading('กำลังแยกคนและรายละเอียดเส้นผมด้วย WebGPU...');
+      const { output } = await model({ input: pixel_values });
+      const resizedMask = await mod.RawImage
+        .fromTensor(output[0].mul(255).to('uint8'))
+        .resize(image.width, image.height);
+      const resultMask = mk(image.width, image.height);
+      const resultContext = resultMask.getContext('2d');
+      const maskImage = resultContext.createImageData(image.width, image.height);
+      const pixelCount = image.width * image.height;
+      for (let i = 0; i < pixelCount; i++) {
+        const offset = i * 4;
+        maskImage.data[offset] = 255;
+        maskImage.data[offset + 1] = 255;
+        maskImage.data[offset + 2] = 255;
+        maskImage.data[offset + 3] = resizedMask.data[i];
+      }
+      resultContext.putImageData(maskImage, 0, 0);
+      return { maskSource: resultMask, device: 'gpu', engine: 'MODNet', note: '' };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  } catch (personError) {
+    if (selectedModel === 'modnet') throw personError;
+    console.warn('Person model failed. Retrying with IS-Net.', personError);
+    showLoading('โมเดลบุคคลใช้งานไม่ได้ กำลังลองใหม่ด้วย IS-Net...');
+    const fallback = await createIsnetMask(imageBlob);
+    return { ...fallback, note: 'MODNet fallback' };
+  }
+}
+
+function analyzeSourceImage() {
+  const width = orig.width;
+  const height = orig.height;
+  const source = octx.getImageData(0, 0, width, height).data;
+  const pixelStep = Math.max(1, Math.floor(Math.sqrt(width * height / 50000)));
+  const palette = new Set();
+  let sampledPixels = 0;
+  let transparentPixels = 0;
+
+  for (let y = 0; y < height; y += pixelStep) {
+    for (let x = 0; x < width; x += pixelStep) {
+      const offset = (y * width + x) * 4;
+      sampledPixels++;
+      if (source[offset + 3] < 245) transparentPixels++;
+      if (source[offset + 3] > 16 && palette.size <= 160) {
+        palette.add(`${source[offset] >> 5},${source[offset + 1] >> 5},${source[offset + 2] >> 5}`);
+      }
+    }
+  }
+
+  const edgeBuckets = new Map();
+  const edgeStep = Math.max(1, Math.floor(Math.max(width, height) / 512));
+  const addEdgePixel = (x, y) => {
+    const offset = (y * width + x) * 4;
+    if (source[offset + 3] <= 16) return;
+    const key = `${source[offset] >> 5},${source[offset + 1] >> 5},${source[offset + 2] >> 5}`;
+    const bucket = edgeBuckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+    bucket.count++;
+    bucket.r += source[offset];
+    bucket.g += source[offset + 1];
+    bucket.b += source[offset + 2];
+    edgeBuckets.set(key, bucket);
+  };
+  for (let x = 0; x < width; x += edgeStep) {
+    addEdgePixel(x, 0);
+    addEdgePixel(x, height - 1);
+  }
+  for (let y = edgeStep; y < height - 1; y += edgeStep) {
+    addEdgePixel(0, y);
+    addEdgePixel(width - 1, y);
+  }
+
+  const edgeSamples = [...edgeBuckets.values()].reduce((sum, bucket) => sum + bucket.count, 0);
+  const dominant = [...edgeBuckets.values()].sort((a, b) => b.count - a.count)[0] || null;
+  return {
+    source,
+    width,
+    height,
+    transparentRatio: sampledPixels ? transparentPixels / sampledPixels : 0,
+    paletteSize: palette.size,
+    borderDominance: dominant && edgeSamples ? dominant.count / edgeSamples : 0,
+    backgroundColor: dominant
+      ? [dominant.r / dominant.count, dominant.g / dominant.count, dominant.b / dominant.count]
+      : null
+  };
+}
+
+function createFullMask(width, height) {
+  const result = mk(width, height);
+  const context = result.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  return result;
+}
+
+function createLogoMaskFromEdges(analysis) {
+  const { source, width, height, backgroundColor } = analysis;
+  const result = createFullMask(width, height);
+  const context = result.getContext('2d');
+  const maskImage = context.getImageData(0, 0, width, height);
+  const output = maskImage.data;
+  const visited = new Uint8Array(width * height);
+  const queue = new Uint32Array(width * height);
+  let head = 0;
+  let tail = 0;
+  const tolerance = 42;
+  const feather = 18;
+  const maxDistance = tolerance + feather;
+
+  const enqueue = index => {
+    if (visited[index]) return;
+    visited[index] = 1;
+    queue[tail++] = index;
+  };
+  for (let x = 0; x < width; x++) {
+    enqueue(x);
+    enqueue((height - 1) * width + x);
+  }
+  for (let y = 1; y < height - 1; y++) {
+    enqueue(y * width);
+    enqueue(y * width + width - 1);
+  }
+
+  while (head < tail) {
+    const index = queue[head++];
+    const offset = index * 4;
+    const dr = source[offset] - backgroundColor[0];
+    const dg = source[offset + 1] - backgroundColor[1];
+    const db = source[offset + 2] - backgroundColor[2];
+    const distance = Math.sqrt(dr * dr + dg * dg + db * db);
+    if (source[offset + 3] > 16 && distance > maxDistance) continue;
+
+    output[offset + 3] = source[offset + 3] <= 16 || distance <= tolerance
+      ? 0
+      : Math.round(source[offset + 3] * (distance - tolerance) / feather);
+    const x = index % width;
+    const y = (index / width) | 0;
+    if (x > 0) enqueue(index - 1);
+    if (x < width - 1) enqueue(index + 1);
+    if (y > 0) enqueue(index - width);
+    if (y < height - 1) enqueue(index + width);
+  }
+
+  context.putImageData(maskImage, 0, 0);
+  return result;
+}
+
+async function createLogoMask(imageBlob, analysis) {
+  if (analysis.transparentRatio >= 0.01) {
+    return {
+      maskSource: createFullMask(analysis.width, analysis.height),
+      device: 'local',
+      engine: 'Original Alpha',
+      note: 'ตรวจพบ Transparency เดิม'
+    };
+  }
+  if (analysis.backgroundColor && analysis.borderDominance >= 0.45) {
+    showLoading('กำลังลบพื้นหลังโลโก้และรักษาขอบตัวอักษร...');
+    return {
+      maskSource: createLogoMaskFromEdges(analysis),
+      device: 'local',
+      engine: 'Logo Edge Mask',
+      note: ''
+    };
+  }
+  showLoading('ขอบภาพมีหลายสี กำลังใช้ IS-Net สำหรับโลโก้...');
+  const fallback = await createIsnetMask(imageBlob);
+  return { ...fallback, note: 'Logo AI fallback' };
+}
+
+function resolveAutoMode(analysis) {
+  const looksLikeLogo = analysis.transparentRatio >= 0.01 ||
+    (analysis.borderDominance >= 0.55 && analysis.paletteSize <= 96);
+  return looksLikeLogo ? 'logo' : 'person';
+}
+
+async function createMaskForMode(imageBlob, requestedMode) {
+  const analysis = analyzeSourceImage();
+  const resolvedMode = requestedMode === 'auto' ? resolveAutoMode(analysis) : requestedMode;
+  const result = resolvedMode === 'logo'
+    ? await createLogoMask(imageBlob, analysis)
+    : await createPersonMask(imageBlob);
+  return {
+    ...result,
+    requestedMode,
+    resolvedMode,
+    backgroundColor: analysis.borderDominance >= 0.25 ? analysis.backgroundColor : null
+  };
+}
+
+function alphaFromCanvas(canvas) {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  const rgba = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const alpha = new Uint8ClampedArray(canvas.width * canvas.height);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = rgba[i * 4 + 3];
+  return alpha;
+}
+
+function writeAlphaToMask(alpha, width, height) {
+  mask.width = width;
+  mask.height = height;
+  const image = mctx.createImageData(width, height);
+  for (let i = 0; i < alpha.length; i++) {
+    const offset = i * 4;
+    image.data[offset] = 255;
+    image.data[offset + 1] = 255;
+    image.data[offset + 2] = 255;
+    image.data[offset + 3] = alpha[i];
+  }
+  mctx.putImageData(image, 0, 0);
+  markMaskOverlayDirty();
+}
+
+function removeTinyForegroundComponents(alpha, width, height, minSize) {
+  if (minSize <= 1) return;
+  const visited = new Uint8Array(alpha.length);
+  const queue = new Uint32Array(alpha.length);
+  for (let start = 0; start < alpha.length; start++) {
+    if (visited[start] || alpha[start] <= 12) continue;
+    let head = 0;
+    let tail = 0;
+    visited[start] = 1;
+    queue[tail++] = start;
+    while (head < tail) {
+      const index = queue[head++];
+      const x = index % width;
+      const y = (index / width) | 0;
+      let next;
+      if (x > 0) {
+        next = index - 1;
+        if (!visited[next] && alpha[next] > 12) { visited[next] = 1; queue[tail++] = next; }
+      }
+      if (x < width - 1) {
+        next = index + 1;
+        if (!visited[next] && alpha[next] > 12) { visited[next] = 1; queue[tail++] = next; }
+      }
+      if (y > 0) {
+        next = index - width;
+        if (!visited[next] && alpha[next] > 12) { visited[next] = 1; queue[tail++] = next; }
+      }
+      if (y < height - 1) {
+        next = index + width;
+        if (!visited[next] && alpha[next] > 12) { visited[next] = 1; queue[tail++] = next; }
+      }
+    }
+    if (tail < minSize) {
+      for (let i = 0; i < tail; i++) alpha[queue[i]] = 0;
+    }
+  }
+}
+
+function fillTinyEnclosedHoles(alpha, width, height, maxSize) {
+  if (maxSize <= 0) return;
+  const visited = new Uint8Array(alpha.length);
+  const queue = new Uint32Array(alpha.length);
+  for (let start = 0; start < alpha.length; start++) {
+    if (visited[start] || alpha[start] > 8) continue;
+    let head = 0;
+    let tail = 0;
+    let touchesEdge = false;
+    visited[start] = 1;
+    queue[tail++] = start;
+    while (head < tail) {
+      const index = queue[head++];
+      const x = index % width;
+      const y = (index / width) | 0;
+      if (x === 0 || x === width - 1 || y === 0 || y === height - 1) touchesEdge = true;
+      let next;
+      if (x > 0) {
+        next = index - 1;
+        if (!visited[next] && alpha[next] <= 8) { visited[next] = 1; queue[tail++] = next; }
+      }
+      if (x < width - 1) {
+        next = index + 1;
+        if (!visited[next] && alpha[next] <= 8) { visited[next] = 1; queue[tail++] = next; }
+      }
+      if (y > 0) {
+        next = index - width;
+        if (!visited[next] && alpha[next] <= 8) { visited[next] = 1; queue[tail++] = next; }
+      }
+      if (y < height - 1) {
+        next = index + width;
+        if (!visited[next] && alpha[next] <= 8) { visited[next] = 1; queue[tail++] = next; }
+      }
+    }
+    if (!touchesEdge && tail <= maxSize) {
+      for (let i = 0; i < tail; i++) alpha[queue[i]] = 255;
+    }
+  }
+}
+
+function extremeFilterAlpha(input, width, height, radius, useMaximum) {
+  if (radius <= 0) return new Uint8ClampedArray(input);
+  const horizontal = new Uint8ClampedArray(input.length);
+  const output = new Uint8ClampedArray(input.length);
+  const queueIndexes = new Int32Array(Math.max(width, height) + radius * 2 + 1);
+  const queueValues = new Uint8ClampedArray(queueIndexes.length);
+  const shouldPop = (existing, next) => useMaximum ? existing <= next : existing >= next;
+
+  for (let y = 0; y < height; y++) {
+    let head = 0;
+    let tail = 0;
+    const row = y * width;
+    for (let i = -radius; i < width + radius; i++) {
+      const x = Math.min(width - 1, Math.max(0, i));
+      const value = input[row + x];
+      while (tail > head && shouldPop(queueValues[tail - 1], value)) tail--;
+      queueIndexes[tail] = i;
+      queueValues[tail++] = value;
+      while (tail > head && queueIndexes[head] < i - radius * 2) head++;
+      if (i >= radius) horizontal[row + i - radius] = queueValues[head];
+    }
+  }
+
+  for (let x = 0; x < width; x++) {
+    let head = 0;
+    let tail = 0;
+    for (let i = -radius; i < height + radius; i++) {
+      const y = Math.min(height - 1, Math.max(0, i));
+      const value = horizontal[y * width + x];
+      while (tail > head && shouldPop(queueValues[tail - 1], value)) tail--;
+      queueIndexes[tail] = i;
+      queueValues[tail++] = value;
+      while (tail > head && queueIndexes[head] < i - radius * 2) head++;
+      if (i >= radius) output[(i - radius) * width + x] = queueValues[head];
+    }
+  }
+  return output;
+}
+
+function blurAlpha(input, width, height, radius) {
+  if (radius <= 0) return new Uint8ClampedArray(input);
+  const horizontal = new Float32Array(input.length);
+  const output = new Uint8ClampedArray(input.length);
+  const diameter = radius * 2 + 1;
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let sum = 0;
+    for (let k = -radius; k <= radius; k++) {
+      sum += input[row + Math.min(width - 1, Math.max(0, k))];
+    }
+    for (let x = 0; x < width; x++) {
+      horizontal[row + x] = sum / diameter;
+      sum -= input[row + Math.min(width - 1, Math.max(0, x - radius))];
+      sum += input[row + Math.min(width - 1, x + radius + 1)];
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let sum = 0;
+    for (let k = -radius; k <= radius; k++) {
+      sum += horizontal[Math.min(height - 1, Math.max(0, k)) * width + x];
+    }
+    for (let y = 0; y < height; y++) {
+      output[y * width + x] = Math.round(sum / diameter);
+      sum -= horizontal[Math.min(height - 1, Math.max(0, y - radius)) * width + x];
+      sum += horizontal[Math.min(height - 1, y + radius + 1) * width + x];
+    }
+  }
+  return output;
+}
+
+function edgeAwareSoftenAlpha(input, width, height, radius) {
+  const blurred = blurAlpha(input, width, height, radius);
+  const source = octx.getImageData(0, 0, width, height).data;
+  const output = new Uint8ClampedArray(input.length);
+  const colorDistanceSquared = (first, second) => {
+    const dr = source[first] - source[second];
+    const dg = source[first + 1] - source[second + 1];
+    const db = source[first + 2] - source[second + 2];
+    return dr * dr + dg * dg + db * db;
+  };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      const rgbaIndex = index * 4;
+      let edgeStrengthSquared = 0;
+      if (x > 0) edgeStrengthSquared = Math.max(edgeStrengthSquared, colorDistanceSquared(rgbaIndex, rgbaIndex - 4));
+      if (x < width - 1) edgeStrengthSquared = Math.max(edgeStrengthSquared, colorDistanceSquared(rgbaIndex, rgbaIndex + 4));
+      if (y > 0) edgeStrengthSquared = Math.max(edgeStrengthSquared, colorDistanceSquared(rgbaIndex, rgbaIndex - width * 4));
+      if (y < height - 1) edgeStrengthSquared = Math.max(edgeStrengthSquared, colorDistanceSquared(rgbaIndex, rgbaIndex + width * 4));
+      const preserveOriginal = Math.min(0.85, Math.sqrt(edgeStrengthSquared) / 95);
+      output[index] = Math.round(
+        blurred[index] * (1 - preserveOriginal) + input[index] * preserveOriginal
+      );
+    }
+  }
+  return output;
+}
+
+function applyThresholdCurve(alpha, threshold) {
+  const exponent = Math.pow(2, (threshold - 50) / 25);
+  for (let i = 0; i < alpha.length; i++) {
+    alpha[i] = Math.round(Math.pow(alpha[i] / 255, exponent) * 255);
+  }
+}
+
+function updateRenderSourceWithDespill(backgroundColor, amount) {
+  resetRenderSource();
+  if (!backgroundColor || amount <= 0) return;
+  const sourceImage = renderSourceCtx.getImageData(0, 0, renderSource.width, renderSource.height);
+  const source = sourceImage.data;
+  const alpha = alphaFromCanvas(mask);
+  const strength = amount / 100;
+  for (let i = 0; i < alpha.length; i++) {
+    const normalizedAlpha = alpha[i] / 255;
+    if (normalizedAlpha <= 0 || normalizedAlpha >= 0.995) continue;
+    const safeAlpha = Math.max(0.15, normalizedAlpha);
+    const blend = strength * (1 - normalizedAlpha);
+    const offset = i * 4;
+    for (let channel = 0; channel < 3; channel++) {
+      const current = source[offset + channel];
+      const corrected = Math.min(255, Math.max(0,
+        (current - (1 - safeAlpha) * backgroundColor[channel]) / safeAlpha
+      ));
+      source[offset + channel] = Math.round(current + (corrected - current) * blend);
+    }
+  }
+  renderSourceCtx.putImageData(sourceImage, 0, 0);
+}
+
+function applyRefinementFromRaw() {
+  if (!hasRawMask) return;
+  const settings = getRefineSettings();
+  let alpha = alphaFromCanvas(rawMask);
+  const width = rawMask.width;
+  const height = rawMask.height;
+  if (settings.enabled) {
+    const pixelCount = width * height;
+    const minIslandSize = lastAiResolvedMode === 'logo'
+      ? Math.max(2, Math.round(pixelCount * 0.000001))
+      : Math.max(4, Math.round(pixelCount * 0.000002));
+    removeTinyForegroundComponents(alpha, width, height, minIslandSize);
+    if (lastAiResolvedMode === 'person') {
+      fillTinyEnclosedHoles(alpha, width, height, Math.max(8, Math.round(pixelCount * 0.00001)));
+    }
+    if (settings.offset !== 0) {
+      alpha = extremeFilterAlpha(alpha, width, height, Math.abs(settings.offset), settings.offset > 0);
+    }
+    if (settings.softness > 0) alpha = edgeAwareSoftenAlpha(alpha, width, height, settings.softness);
+    applyThresholdCurve(alpha, settings.threshold);
+  }
+  const protectedAlpha = alphaFromCanvas(keepMask);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = Math.max(alpha[i], protectedAlpha[i]);
+  writeAlphaToMask(alpha, width, height);
+  updateRenderSourceWithDespill(
+    lastDetectedBackgroundColor,
+    settings.enabled ? settings.spill : 0
+  );
+  applyMaskToWork();
+  drawOverlay();
+}
+
+$('btnApplyRefine').onclick = async () => {
+  if (!hasRawMask) return;
+  pushHistory();
+  $('btnApplyRefine').disabled = true;
+  showLoading('กำลังปรับขอบ Alpha Mask...');
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  try {
+    applyRefinementFromRaw();
+    saveRefineSettings();
+    $('statTool').textContent = `ปรับขอบใหม่สำเร็จ · ${AI_MODE_LABELS[lastAiResolvedMode]}`;
+  } catch (error) {
+    console.error(error);
+    const previous = undoStack.pop();
+    if (previous) applySnap(previous);
+    updateHistoryBtns();
+    alert('ปรับขอบไม่สำเร็จ: ' + (error.message || error));
+  } finally {
+    $('btnApplyRefine').disabled = false;
+    hideLoading();
+  }
+};
+
+$('btnAI').onclick = async () => {
+  if (!hasImage) { alert('กรุณาเปิดภาพก่อน'); return; }
+  if (aiRunning) return;
+  aiRunning = true;
+  $('btnAI').disabled = true;
+  const requestedRevision = imageRevision;
+  try {
+    showLoading('กำลังเตรียมโมเดล AI คุณภาพสูง...');
+    const bounds = subjectBounds();
+    const requestedMode = bounds ? 'person' : $('aiMode').value;
+    // ใช้สำเนาพื้นที่จากต้นฉบับ ไม่เปลี่ยนขนาดหรือพิกัดของภาพทำงาน
+    const inputCanvas = bounds ? mk(bounds.w, bounds.h) : orig;
+    if (bounds) inputCanvas.getContext('2d').drawImage(
+      orig, bounds.x, bounds.y, bounds.w, bounds.h, 0, 0, bounds.w, bounds.h
+    );
+    const sourceBlob = await new Promise((resolve, reject) => {
+      inputCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('สร้างข้อมูลภาพต้นฉบับไม่สำเร็จ')), 'image/png', 1);
+    });
+    const result = bounds
+      ? { ...await createPersonMask(sourceBlob), requestedMode, resolvedMode: 'person', backgroundColor: null }
+      : await createMaskForMode(sourceBlob, requestedMode);
+    const maskBitmap = result.maskSource instanceof Blob
+      ? await createImageBitmap(result.maskSource)
+      : result.maskSource;
+    if (requestedRevision !== imageRevision) {
+      maskBitmap.close?.();
+      return;
+    }
+    if (result.requestedMode === 'auto') {
+      setRefineInputs(REFINE_PRESETS[result.resolvedMode]);
+      saveRefineSettings();
+    }
+    pushHistory();
+    rawMask.width = orig.width;
+    rawMask.height = orig.height;
+    rawMaskCtx.clearRect(0, 0, rawMask.width, rawMask.height);
+    if (bounds) {
+      rawMaskCtx.drawImage(maskBitmap, bounds.x, bounds.y, bounds.w, bounds.h);
+    } else {
+      rawMaskCtx.drawImage(maskBitmap, 0, 0, rawMask.width, rawMask.height);
+    }
+    maskBitmap.close?.();
+    hasRawMask = true;
+    lastModelResult = `ผลล่าสุด: ${result.engine} · ${result.device}${bounds ? ` · กรอบ ${bounds.w}×${bounds.h}` : ' · ทั้งภาพ'}${result.note ? ' · ' + result.note : ''}`;
+    updateModelResult();
+    lastAiResolvedMode = result.resolvedMode;
+    lastDetectedBackgroundColor = result.backgroundColor;
+    $('btnApplyRefine').disabled = false;
+    showLoading('กำลังปรับขอบ Alpha Mask...');
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    applyRefinementFromRaw();
+    const resolvedLabel = AI_MODE_LABELS[result.resolvedMode];
+    const autoDetail = result.requestedMode === 'auto' ? ` → ${resolvedLabel}` : '';
+    const deviceLabel = result.device === 'gpu' ? 'WebGPU' : result.device === 'cpu' ? 'CPU/WASM' : 'Local';
+    const note = result.note ? ` · ${result.note}` : '';
+    $('statTool').textContent = `สำเร็จ: ${AI_MODE_LABELS[result.requestedMode]}${autoDetail} · ${result.engine} · ${deviceLabel}${note}`;
+  } catch (e) {
+    console.error(e);
+    alert('ลบพื้นหลังด้วย AI ไม่สำเร็จ: ' + (e.message || e) +
+      '\n\nหมายเหตุ: ต้องเชื่อมต่ออินเทอร์เน็ตในครั้งแรกเพื่อโหลดโมเดล' +
+      '\nระหว่างนี้สามารถใช้ไม้กายสิทธิ์หรือแปรงลบแทนได้');
+  } finally {
+    aiRunning = false;
+    $('btnAI').disabled = false;
+    hideLoading();
+  }
+};
+
+/* ---------- ครอบตัด ---------- */
+// ผลซ่อมอยู่ในหน่วยความจำจนกว่าผู้ใช้จะยอมรับ และแก้เฉพาะกรอบที่เลือก
+$('runRepair').onclick = async () => {
+  if (!hasImage || !repairRect || repairRect.w < 2 || repairRect.h < 2) {
+    alert('กรุณาลากกรอบจุดซ่อมก่อน'); return;
+  }
+  if (aiRunning) return;
+  const x = Math.max(0, Math.floor(repairRect.x));
+  const y = Math.max(0, Math.floor(repairRect.y));
+  const w = Math.min(orig.width - x, Math.ceil(repairRect.w));
+  const h = Math.min(orig.height - y, Math.ceil(repairRect.h));
+  const revision = maskRevision;
+  const input = mk(w, h);
+  input.getContext('2d').drawImage(orig, x, y, w, h, 0, 0, w, h);
+  aiRunning = true;
+  $('runRepair').disabled = true;
+  try {
+    showLoading('กำลังประมวลผลจุดซ่อม...');
+    const blob = await new Promise((resolve, reject) => input.toBlob(
+      value => value ? resolve(value) : reject(new Error('อ่านภาพไม่สำเร็จ')), 'image/png'
+    ));
+    const result = await createPersonMask(blob);
+    const bitmap = result.maskSource instanceof Blob ? await createImageBitmap(result.maskSource) : result.maskSource;
+    if (revision !== maskRevision) { bitmap.close?.(); return; }
+    const candidate = mk(w, h);
+    candidate.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const pixels = candidate.getContext('2d').getImageData(0, 0, w, h);
+    const protectedPixels = keepMask.getContext('2d').getImageData(x, y, w, h).data;
+    for (let i = 3; i < pixels.data.length; i += 4) pixels.data[i] = Math.max(pixels.data[i], protectedPixels[i]);
+    candidate.getContext('2d').putImageData(pixels, 0, 0);
+    for (const id of ['repairBefore', 'repairAfter']) { $(id).width = w; $(id).height = h; }
+    $('repairBefore').getContext('2d').drawImage(work, x, y, w, h, 0, 0, w, h);
+    const preview = $('repairAfter').getContext('2d');
+    preview.drawImage(input, 0, 0);
+    preview.globalCompositeOperation = 'destination-in';
+    preview.drawImage(candidate, 0, 0);
+    preview.globalCompositeOperation = 'source-over';
+    pendingRepair = { x, y, w, h, candidate, revision, engine: result.engine };
+    $('repairStatus').textContent = `ตัวอย่างจาก ${result.engine}${result.note ? ' · ' + result.note : ''}`;
+    $('repairDialog').showModal();
+  } catch (error) {
+    alert('ซ่อมไม่สำเร็จ: ' + (error.message || error));
+  } finally {
+    aiRunning = false;
+    $('runRepair').disabled = false;
+    hideLoading();
+  }
+};
+$('acceptRepair').onclick = () => {
+  const repair = pendingRepair;
+  if (!repair || repair.revision !== maskRevision) {
+    $('repairDialog').close();
+    alert('ภาพเปลี่ยนแล้ว กรุณาประมวลผลจุดซ่อมใหม่'); return;
+  }
+  pushHistory();
+  const { x, y, w, h, candidate } = repair;
+  const pixels = candidate.getContext('2d').getImageData(0, 0, w, h);
+  mctx.putImageData(pixels, x, y);
+  // อัปเดตฐาน AI ด้วย เพื่อการปรับขอบครั้งถัดไปใช้จุดที่ซ่อมแล้ว
+  if (hasRawMask) rawMaskCtx.putImageData(pixels, x, y);
+  renderSourceCtx.clearRect(x, y, w, h);
+  renderSourceCtx.drawImage(orig, x, y, w, h, x, y, w, h);
+  markMaskOverlayDirty();
+  applyMaskToWork();
+  drawOverlay();
+  $('repairStatus').textContent = `ยอมรับผลซ่อมจาก ${repair.engine} แล้ว · เลิกทำได้ด้วย Undo`;
+  $('repairDialog').close();
+};
+$('cancelRepair').onclick = () => $('repairDialog').close();
+$('repairDialog').addEventListener('close', () => { pendingRepair = null; });
+
+function updateCropBtns() {
+  const ok = !!cropRect && cropRect.w >= 2 && cropRect.h >= 2;
+  $('btnCropApply').disabled = !ok;
+  $('btnCropCancel').disabled = !ok;
+}
+$('btnCropApply').onclick = () => {
+  if (!cropRect) return;
+  const { x, y, w, h } = cropRect;
+  applyBoth(src => {
+    const n = mk(w, h);
+    n.getContext('2d').drawImage(src, x, y, w, h, 0, 0, n.width, n.height);
+    return n;
+  });
+  setTool('crop'); // ปิดเครื่องมือ (toggle)
+};
+$('btnCropCancel').onclick = () => { cropRect = null; updateCropBtns(); drawOverlay(); };
+
+/* ---------- การแปลงเรขาคณิต (ทำทั้งภาพต้นฉบับและ Mask) ---------- */
+function applyBoth(fn) {
+  if (!hasImage) { alert('กรุณาเปิดภาพก่อน'); return; }
+  pushHistory();
+  replaceWith(orig, fn(orig));
+  replaceWith(mask, fn(mask));
+  replaceWith(keepMask, fn(keepMask));
+  replaceWith(renderSource, fn(renderSource));
+  if (hasRawMask) replaceWith(rawMask, fn(rawMask));
+  markMaskOverlayDirty();
+  applyMaskToWork();
+  afterGeometry();
+}
+
+function rotated(src, deg) {
+  const r = deg * Math.PI / 180;
+  const s = Math.abs(Math.sin(r)), c = Math.abs(Math.cos(r));
+  const n = mk(src.width * c + src.height * s, src.width * s + src.height * c);
+  const x = n.getContext('2d');
+  x.imageSmoothingQuality = 'high';
+  x.translate(n.width / 2, n.height / 2);
+  x.rotate(r);
+  x.drawImage(src, -src.width / 2, -src.height / 2);
+  return n;
+}
+function flipped(src, fx, fy) {
+  const n = mk(src.width, src.height);
+  const x = n.getContext('2d');
+  x.translate(fx ? src.width : 0, fy ? src.height : 0);
+  x.scale(fx ? -1 : 1, fy ? -1 : 1);
+  x.drawImage(src, 0, 0);
+  return n;
+}
+
+$('btnRotL').onclick = () => applyBoth(s => rotated(s, -90));
+$('btnRotR').onclick = () => applyBoth(s => rotated(s, 90));
+$('btnFlipH').onclick = () => applyBoth(s => flipped(s, true, false));
+$('btnFlipV').onclick = () => applyBoth(s => flipped(s, false, true));
+$('btnRotCustom').onclick = () => {
+  const a = parseFloat($('rotAngle').value);
+  if (!isFinite(a) || a === 0) return;
+  applyBoth(s => rotated(s, a));
+};
+
+/* ---------- resize ภาพ ---------- */
+let aspect = 1;
+function refreshAspect() { aspect = work.width / work.height; }
+$('resizeW').addEventListener('input', () => {
+  if ($('lockAspect').checked) {
+    refreshAspect();
+    $('resizeH').value = Math.max(1, Math.round(+$('resizeW').value / aspect)) || '';
+  }
+});
+$('resizeH').addEventListener('input', () => {
+  if ($('lockAspect').checked) {
+    refreshAspect();
+    $('resizeW').value = Math.max(1, Math.round(+$('resizeH').value * aspect)) || '';
+  }
+});
+$('btnResize').onclick = () => {
+  const w = +$('resizeW').value, h = +$('resizeH').value;
+  if (!w || !h || w < 1 || h < 1) { alert('กรุณากรอกขนาดให้ถูกต้อง'); return; }
+  applyBoth(src => {
+    const n = mk(w, h);
+    const x = n.getContext('2d');
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(src, 0, 0, n.width, n.height);
+    return n;
+  });
+};
+
+/* ---------- resize canvas ---------- */
+document.querySelectorAll('#anchorGrid button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('#anchorGrid button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    anchor = b.dataset.a.split(',').map(Number);
+  };
+});
+$('btnCanvasResize').onclick = () => {
+  const w = +$('canvasW').value, h = +$('canvasH').value;
+  if (!w || !h || w < 1 || h < 1) { alert('กรุณากรอกขนาดให้ถูกต้อง'); return; }
+  applyBoth(src => {
+    const n = mk(w, h);
+    const x = n.getContext('2d');
+    x.drawImage(src, Math.round((n.width - src.width) * anchor[0]),
+                     Math.round((n.height - src.height) * anchor[1]));
+    return n;
+  });
+};
+
+/* ---------- พื้นหลัง (preview) ---------- */
+const MANUAL_EDIT_SETTINGS_STORAGE_KEY = 'bg-remover-manual-edit-settings';
+
+function saveManualEditSettings() {
+  localStorage.setItem(MANUAL_EDIT_SETTINGS_STORAGE_KEY, JSON.stringify({
+    brushSize: +$('brushSize').value,
+    brushHardness: +$('brushHardness').value,
+    brushOpacity: +$('brushOpacity').value,
+    showMaskOverlay: $('showMaskOverlay').checked,
+    previewBackground: $('previewBackground').value,
+    compareBeforeAfter: $('compareBeforeAfter').checked,
+    compareSplit: +$('compareSplit').value
+  }));
+}
+
+function loadManualEditSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MANUAL_EDIT_SETTINGS_STORAGE_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return;
+    $('brushSize').value = Math.min(200, Math.max(2, Number(saved.brushSize) || 40));
+    $('brushHardness').value = Math.min(100, Math.max(0, Number(saved.brushHardness) || 0));
+    $('brushOpacity').value = Math.min(100, Math.max(1, Number(saved.brushOpacity) || 100));
+    $('showMaskOverlay').checked = saved.showMaskOverlay === true;
+    const allowedBackgrounds = new Set(['checker', 'white', 'black', 'green', 'export']);
+    if (allowedBackgrounds.has(saved.previewBackground)) $('previewBackground').value = saved.previewBackground;
+    $('compareBeforeAfter').checked = saved.compareBeforeAfter === true;
+    $('compareSplit').value = Math.min(95, Math.max(5, Number(saved.compareSplit) || 50));
+  } catch (error) {
+    console.warn('Cannot load manual edit settings.', error);
+  }
+}
+
+function bgMode() { return document.querySelector('input[name=bgMode]:checked').value; }
+function updatePreviewBackground() {
+  const stage = $('stage');
+  const selected = $('previewBackground').value;
+  stage.style.backgroundImage = '';
+  stage.style.backgroundColor = '';
+  if (selected === 'export' && bgMode() === 'color') {
+    stage.dataset.previewBg = 'custom';
+    stage.style.backgroundImage = 'none';
+    stage.style.backgroundColor = $('bgColor').value;
+  } else {
+    stage.dataset.previewBg = selected === 'export' ? 'checker' : selected;
+  }
+}
+function updateBgPreview() {
+  updatePreviewBackground();
+}
+document.querySelectorAll('input[name=bgMode]').forEach(r => r.onchange = updateBgPreview);
+$('bgColor').oninput = () => {
+  document.querySelector('input[name=bgMode][value=color]').checked = true;
+  updateBgPreview();
+};
+$('previewBackground').onchange = updatePreviewBackground;
+$('showMaskOverlay').onchange = drawOverlay;
+$('compareBeforeAfter').onchange = updateComparisonPreview;
+$('compareSplit').oninput = updateComparisonPreview;
+
+/* ---------- ส่งออก ---------- */
+$('format').onchange = () => {
+  const f = $('format').value;
+  $('qualityRow').style.display = (f === 'jpeg' || f === 'webp') ? 'flex' : 'none';
+};
+$('quality').oninput = () => $('qualityVal').textContent = $('quality').value;
+$('tolerance').oninput = () => $('toleranceVal').textContent = $('tolerance').value;
+$('brushSize').oninput = () => { $('brushSizeVal').textContent = $('brushSize').value; drawOverlay(); };
+$('brushHardness').oninput = () => {
+  $('brushHardnessVal').textContent = `${$('brushHardness').value}%`;
+  drawOverlay();
+};
+$('brushOpacity').oninput = () => {
+  $('brushOpacityVal').textContent = `${$('brushOpacity').value}%`;
+};
+loadManualEditSettings();
+$('brushSizeVal').textContent = $('brushSize').value;
+$('brushHardnessVal').textContent = `${$('brushHardness').value}%`;
+$('brushOpacityVal').textContent = `${$('brushOpacity').value}%`;
+['brushSize', 'brushHardness', 'brushOpacity', 'showMaskOverlay', 'previewBackground',
+  'compareBeforeAfter', 'compareSplit'].forEach(id => $(id).addEventListener('change', saveManualEditSettings));
+updateComparisonPreview();
+updatePreviewBackground();
+
+function composed(forceOpaque) {
+  const n = mk(work.width, work.height);
+  const x = n.getContext('2d');
+  if (bgMode() === 'color') {
+    x.fillStyle = $('bgColor').value;
+    x.fillRect(0, 0, n.width, n.height);
+  } else if (forceOpaque) {
+    x.fillStyle = '#ffffff';
+    x.fillRect(0, 0, n.width, n.height);
+  }
+  x.drawImage(work, 0, 0);
+  return n;
+}
+
+function downloadBlob(blob, ext) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = ($('fileName').value.trim() || 'image') + '.' + ext;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+async function exportGif(srcCanvas) {
+  const { GIFEncoder, quantize, applyPalette } =
+    await import('https://cdn.jsdelivr.net/npm/gifenc@1/+esm');
+  const x = srcCanvas.getContext('2d');
+  const id = x.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+  const d = id.data;
+  // GIF รองรับโปร่งใสแบบ 1 บิต: ทำ alpha ให้เป็น 0 หรือ 255
+  let hasTransparent = false;
+  for (let i = 3; i < d.length; i += 4) {
+    if (d[i] < 128) { d[i] = 0; d[i - 1] = 0; d[i - 2] = 0; d[i - 3] = 0; hasTransparent = true; }
+    else d[i] = 255;
+  }
+  const format = 'rgba4444';
+  const palette = quantize(d, 256, { format });
+  const index = applyPalette(d, palette, format);
+  let ti = -1;
+  if (hasTransparent) ti = palette.findIndex(p => p[3] === 0);
+  const gif = GIFEncoder();
+  gif.writeFrame(index, srcCanvas.width, srcCanvas.height,
+    ti >= 0 ? { palette, transparent: true, transparentIndex: ti } : { palette });
+  gif.finish();
+  return new Blob([gif.bytes()], { type: 'image/gif' });
+}
+
+function exportBmp(srcCanvas) {
+  // BMP 24-bit (ไม่มี alpha) — เขียน header เอง
+  const x = srcCanvas.getContext('2d');
+  const W = srcCanvas.width, H = srcCanvas.height;
+  const id = x.getImageData(0, 0, W, H).data;
+  const rowSize = Math.ceil(W * 3 / 4) * 4;
+  const dataSize = rowSize * H;
+  const buf = new ArrayBuffer(54 + dataSize);
+  const v = new DataView(buf);
+  v.setUint8(0, 0x42); v.setUint8(1, 0x4D);          // "BM"
+  v.setUint32(2, 54 + dataSize, true);
+  v.setUint32(10, 54, true);
+  v.setUint32(14, 40, true);
+  v.setInt32(18, W, true); v.setInt32(22, H, true);
+  v.setUint16(26, 1, true); v.setUint16(28, 24, true);
+  v.setUint32(34, dataSize, true);
+  v.setInt32(38, 2835, true); v.setInt32(42, 2835, true);
+  const u8 = new Uint8Array(buf);
+  for (let y = 0; y < H; y++) {
+    let off = 54 + (H - 1 - y) * rowSize;
+    for (let xx = 0; xx < W; xx++) {
+      const i = (y * W + xx) * 4;
+      u8[off++] = id[i + 2]; u8[off++] = id[i + 1]; u8[off++] = id[i];
+    }
+  }
+  return new Blob([buf], { type: 'image/bmp' });
+}
+
+$('btnExport').onclick = async () => {
+  if (!hasImage) { alert('กรุณาเปิดภาพก่อน'); return; }
+  const fmt = $('format').value;
+  const q = +$('quality').value / 100;
+  try {
+    showLoading('กำลังสร้างไฟล์...');
+    if (fmt === 'gif') {
+      downloadBlob(await exportGif(composed(false)), 'gif');
+    } else if (fmt === 'bmp') {
+      downloadBlob(exportBmp(composed(true)), 'bmp');
+    } else {
+      const c = composed(fmt === 'jpeg');
+      const blob = await new Promise(r => c.toBlob(r, 'image/' + fmt, q));
+      if (!blob) throw new Error('เบราว์เซอร์ไม่รองรับชนิดไฟล์นี้');
+      downloadBlob(blob, fmt === 'jpeg' ? 'jpg' : fmt);
+    }
+  } catch (e) {
+    console.error(e);
+    alert('ส่งออกไม่สำเร็จ: ' + (e.message || e));
+  } finally {
+    hideLoading();
+  }
+};
+
+$('btnCopy').onclick = async () => {
+  if (!hasImage) { alert('กรุณาเปิดภาพก่อน'); return; }
+  try {
+    const blob = await new Promise(r => composed(false).toBlob(r, 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    const b = $('btnCopy'), t = b.textContent;
+    b.textContent = '✔ คัดลอกแล้ว!';
+    setTimeout(() => b.textContent = t, 1500);
+  } catch (e) {
+    alert('คัดลอกไม่สำเร็จ: ' + (e.message || e));
+  }
+};
+
+/* ---------- คีย์ลัด ---------- */
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type === 'text') return;
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+});
+$('btnUndo').onclick = undo;
+$('btnRedo').onclick = redo;
+</script>
+</body>
+</html>
