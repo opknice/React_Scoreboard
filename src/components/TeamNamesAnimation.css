@@ -3,8 +3,9 @@
 .team-names-animation-overlay {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  width: var(--zoom-locked-viewport-width, 100vw);
+  height: var(--zoom-locked-viewport-height, 100vh);
+  container-type: inline-size;
   overflow: hidden;
   pointer-events: none;
   background: transparent;
@@ -16,6 +17,7 @@
   top: 3.7%;
   left: var(--team-name-x);
   width: 23vw;
+  width: 23cqw;
   min-width: 200px;
   max-width: 440px;
   font-family: var(--team-name-font-family, 'Inter'), 'Kanit', 'Helvetica Neue', Arial, sans-serif;
@@ -45,7 +47,7 @@
 .team-name-value {
   overflow: hidden;
   color: var(--team-name-color, #ffffff);
-  font-size: var(--team-name-font-size, clamp(1.5rem, 2.5vw, 3rem));
+  font-size: var(--team-name-font-size, clamp(1.5rem, 2.5cqw, 3rem));
   font-weight: var(--team-name-font-weight, 700);
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -68,6 +70,7 @@
   /* Fixed size on purpose — GOAL!!! should stay big and punchy regardless of how
      long the team name is / how small --team-name-font-size shrank for it. */
   font-size: clamp(1.75rem, 2.8vw, 3.25rem);
+  font-size: clamp(1.75rem, 2.8cqw, 3.25rem);
   font-weight: 900;
   letter-spacing: 0.08em;
   line-height: 1.2;

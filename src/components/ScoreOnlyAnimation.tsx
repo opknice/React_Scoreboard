@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { ScoreAnimationMode } from './goalAnimationTemplates';
 import { getScorePresentation } from '../utils/scoreBrowserUrl';
+import { useDisableZoom } from '../hooks/useDisableZoom';
 import './ScoreOnlyAnimation.css';
 
 export interface ScoreOnlyDisplay {
@@ -22,9 +23,9 @@ interface ScoreOnlyAnimationProps {
 
 function getScoreFontSize(score: number): string {
   const digits = Math.max(1, Math.abs(Math.trunc(score)).toString().length);
-  if (digits <= 2) return 'clamp(3rem, 3.75vw, 4.5rem)';
-  if (digits === 3) return 'clamp(2.7rem, 3.35vw, 4rem)';
-  return 'clamp(2.35rem, 2.95vw, 3.5rem)';
+  if (digits <= 2) return 'clamp(3rem, 3.75cqw, 4.5rem)';
+  if (digits === 3) return 'clamp(2.7rem, 3.35cqw, 4rem)';
+  return 'clamp(2.35rem, 2.95cqw, 3.5rem)';
 }
 
 /**
@@ -46,6 +47,8 @@ export default function ScoreOnlyAnimation({
   preparingTeams,
   revealingTeams,
 }: ScoreOnlyAnimationProps) {
+  useDisableZoom();
+
   return (
     <div
       key={animationKey}

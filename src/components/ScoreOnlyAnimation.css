@@ -3,8 +3,9 @@
 .score-only-animation-overlay {
   position: fixed;
   inset: 0;
-  width: 100vw;
-  height: 100vh;
+  width: var(--zoom-locked-viewport-width, 100vw);
+  height: var(--zoom-locked-viewport-height, 100vh);
+  container-type: inline-size;
   overflow: hidden;
   pointer-events: none;
   background: transparent;
@@ -55,9 +56,11 @@
 
 .score-only-goal-team {
   max-width: 18vw;
+  max-width: 18cqw;
   overflow: hidden;
   color: #ffffff;
   font-size: clamp(1rem, 1.45vw, 1.55rem);
+  font-size: clamp(1rem, 1.45cqw, 1.55rem);
   font-weight: 600;
   line-height: 1;
   text-overflow: ellipsis;
@@ -67,6 +70,7 @@
 .score-only-goal-label {
   color: #ffffff;
   font-size: clamp(1.9rem, 3.15vw, 3.2rem);
+  font-size: clamp(1.9rem, 3.15cqw, 3.2rem);
   font-weight: 900;
   letter-spacing: 0.06em;
   line-height: 1;
@@ -137,6 +141,7 @@
   left: calc(var(--score-only-x) + 4.5%);
   color: #ffffff;
   font-size: clamp(1.4rem, 2.5vw, 2.5rem);
+  font-size: clamp(1.4rem, 2.5cqw, 2.5rem);
   font-weight: 600;
   line-height: 1;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);

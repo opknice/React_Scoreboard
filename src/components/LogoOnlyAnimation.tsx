@@ -25,6 +25,7 @@ import {
 import { requestScoreboardState } from '../hooks/useScoreboardChannels';
 import { getLogoSrc } from '../utils/logoResolver';
 import { getLogoPresentation } from '../utils/logoBrowserUrl';
+import { useDisableZoom } from '../hooks/useDisableZoom';
 import LogoWithCrop from './LogoWithCrop';
 import type { GoalAnimationSide } from './goalAnimationTemplates';
 import './LogoOnlyAnimation.css';
@@ -78,6 +79,7 @@ function readInitialLogoState(): LogoState {
 const LOGO_GOAL_ANIMATION_DURATION_MS = 4000;
 
 export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: LogoOnlyAnimationProps) {
+  useDisableZoom();
   const [searchParams] = useSearchParams();
   const [logoState, setLogoState] = useState<LogoState>(readInitialLogoState);
   const [goalTeam, setGoalTeam] = useState<'A' | 'B' | null>(null);

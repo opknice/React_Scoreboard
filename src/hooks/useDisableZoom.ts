@@ -1,5 +1,40 @@
 import { useEffect } from 'react';
 
+interface ZoomLockMetrics {
+  innerWidth: number;
+  innerHeight: number;
+  initialDpr: number;
+  currentDpr: number;
+}
+
+export interface ZoomLockCompensation {
+  cssZoom: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+/**
+ * Page zoom changes both DPR and the layout viewport. Reconstruct the logical
+ * viewport from the DPR ratio so responsive units can retain their baseline.
+ */
+export function calculateZoomLockCompensation({
+  innerWidth,
+  innerHeight,
+  initialDpr,
+  currentDpr,
+}: ZoomLockMetrics): ZoomLockCompensation {
+  const safeInitialDpr = initialDpr > 0 ? initialDpr : 1;
+  const safeCurrentDpr = currentDpr > 0 ? currentDpr : safeInitialDpr;
+  const zoomRatio = safeCurrentDpr / safeInitialDpr;
+  const boundedZoomRatio = Math.min(5, Math.max(0.25, zoomRatio));
+
+  return {
+    cssZoom: 1 / boundedZoomRatio,
+    viewportWidth: Math.max(1, innerWidth * boundedZoomRatio),
+    viewportHeight: Math.max(1, innerHeight * boundedZoomRatio),
+  };
+}
+
 /**
  * Custom hook to disable zoom (wheel zoom, keyboard Ctrl+/-, touch pinch zoom)
  * and automatically lock scale against OBS CEF / Browser Zoom in display pages.
@@ -51,18 +86,31 @@ export function useDisableZoom(lockScale = true) {
     // 5. Anti-Zoom DPR Compensation (Cancels OBS CEF Browser Zoom)
     const initialDpr = window.devicePixelRatio || 1;
     const originalZoom = document.body.style.getPropertyValue('zoom');
-    let lastAppliedZoom = originalZoom;
+    const root = document.documentElement;
+    const originalLockedWidth = root.style.getPropertyValue('--zoom-locked-viewport-width');
+    const originalLockedHeight = root.style.getPropertyValue('--zoom-locked-viewport-height');
+    let lastAppliedSignature = '';
 
     const handleDprCompensation = () => {
-      if (!lockScale || document.hidden) return;
+      if (!lockScale) return;
       const currentDpr = window.devicePixelRatio || 1;
-      if (currentDpr > 0) {
-        const targetZoom = String(initialDpr / currentDpr);
-        // Avoid forcing style recalculation when DPR has not changed.
-        if (targetZoom === lastAppliedZoom) return;
-        document.body.style.setProperty('zoom', targetZoom);
-        lastAppliedZoom = targetZoom;
-      }
+      const compensation = calculateZoomLockCompensation({
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        initialDpr,
+        currentDpr,
+      });
+      const targetZoom = String(Number(compensation.cssZoom.toFixed(4)));
+      const viewportWidth = `${Number(compensation.viewportWidth.toFixed(2))}px`;
+      const viewportHeight = `${Number(compensation.viewportHeight.toFixed(2))}px`;
+      const signature = `${targetZoom}:${viewportWidth}:${viewportHeight}`;
+
+      // Avoid forcing style recalculation when zoom and viewport are unchanged.
+      if (signature === lastAppliedSignature) return;
+      document.body.style.setProperty('zoom', targetZoom);
+      root.style.setProperty('--zoom-locked-viewport-width', viewportWidth);
+      root.style.setProperty('--zoom-locked-viewport-height', viewportHeight);
+      lastAppliedSignature = signature;
     };
 
     handleDprCompensation();
@@ -94,6 +142,16 @@ export function useDisableZoom(lockScale = true) {
         document.body.style.setProperty('zoom', originalZoom);
       } else {
         document.body.style.removeProperty('zoom');
+      }
+      if (originalLockedWidth) {
+        root.style.setProperty('--zoom-locked-viewport-width', originalLockedWidth);
+      } else {
+        root.style.removeProperty('--zoom-locked-viewport-width');
+      }
+      if (originalLockedHeight) {
+        root.style.setProperty('--zoom-locked-viewport-height', originalLockedHeight);
+      } else {
+        root.style.removeProperty('--zoom-locked-viewport-height');
       }
       if (metaViewport && originalContent !== null) {
         metaViewport.setAttribute('content', originalContent);

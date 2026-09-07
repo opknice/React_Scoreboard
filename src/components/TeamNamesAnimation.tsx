@@ -12,6 +12,7 @@ import {
   requestScoreboardState,
 } from '../hooks/useScoreboardChannels';
 import { getTeamNamePresentation } from '../utils/teamNameBrowserUrl';
+import { useDisableZoom } from '../hooks/useDisableZoom';
 import type { GoalAnimationSide } from './goalAnimationTemplates';
 import './TeamNamesAnimation.css';
 
@@ -33,11 +34,11 @@ const DEFAULT_NAMES = {
 // Each entry mirrors the original clamp(min, vw, max) shape so it still scales with.
 // viewport width — just anchored to a smaller ceiling as the name gets longer.
 const TEAM_NAME_FONT_SIZE_STEPS: { max: number; size: string }[] = [
-  { max: 10, size: 'clamp(2rem, 2.5vw, 3rem)' },
-  { max: 14, size: 'clamp(1.75rem, 2.2vw, 2.5rem)' },
-  { max: 18, size: 'clamp(1.5rem, 1.9vw, 2.1rem)' },
-  { max: 24, size: 'clamp(1.25rem, 1.6vw, 1.8rem)' },
-  { max: Infinity, size: 'clamp(1.05rem, 1.35vw, 1.5rem)' },
+  { max: 10, size: 'clamp(2rem, 2.5cqw, 3rem)' },
+  { max: 14, size: 'clamp(1.75rem, 2.2cqw, 2.5rem)' },
+  { max: 18, size: 'clamp(1.5rem, 1.9cqw, 2.1rem)' },
+  { max: 24, size: 'clamp(1.25rem, 1.6cqw, 1.8rem)' },
+  { max: Infinity, size: 'clamp(1.05rem, 1.35cqw, 1.5rem)' },
 ];
 
 const TEAM_NAME_ANIMATION_DURATION_MS = 4000;
@@ -65,6 +66,7 @@ function namesFromGoal(event: GoalScoredEvent, currentNames: typeof DEFAULT_NAME
 }
 
 export default function TeamNamesAnimation({ side }: TeamNamesAnimationProps) {
+  useDisableZoom();
   const [names, setNames] = useState(DEFAULT_NAMES);
   const [goalTeam, setGoalTeam] = useState<'A' | 'B' | null>(null);
   const [animationKey, setAnimationKey] = useState(0);
