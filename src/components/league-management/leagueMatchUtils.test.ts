@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getFirstUnplayedMatch, getNextMatchNumber, isUnplayedMatch } from './leagueMatchUtils';
+import {
+  getFirstUnplayedMatch,
+  getNextMatchNumber,
+  getScheduledTeamIdsForDate,
+  isUnplayedMatch,
+} from './leagueMatchUtils';
 
 describe('isUnplayedMatch', () => {
   it('returns true for a scheduled 0-0 match', () => {
@@ -48,5 +53,50 @@ describe('getFirstUnplayedMatch', () => {
       { match_number: 1, score_a: 1, score_b: 0, status: 'finished' },
       { match_number: 2, score_a: 0, score_b: 2, status: 'scheduled' },
     ])).toBeNull();
+  });
+});
+
+describe('getScheduledTeamIdsForDate', () => {
+  const matches = [
+    {
+      id: 'match-1',
+      team_a_id: 'team-a',
+      team_b_id: 'team-b',
+      match_date: '2026-09-07T00:00:00.000Z',
+      status: 'scheduled',
+    },
+    {
+      id: 'match-2',
+      team_a_id: 'team-c',
+      team_b_id: 'team-d',
+      match_date: '2026-09-07',
+      status: 'finished',
+    },
+    {
+      id: 'match-3',
+      team_a_id: 'team-e',
+      team_b_id: 'team-f',
+      match_date: '2026-09-08',
+      status: 'scheduled',
+    },
+    {
+      id: 'match-4',
+      team_a_id: 'team-g',
+      team_b_id: 'team-h',
+      match_date: '2026-09-07',
+      status: 'postponed',
+    },
+  ] as const;
+
+  it('returns both teams from scheduled matches on the selected date', () => {
+    expect(getScheduledTeamIdsForDate(matches, '2026-09-07')).toEqual(new Set(['team-a', 'team-b']));
+  });
+
+  it('ignores non-scheduled matches and matches on other dates', () => {
+    expect(getScheduledTeamIdsForDate(matches, '2026-09-08')).toEqual(new Set(['team-e', 'team-f']));
+  });
+
+  it('excludes the match currently being edited', () => {
+    expect(getScheduledTeamIdsForDate(matches, '2026-09-07', 'match-1')).toEqual(new Set());
   });
 });

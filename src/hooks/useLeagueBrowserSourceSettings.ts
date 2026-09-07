@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { broadcastTeamColorSettings } from './useScoreboardChannels';
 import type { League } from '../config/supabaseClient';
 import {
   DEFAULT_TEAM_NAME_BROWSER_SETTINGS,
@@ -12,6 +13,14 @@ import {
   normalizeScoreBrowserSettings,
   type ScoreBrowserSettings,
 } from '../types/scoreBrowserSettings';
+import {
+  DEFAULT_TEAM_COLOR_BROWSER_SETTINGS,
+  TEAM_COLOR_SETTINGS_STORAGE_KEY,
+  mergeTeamColorBrowserSettings,
+  normalizeTeamColorBrowserSettings,
+  type TeamColorBrowserSettings,
+  type TeamColorBrowserSettingsPatch,
+} from '../types/teamColorBrowserSettings';
 import {
   mergeLeagueBrowserSourceSettings,
   resolveLeagueBrowserSourceSettings,
@@ -36,10 +45,12 @@ interface UseLeagueBrowserSourceSettingsOptions {
 interface UseLeagueBrowserSourceSettingsResult {
   teamNameSettings: TeamNameBrowserSettings;
   scoreSettings: ScoreBrowserSettings;
+  teamColorSettings: TeamColorBrowserSettings;
   scope: BrowserSourceSettingsScope;
   saveStatus: BrowserSourceSettingsSaveStatus;
   updateTeamNameSettings: (patch: Partial<TeamNameBrowserSettings>) => void;
   updateScoreSettings: (patch: Partial<ScoreBrowserSettings>) => void;
+  updateTeamColorSettings: (patch: TeamColorBrowserSettingsPatch) => void;
 }
 
 interface PendingLeagueSave {
@@ -70,6 +81,17 @@ function readGlobalScoreSettings(): ScoreBrowserSettings {
   }
 }
 
+function readGlobalTeamColorSettings(): TeamColorBrowserSettings {
+  try {
+    const saved = window.localStorage.getItem(TEAM_COLOR_SETTINGS_STORAGE_KEY);
+    return saved
+      ? normalizeTeamColorBrowserSettings(JSON.parse(saved))
+      : normalizeTeamColorBrowserSettings(DEFAULT_TEAM_COLOR_BROWSER_SETTINGS);
+  } catch {
+    return normalizeTeamColorBrowserSettings(DEFAULT_TEAM_COLOR_BROWSER_SETTINGS);
+  }
+}
+
 function writeGlobalSettings<T>(storageKey: string, settings: T): void {
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(settings));
@@ -90,23 +112,28 @@ export function useLeagueBrowserSourceSettings({
 }: UseLeagueBrowserSourceSettingsOptions): UseLeagueBrowserSourceSettingsResult {
   const [globalTeamNameSettings, setGlobalTeamNameSettings] = useState(readGlobalTeamNameSettings);
   const [globalScoreSettings, setGlobalScoreSettings] = useState(readGlobalScoreSettings);
+  const [globalTeamColorSettings, setGlobalTeamColorSettings] = useState(readGlobalTeamColorSettings);
   const globalSettingsRef = useRef<LeagueBrowserSourceSettings>({
     teamName: globalTeamNameSettings,
     score: globalScoreSettings,
+    teamColor: globalTeamColorSettings,
   });
   globalSettingsRef.current = {
     teamName: globalTeamNameSettings,
     score: globalScoreSettings,
+    teamColor: globalTeamColorSettings,
   };
 
   const [teamNameSettings, setTeamNameSettings] = useState(globalTeamNameSettings);
   const [scoreSettings, setScoreSettings] = useState(globalScoreSettings);
+  const [teamColorSettings, setTeamColorSettings] = useState(globalTeamColorSettings);
   const [scope, setScope] = useState<BrowserSourceSettingsScope>('global');
   const [saveStatus, setSaveStatus] = useState<BrowserSourceSettingsSaveStatus>('idle');
 
   const currentSettingsRef = useRef<LeagueBrowserSourceSettings>({
     teamName: globalTeamNameSettings,
     score: globalScoreSettings,
+    teamColor: globalTeamColorSettings,
   });
   const activeLeagueRef = useRef<League | null>(activeLeague);
   activeLeagueRef.current = activeLeague;
@@ -202,6 +229,7 @@ export function useLeagueBrowserSourceSettings({
     currentSettingsRef.current = resolved.settings;
     setTeamNameSettings(resolved.settings.teamName);
     setScoreSettings(resolved.settings.score);
+    setTeamColorSettings(resolved.settings.teamColor);
     setScope(activeLeague ? resolved.scope : 'global');
     setSaveStatus('idle');
   }, [activeLeague, persistPendingSave]);
@@ -258,12 +286,32 @@ export function useLeagueBrowserSourceSettings({
     writeGlobalSettings(SCORE_SETTINGS_STORAGE_KEY, next);
   }, [scheduleLeagueSave]);
 
+  const updateTeamColorSettings = useCallback((patch: TeamColorBrowserSettingsPatch) => {
+    const next = mergeTeamColorBrowserSettings(currentSettingsRef.current.teamColor, patch);
+    const nextBrowserSources = { ...currentSettingsRef.current, teamColor: next };
+    currentSettingsRef.current = nextBrowserSources;
+    setTeamColorSettings(next);
+    broadcastTeamColorSettings(activeLeagueRef.current?.id ?? null, next);
+
+    if (activeLeagueRef.current) {
+      scheduleLeagueSave(nextBrowserSources);
+      return;
+    }
+
+    setGlobalTeamColorSettings(next);
+    setScope('global');
+    setSaveStatus('saved');
+    writeGlobalSettings(TEAM_COLOR_SETTINGS_STORAGE_KEY, next);
+  }, [scheduleLeagueSave]);
+
   return {
     teamNameSettings,
     scoreSettings,
+    teamColorSettings,
     scope,
     saveStatus,
     updateTeamNameSettings,
     updateScoreSettings,
+    updateTeamColorSettings,
   };
 }

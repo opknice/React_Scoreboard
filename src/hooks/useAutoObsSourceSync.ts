@@ -4,6 +4,7 @@ import { OBSSetupService } from '../services/obsSetupService';
 import type { TeamNameBrowserSettings } from '../types/teamNameBrowserSettings';
 import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
 import type { ScoreBrowserSettings } from '../types/scoreBrowserSettings';
+import type { TeamColorBrowserSettings } from '../types/teamColorBrowserSettings';
 import { getLogoSyncSessionId } from './useLogoCropPreviewSync';
 
 interface UseAutoObsSourceSyncOptions {
@@ -14,6 +15,7 @@ interface UseAutoObsSourceSyncOptions {
   teamNameSettings: TeamNameBrowserSettings;
   logoSettings: LogoBrowserSettings;
   scoreSettings: ScoreBrowserSettings;
+  teamColorSettings?: TeamColorBrowserSettings;
   activeLeagueId?: string;
   debounceMs?: number;
 }
@@ -27,6 +29,7 @@ export function useAutoObsSourceSync({
   teamNameSettings,
   logoSettings,
   scoreSettings,
+  teamColorSettings,
   activeLeagueId,
   debounceMs = 300,
 }: UseAutoObsSourceSyncOptions) {
@@ -34,6 +37,7 @@ export function useAutoObsSourceSync({
   const isFirstRenderTeamName = useRef(true);
   const isFirstRenderLogo = useRef(true);
   const isFirstRenderScore = useRef(true);
+  const isFirstRenderTeamColor = useRef(true);
 
   // Auto-sync Team Name Browser Sources on settings change
   useEffect(() => {
@@ -97,4 +101,26 @@ export function useAutoObsSourceSync({
 
     return () => clearTimeout(timer);
   }, [debounceMs, getObsRef, isConnected, scoreSettings]);
+
+  // Auto-sync Team Color Browser Sources on appearance or league changes.
+  useEffect(() => {
+    if (!teamColorSettings) return;
+    if (isFirstRenderTeamColor.current) {
+      isFirstRenderTeamColor.current = false;
+      return;
+    }
+
+    if (!isConnected) return;
+    const obsRef = getObsRef();
+    if (!obsRef) return;
+
+    const timer = setTimeout(() => {
+      const service = new OBSSetupService(obsRef);
+      service.updateTeamColorBrowserSources(teamColorSettings, activeLeagueId).catch((err) => {
+        console.warn('[Auto OBS Sync] Failed to update Team Color Sources:', err);
+      });
+    }, debounceMs);
+
+    return () => clearTimeout(timer);
+  }, [activeLeagueId, debounceMs, getObsRef, isConnected, teamColorSettings]);
 }

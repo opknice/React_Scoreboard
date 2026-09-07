@@ -10,6 +10,7 @@ import ScoreboardTimerObsSync from './ScoreboardTimerObsSync';
 import type { TeamNameBrowserSettings } from '../../types/teamNameBrowserSettings';
 import type { LogoBrowserSettings } from '../../types/logoBrowserSettings';
 import type { ScoreBrowserSettings } from '../../types/scoreBrowserSettings';
+import type { TeamColorBrowserSettings } from '../../types/teamColorBrowserSettings';
 import type { LeagueDetailLabels } from '../../types/leagueDetailLabels';
 import type { ScoreboardStatePayload } from '../../types/scoreboardEvent';
 
@@ -23,6 +24,7 @@ interface ScoreboardObsRuntimeProps {
   teamNameSettings: TeamNameBrowserSettings;
   logoSettings: LogoBrowserSettings;
   scoreSettings: ScoreBrowserSettings;
+  teamColorSettings: TeamColorBrowserSettings;
   scoreboardStatePayload: ScoreboardStatePayload;
   onConnected: () => void;
   onError: () => void;
@@ -39,6 +41,7 @@ function ScoreboardObsRuntime({
   teamNameSettings,
   logoSettings,
   scoreSettings,
+  teamColorSettings,
   scoreboardStatePayload,
   onConnected,
   onError,
@@ -57,6 +60,7 @@ function ScoreboardObsRuntime({
     teamNameSettings,
     logoSettings,
     scoreSettings,
+    teamColorSettings,
     activeLeagueId,
   });
   useScoreboardStateResponder(scoreboardStatePayload);

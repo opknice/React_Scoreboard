@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import type { League, Team, Match } from '../../config/supabaseClient';
 import { getTodayDateString, formatToDateInput } from './leagueDateUtils';
-import { getNextMatchNumber, isUnplayedMatch } from './leagueMatchUtils';
+import { getNextMatchNumber, getScheduledTeamIdsForDate, isUnplayedMatch } from './leagueMatchUtils';
 import LeagueDatabaseModal from './LeagueDatabaseModal';
 import LeagueDatePicker from './LeagueDatePicker';
 
@@ -48,6 +48,13 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
     () => matches.filter(isUnplayedMatch),
     [matches]
   );
+
+  const scheduledTeamIdsForDate = useMemo(
+    () => getScheduledTeamIdsForDate(matches, matchDate, editingMatchId),
+    [editingMatchId, matchDate, matches],
+  );
+
+  const isScheduledDuplicate = (teamId: string): boolean => scheduledTeamIdsForDate.has(teamId);
 
   const resetMatchForm = () => {
     setEditingMatchId(null);
@@ -191,34 +198,53 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
               <div className="league-form-group">
                 <label>ทีม A (เหย้า) *</label>
                 <select
-                  className="league-form-select"
+                  className={`league-form-select${isScheduledDuplicate(matchTeamAId) ? ' league-form-select--duplicate' : ''}`}
                   value={matchTeamAId}
                   onChange={(e) => setMatchTeamAId(e.target.value)}
                   required
                 >
                   <option value="">-- เลือกทีม A --</option>
                   {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
+                    <option
+                      key={t.id}
+                      value={t.id}
+                      className={isScheduledDuplicate(t.id) ? 'league-team-duplicate-option' : undefined}
+                    >
+                      {t.name}{isScheduledDuplicate(t.id) ? ' (มีแข่งในวันที่เลือกแล้ว)' : ''}
                     </option>
                   ))}
                 </select>
+                {isScheduledDuplicate(matchTeamAId) ? (
+                  <small className="league-form-help-text league-form-help-text--warning" role="status">
+                    ทีมนี้มีแมตช์สถานะ scheduled ในวันที่เลือกแล้ว
+                  </small>
+                ) : null}
               </div>
               <div className="league-form-group">
                 <label>ทีม B (เยือน) *</label>
                 <select
-                  className="league-form-select"
+                  className={`league-form-select${isScheduledDuplicate(matchTeamBId) ? ' league-form-select--duplicate' : ''}`}
                   value={matchTeamBId}
                   onChange={(e) => setMatchTeamBId(e.target.value)}
                   required
                 >
                   <option value="">-- เลือกทีม B --</option>
                   {teams.map((t) => (
-                    <option key={t.id} value={t.id} disabled={t.id === matchTeamAId}>
-                      {t.name} {t.id === matchTeamAId ? '(เลือกเป็นทีมเหย้าแล้ว)' : ''}
+                    <option
+                      key={t.id}
+                      value={t.id}
+                      disabled={t.id === matchTeamAId}
+                      className={isScheduledDuplicate(t.id) ? 'league-team-duplicate-option' : undefined}
+                    >
+                      {t.name}{t.id === matchTeamAId ? ' (เลือกเป็นทีมเหย้าแล้ว)' : ''}{isScheduledDuplicate(t.id) ? ' (มีแข่งในวันที่เลือกแล้ว)' : ''}
                     </option>
                   ))}
                 </select>
+                {isScheduledDuplicate(matchTeamBId) ? (
+                  <small className="league-form-help-text league-form-help-text--warning" role="status">
+                    ทีมนี้มีแมตช์สถานะ scheduled ในวันที่เลือกแล้ว
+                  </small>
+                ) : null}
               </div>
               <div className="league-form-group">
                 <label>สถานะแมตช์</label>

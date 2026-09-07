@@ -6,6 +6,7 @@ import {
   type TeamNameBrowserSettings,
 } from '../types/teamNameBrowserSettings';
 import { SCORE_SETTINGS_STORAGE_KEY } from '../types/scoreBrowserSettings';
+import { TEAM_COLOR_SETTINGS_STORAGE_KEY } from '../types/teamColorBrowserSettings';
 import { useLeagueBrowserSourceSettings } from './useLeagueBrowserSourceSettings';
 
 function createLeague(id: string, settings: League['settings'] = {}): League {
@@ -39,6 +40,7 @@ describe('useLeagueBrowserSourceSettings', () => {
     const saved = JSON.parse(window.localStorage.getItem(TEAM_NAME_SETTINGS_STORAGE_KEY) ?? '{}') as TeamNameBrowserSettings;
     expect(saved.fontFamily).toBe('Kanit');
     expect(window.localStorage.getItem(SCORE_SETTINGS_STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(TEAM_COLOR_SETTINGS_STORAGE_KEY)).toBeNull();
     expect(result.current.scope).toBe('global');
     expect(updateLeague).not.toHaveBeenCalled();
   });
@@ -62,6 +64,9 @@ describe('useLeagueBrowserSourceSettings', () => {
     expect(result.current.scope).toBe('global');
 
     act(() => result.current.updateScoreSettings({ fontSizeA: 96 }));
+    act(() => result.current.updateTeamColorSettings({
+      appearance: { width: 420 },
+    }));
     expect(window.localStorage.getItem(SCORE_SETTINGS_STORAGE_KEY)).toBeNull();
     expect(result.current.saveStatus).toBe('saving');
 
@@ -79,6 +84,9 @@ describe('useLeagueBrowserSourceSettings', () => {
           browserSources: expect.objectContaining({
             teamName: expect.objectContaining({ fontFamily: 'Kanit' }),
             score: expect.objectContaining({ fontSizeA: 96 }),
+            teamColor: expect.objectContaining({
+              appearance: expect.objectContaining({ width: 420 }),
+            }),
           }),
         }),
       },
@@ -119,6 +127,8 @@ describe('useLeagueBrowserSourceSettings', () => {
     expect(updateLeague.mock.calls[0]?.[0]).toBe('a');
     expect(result.current.teamNameSettings.fontFamily).toBe('Arial');
     expect(result.current.scoreSettings.fontFamily).toBe('Arial');
-    expect(result.current.scope).toBe('league');
+    // The legacy league has no teamColor override yet, so the resolved scope
+    // correctly remains mixed while team-color falls back to global defaults.
+    expect(result.current.scope).toBe('mixed');
   });
 });

@@ -44,6 +44,10 @@
   border: 1px solid #22c55e;
 }
 
+.quick-setup-panel--team-color {
+  border: 1px solid #a855f7;
+}
+
 .quick-setup-panel--logo {
   border: 1px solid #f59e0b;
 }
@@ -70,6 +74,10 @@
 
 .quick-setup-panel--score .quick-setup-panel-toggle {
   color: #86efac;
+}
+
+.quick-setup-panel--team-color .quick-setup-panel-toggle {
+  color: #d8b4fe;
 }
 
 .quick-setup-panel-toggle:hover,

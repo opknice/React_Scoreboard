@@ -201,6 +201,43 @@ export const BROWSER_SOURCES: SourceConfig[] = [
     }
   },
   {
+    name: 'Color_Display_A',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/team-color?side=A`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      // Keep the static color source loaded for live settings updates.
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
+    name: 'Color_Display_B',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/team-color?side=B`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
     name: 'Logo_Display_A',
     type: 'browser_source',
     settings: {
@@ -572,6 +609,8 @@ export const DEFAULT_VISIBILITY: Record<string, boolean> = {
   'Logo_Display_B': false,
   'Team_Name_A': true,
   'Team_Name_B': true,
+  'Color_Display_A': true,
+  'Color_Display_B': true,
   'score_team_a': false,
   'score_team_b': false,
   'name_team_a': false,

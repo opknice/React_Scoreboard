@@ -1,5 +1,6 @@
 import { isCropMetadata, type CropMetadata } from './teamLogo';
 import { isLeagueLogoSizingSettings, type LeagueLogoSizingSettings } from './leagueLogoSizing';
+import { normalizeTeamColorBrowserSettings, type TeamColorBrowserSettings } from './teamColorBrowserSettings';
 
 export const SCOREBOARD_EVENT_CHANNEL = 'scoreboard-events';
 export const SCOREBOARD_STATE_STORAGE_KEY = 'scoreboard_live_state_v1';
@@ -60,6 +61,13 @@ export interface LogoSettingsUpdatedEvent {
 export interface LogoCropUpdatedEvent {
   type: 'LogoCropUpdated';
   teamKey?: string;
+  timestamp: number;
+}
+
+export interface TeamColorSettingsUpdatedEvent {
+  type: 'TeamColorSettingsUpdated';
+  leagueId?: string | null;
+  settings: TeamColorBrowserSettings;
   timestamp: number;
 }
 
@@ -128,4 +136,14 @@ export function isLogoCropUpdatedEvent(value: unknown): value is LogoCropUpdated
   if (!value || typeof value !== 'object') return false;
   const event = value as Partial<LogoCropUpdatedEvent>;
   return event.type === 'LogoCropUpdated' && typeof event.timestamp === 'number';
+}
+
+export function isTeamColorSettingsUpdatedEvent(value: unknown): value is TeamColorSettingsUpdatedEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<TeamColorSettingsUpdatedEvent>;
+  return event.type === 'TeamColorSettingsUpdated'
+    && (event.leagueId === undefined || event.leagueId === null || typeof event.leagueId === 'string')
+    && typeof event.timestamp === 'number'
+    && Boolean(event.settings)
+    && JSON.stringify(normalizeTeamColorBrowserSettings(event.settings)) === JSON.stringify(event.settings);
 }

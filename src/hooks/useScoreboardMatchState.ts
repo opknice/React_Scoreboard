@@ -3,6 +3,8 @@ import { useState } from 'react';
 export function useScoreboardMatchState() {
   const [nameA, setNameA] = useState('Team A');
   const [nameB, setNameB] = useState('Team B');
+  const [teamIdA, setTeamIdA] = useState<string | null>(null);
+  const [teamIdB, setTeamIdB] = useState<string | null>(null);
   const [scoreA, setScoreA] = useState(0);
   const [scoreB, setScoreB] = useState(0);
   const [colorA1, setColorA1] = useState('#ffffff');
@@ -22,6 +24,8 @@ export function useScoreboardMatchState() {
   return {
     nameA, setNameA,
     nameB, setNameB,
+    teamIdA, setTeamIdA,
+    teamIdB, setTeamIdB,
     scoreA, setScoreA,
     scoreB, setScoreB,
     colorA1, setColorA1,

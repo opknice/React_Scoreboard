@@ -296,6 +296,7 @@ export const LeagueDatabaseModal: React.FC<LeagueDatabaseModalProps> = ({
         isOpen={editingMatch !== null}
         match={editingMatch}
         teams={teams}
+        matches={matches}
         loading={loading}
         onSave={onUpdateMatch}
         onClose={() => setEditingMatch(null)}

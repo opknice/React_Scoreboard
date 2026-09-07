@@ -402,6 +402,22 @@
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
 }
 
+/* Warning state for teams already scheduled on the selected match date. */
+.league-form-select.league-form-select--duplicate,
+.league-form-select.league-form-select--duplicate:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18);
+}
+
+.league-team-duplicate-option {
+  color: #fca5a5;
+  background-color: #451a1a;
+}
+
+.league-form-help-text.league-form-help-text--warning {
+  color: #f87171;
+}
+
 .league-date-input {
   color-scheme: dark;
 }

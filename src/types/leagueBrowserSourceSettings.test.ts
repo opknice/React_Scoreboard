@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SCORE_BROWSER_SETTINGS } from './scoreBrowserSettings';
 import { DEFAULT_TEAM_NAME_BROWSER_SETTINGS } from './teamNameBrowserSettings';
+import { DEFAULT_TEAM_COLOR_BROWSER_SETTINGS } from './teamColorBrowserSettings';
 import {
   mergeLeagueBrowserSourceSettings,
   resolveLeagueBrowserSourceSettings,
@@ -10,6 +11,7 @@ import {
 const globalSettings: LeagueBrowserSourceSettings = {
   teamName: { ...DEFAULT_TEAM_NAME_BROWSER_SETTINGS, fontFamily: 'Kanit', fontSizeA: 54 },
   score: { ...DEFAULT_SCORE_BROWSER_SETTINGS, fontFamily: 'Kanit', fontSizeA: 80 },
+  teamColor: DEFAULT_TEAM_COLOR_BROWSER_SETTINGS,
 };
 
 describe('leagueBrowserSourceSettings', () => {
@@ -31,6 +33,25 @@ describe('leagueBrowserSourceSettings', () => {
     expect(resolved.settings.score).toEqual(globalSettings.score);
   });
 
+  it('deep-merges nested team-color overrides with global values', () => {
+    const resolved = resolveLeagueBrowserSourceSettings({
+      browserSources: {
+        teamColor: {
+          appearance: { width: 420 },
+          positions: { A1: { x: 64 } },
+        },
+      },
+    }, globalSettings);
+
+    expect(resolved.scope).toBe('mixed');
+    expect(resolved.settings.teamColor.appearance.width).toBe(420);
+    expect(resolved.settings.teamColor.appearance.height)
+      .toBe(globalSettings.teamColor.appearance.height);
+    expect(resolved.settings.teamColor.positions.A1.x).toBe(64);
+    expect(resolved.settings.teamColor.positions.A1.y)
+      .toBe(globalSettings.teamColor.positions.A1.y);
+  });
+
   it('preserves unrelated settings and browser source namespaces when saving', () => {
     const merged = mergeLeagueBrowserSourceSettings({
       logoSizing: { overlayScalePercent: 120 },
@@ -43,6 +64,7 @@ describe('leagueBrowserSourceSettings', () => {
         futureSetting: { enabled: true },
         teamName: globalSettings.teamName,
         score: globalSettings.score,
+        teamColor: globalSettings.teamColor,
       },
     });
   });

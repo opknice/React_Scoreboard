@@ -8,6 +8,8 @@ import type { ScoreBrowserSettings } from '../types/scoreBrowserSettings';
 import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
 import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
 import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
+import type { TeamColorBrowserSettings } from '../types/teamColorBrowserSettings';
+import { buildTeamColorBrowserUrl } from '../utils/teamColorBrowserUrl';
 
 export interface SetupProgress {
   step: string;
@@ -18,6 +20,11 @@ export interface SetupProgress {
 }
 
 export type ProgressCallback = (progress: SetupProgress) => void;
+
+interface SceneItemLocation {
+  containerName: string;
+  sceneItemId: number;
+}
 
 export interface TeamNameBrowserSetupResult {
   success: boolean;
@@ -214,26 +221,91 @@ export class OBSSetupService {
    * Ensure a source has a scene item in the target scene. Inputs can exist in
    * OBS without being present in the scene, especially after a partial setup.
    */
-  private async ensureSceneItem(sceneName: string, sourceName: string, enabled: boolean): Promise<number> {
+  /** Find an input in the target scene or its groups before creating a duplicate. */
+  private async findSceneItemLocation(sceneName: string, sourceName: string): Promise<SceneItemLocation | null> {
     try {
       const response = await this.obsRef.call('GetSceneItemId', { sceneName, sourceName });
-      await this.setSourceVisibility(sceneName, sourceName, enabled);
-      return response.sceneItemId;
+      if (Number.isFinite(response.sceneItemId)) {
+        return { containerName: sceneName, sceneItemId: response.sceneItemId };
+      }
     } catch {
-      const response = await this.obsRef.call('CreateSceneItem', {
-        sceneName,
-        sourceName,
+      // Continue searching groups; GetSceneItemId only checks the root scene.
+    }
+
+    try {
+      const rootItemsResponse = await this.obsRef.call('GetSceneItemList', { sceneName });
+      const visitedGroups = new Set<string>();
+
+      const searchGroup = async (groupName: string): Promise<SceneItemLocation | null> => {
+        if (visitedGroups.has(groupName)) return null;
+        visitedGroups.add(groupName);
+
+        try {
+          const groupItems = await this.obsRef.call('GetGroupSceneItemList', { sceneName: groupName });
+          if (!Array.isArray(groupItems.sceneItems)) return null;
+
+          for (const item of groupItems.sceneItems) {
+            if (item?.sourceName === sourceName && Number.isFinite(item.sceneItemId)) {
+              return { containerName: groupName, sceneItemId: item.sceneItemId };
+            }
+          }
+
+          // Probe child names for nested groups. Non-group inputs fail safely.
+          for (const item of groupItems.sceneItems) {
+            if (typeof item?.sourceName !== 'string') continue;
+            const nested = await searchGroup(item.sourceName);
+            if (nested) return nested;
+          }
+        } catch {
+          // Ignore inputs that are not groups and continue searching.
+        }
+        return null;
+      };
+
+      if (Array.isArray(rootItemsResponse.sceneItems)) {
+        for (const item of rootItemsResponse.sceneItems) {
+          if (item?.sourceName === sourceName && Number.isFinite(item.sceneItemId)) {
+            return { containerName: sceneName, sceneItemId: item.sceneItemId };
+          }
+        }
+        for (const item of rootItemsResponse.sceneItems) {
+          if (typeof item?.sourceName !== 'string') continue;
+          const nested = await searchGroup(item.sourceName);
+          if (nested) return nested;
+        }
+      }
+    } catch {
+      // Older OBS versions may not expose scene/group enumeration.
+    }
+
+    return null;
+  }
+
+  private async ensureSceneItem(sceneName: string, sourceName: string, enabled: boolean): Promise<number> {
+    const existing = await this.findSceneItemLocation(sceneName, sourceName);
+    if (existing) {
+      await this.obsRef.call('SetSceneItemEnabled', {
+        sceneName: existing.containerName,
+        sceneItemId: existing.sceneItemId,
         sceneItemEnabled: enabled,
       });
-      return response.sceneItemId;
+      return existing.sceneItemId;
     }
+
+    const response = await this.obsRef.call('CreateSceneItem', {
+      sceneName,
+      sourceName,
+      sceneItemEnabled: enabled,
+    });
+    return response.sceneItemId;
   }
 
   private async setSourceVisibility(sceneName: string, sourceName: string, enabled: boolean): Promise<void> {
-    const response = await this.obsRef.call('GetSceneItemId', { sceneName, sourceName });
+    const location = await this.findSceneItemLocation(sceneName, sourceName);
+    if (!location) throw new Error(`Scene item not found: ${sourceName}`);
     await this.obsRef.call('SetSceneItemEnabled', {
-      sceneName,
-      sceneItemId: response.sceneItemId,
+      sceneName: location.containerName,
+      sceneItemId: location.sceneItemId,
       sceneItemEnabled: enabled,
     });
   }
@@ -293,6 +365,25 @@ export class OBSSetupService {
       settings: {
         ...baseConfig.settings,
         url: buildLogoBrowserUrl(getOrigin(), side, settings, syncSessionId, leagueId),
+      },
+    };
+  }
+
+  private getTeamColorBrowserConfig(
+    sourceName: 'Color_Display_A' | 'Color_Display_B',
+    settings: TeamColorBrowserSettings,
+    leagueId?: string,
+  ): SourceConfig {
+    const baseConfig = BROWSER_SOURCES.find((source) => source.name === sourceName);
+    if (!baseConfig) throw new Error(`Missing OBS configuration for ${sourceName}`);
+    const side = sourceName.endsWith('_A') ? 'A' : 'B';
+    return {
+      ...baseConfig,
+      settings: {
+        ...baseConfig.settings,
+        width: settings.canvasWidth,
+        height: settings.canvasHeight,
+        url: buildTeamColorBrowserUrl(getOrigin(), side, leagueId),
       },
     };
   }
@@ -363,6 +454,72 @@ export class OBSSetupService {
       message: updatedSources.length > 0
         ? `อัปเดต Team Name Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
         : 'ไม่พบ Team Name Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
+      updatedSources,
+    };
+  }
+
+  /** Add or update the two static Team Color Browser Sources. */
+  async addOrUpdateTeamColorBrowserSources(
+    settings: TeamColorBrowserSettings,
+    leagueId?: string,
+    sceneName = MAIN_SCENE_CONFIG.name,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
+
+    const updatedSources: string[] = [];
+    for (const sourceName of ['Color_Display_A', 'Color_Display_B'] as const) {
+      const config = this.getTeamColorBrowserConfig(sourceName, settings, leagueId);
+      if (!(await this.sourceExists(sourceName))) {
+        await this.obsRef.call('CreateInput', {
+          sceneName,
+          inputName: config.name,
+          inputKind: 'browser_source',
+          inputSettings: config.settings,
+          sceneItemEnabled: true,
+        });
+      } else {
+        await this.updateSourceSettings(config.name, config.settings);
+      }
+
+      await this.ensureSceneItem(sceneName, config.name, true);
+      await this.refreshBrowserSource(config.name);
+      if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
+      updatedSources.push(sourceName);
+    }
+
+    return {
+      success: true,
+      message: 'เพิ่ม/อัปเดต Team Color Browser Sources A/B และรีเฟรช OBS แล้ว',
+      updatedSources,
+    };
+  }
+
+  /** Update only existing Team Color inputs; never creates missing sources. */
+  async updateTeamColorBrowserSources(
+    settings: TeamColorBrowserSettings,
+    leagueId?: string,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+
+    const updatedSources: string[] = [];
+    const missingSources: string[] = [];
+    for (const sourceName of ['Color_Display_A', 'Color_Display_B'] as const) {
+      if (!(await this.sourceExists(sourceName))) {
+        missingSources.push(sourceName);
+        continue;
+      }
+      const config = this.getTeamColorBrowserConfig(sourceName, settings, leagueId);
+      await this.updateSourceSettings(config.name, config.settings);
+      await this.refreshBrowserSource(config.name);
+      updatedSources.push(sourceName);
+    }
+
+    return {
+      success: true,
+      message: updatedSources.length > 0
+        ? `อัปเดต Team Color Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
+        : 'ไม่พบ Team Color Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
       updatedSources,
     };
   }
@@ -527,18 +684,15 @@ export class OBSSetupService {
    */
   async setSourceTransform(sceneName: string, sourceName: string, transform: any): Promise<void> {
     try {
-      // Get scene item ID
-      const response = await this.obsRef.call('GetSceneItemId', {
-        sceneName,
-        sourceName
-      });
-
-      const sceneItemId = response.sceneItemId;
+      // Resolve the item in the root scene or a group before applying the
+      // transform; GetSceneItemId alone misses nested group items.
+      const location = await this.findSceneItemLocation(sceneName, sourceName);
+      if (!location) throw new Error(`Scene item not found: ${sourceName}`);
 
       // Set transform
       await this.obsRef.call('SetSceneItemTransform', {
-        sceneName,
-        sceneItemId,
+        sceneName: location.containerName,
+        sceneItemId: location.sceneItemId,
         sceneItemTransform: {
           positionX: transform.position.x,
           positionY: transform.position.y,

@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Match, Team } from '../../config/supabaseClient';
 import { getTodayDateString } from './leagueDateUtils';
+import { getScheduledTeamIdsForDate } from './leagueMatchUtils';
 import LeagueDatePicker from './LeagueDatePicker';
 
 type MatchStatus = 'scheduled' | 'in_progress' | 'finished' | 'postponed';
@@ -40,6 +41,7 @@ export interface MatchEditModalProps {
   isOpen: boolean;
   match: Match | null;
   teams: Team[];
+  matches: Match[];
   loading: boolean;
   onSave: (matchId: string, updates: Partial<Match>) => Promise<Match | null>;
   onClose: () => void;
@@ -49,6 +51,7 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
   isOpen,
   match,
   teams,
+  matches,
   loading,
   onSave,
   onClose,
@@ -65,6 +68,13 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
       setIsSaving(false);
     }
   }, [isOpen, match]);
+
+  const scheduledTeamIdsForDate = useMemo(
+    () => getScheduledTeamIdsForDate(matches, formData?.matchDate ?? '', match?.id),
+    [formData?.matchDate, match?.id, matches],
+  );
+
+  const isScheduledDuplicate = (teamId: string): boolean => scheduledTeamIdsForDate.has(teamId);
 
   if (!isOpen || !match || !formData) return null;
 
@@ -169,31 +179,54 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
               <label htmlFor="edit-match-team-a">ทีม A *</label>
               <select
                 id="edit-match-team-a"
-                className="league-form-select"
+                className={`league-form-select${isScheduledDuplicate(formData.teamAId) ? ' league-form-select--duplicate' : ''}`}
                 value={formData.teamAId}
                 onChange={(e) => updateField('teamAId', e.target.value)}
                 required
               >
                 <option value="">-- เลือกทีม A --</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+                {teams.map((team) => (
+                  <option
+                    key={team.id}
+                    value={team.id}
+                    className={isScheduledDuplicate(team.id) ? 'league-team-duplicate-option' : undefined}
+                  >
+                    {team.name}{isScheduledDuplicate(team.id) ? ' (มีแข่งในวันที่เลือกแล้ว)' : ''}
+                  </option>
+                ))}
               </select>
+              {isScheduledDuplicate(formData.teamAId) ? (
+                <small className="league-form-help-text league-form-help-text--warning" role="status">
+                  ทีมนี้มีแมตช์สถานะ scheduled ในวันที่เลือกแล้ว
+                </small>
+              ) : null}
             </div>
             <div className="league-form-group">
               <label htmlFor="edit-match-team-b">ทีม B *</label>
               <select
                 id="edit-match-team-b"
-                className="league-form-select"
+                className={`league-form-select${isScheduledDuplicate(formData.teamBId) ? ' league-form-select--duplicate' : ''}`}
                 value={formData.teamBId}
                 onChange={(e) => updateField('teamBId', e.target.value)}
                 required
               >
                 <option value="">-- เลือกทีม B --</option>
                 {teams.map((team) => (
-                  <option key={team.id} value={team.id} disabled={team.id === formData.teamAId}>
-                    {team.name}
+                  <option
+                    key={team.id}
+                    value={team.id}
+                    disabled={team.id === formData.teamAId}
+                    className={isScheduledDuplicate(team.id) ? 'league-team-duplicate-option' : undefined}
+                  >
+                    {team.name}{team.id === formData.teamAId ? ' (เลือกเป็นทีมเหย้าแล้ว)' : ''}{isScheduledDuplicate(team.id) ? ' (มีแข่งในวันที่เลือกแล้ว)' : ''}
                   </option>
                 ))}
               </select>
+              {isScheduledDuplicate(formData.teamBId) ? (
+                <small className="league-form-help-text league-form-help-text--warning" role="status">
+                  ทีมนี้มีแมตช์สถานะ scheduled ในวันที่เลือกแล้ว
+                </small>
+              ) : null}
             </div>
             <div className="league-form-group">
               <label htmlFor="edit-match-status">สถานะการแข่งขัน</label>

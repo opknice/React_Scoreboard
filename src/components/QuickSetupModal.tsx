@@ -19,8 +19,13 @@ import { LOGO_FRAME_SIZE_PX, cropMetadataToJson, parseCropMetadata } from '../ty
 import { getEffectiveLogoScalePercent, scaleLogoPixels } from '../types/leagueLogoSizing';
 import type { BrowserSourceSettingsScope } from '../types/leagueBrowserSourceSettings';
 import type { BrowserSourceSettingsSaveStatus } from '../hooks/useLeagueBrowserSourceSettings';
+import type {
+  TeamColorBrowserSettings,
+  TeamColorBrowserSettingsPatch,
+} from '../types/teamColorBrowserSettings';
 import LogoWithCrop from './LogoWithCrop';
 import LogoBrowserCropModal from './LogoBrowserCropModal';
+import TeamColorBrowserSourcePanel from './TeamColorBrowserSourcePanel';
 import './QuickSetupModal.css';
 
 interface LocalFontData {
@@ -63,6 +68,14 @@ interface QuickSetupModalProps {
   scoreObsBusy: boolean;
   scoreObsMessage: string;
   onQuickAddScore: () => void;
+  teamColorSettings: TeamColorBrowserSettings;
+  teamColorUrls: { A: string; B: string };
+  onTeamColorSettingsChange: (patch: TeamColorBrowserSettingsPatch) => void;
+  onCopyTeamColorUrl: (side: 'A' | 'B') => void;
+  teamColorObsBusy: boolean;
+  teamColorObsConnected: boolean;
+  teamColorObsMessage: string;
+  onQuickAddTeamColor: () => void;
   logoSettings: LogoBrowserSettings;
   onLogoSettingsChange: (patch: Partial<LogoBrowserSettings>) => void;
   logoUrls: { A: string; B: string };
@@ -103,6 +116,14 @@ export default function QuickSetupModal({
   scoreObsBusy,
   scoreObsMessage,
   onQuickAddScore,
+  teamColorSettings,
+  teamColorUrls,
+  onTeamColorSettingsChange,
+  onCopyTeamColorUrl,
+  teamColorObsBusy,
+  teamColorObsConnected,
+  teamColorObsMessage,
+  onQuickAddTeamColor,
   logoSettings,
   onLogoSettingsChange,
   logoUrls,
@@ -117,7 +138,7 @@ export default function QuickSetupModal({
   onOpenLeagueManager,
   onClose,
 }: QuickSetupModalProps) {
-  const [openPanel, setOpenPanel] = useState<'team-name' | 'score' | 'logo' | null>(null);
+  const [openPanel, setOpenPanel] = useState<'team-name' | 'team-color' | 'score' | 'logo' | null>(null);
   const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
   const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
   const [logoPreviewSide, setLogoPreviewSide] = useState<'A' | 'B' | 'both'>('both');
@@ -337,6 +358,30 @@ export default function QuickSetupModal({
               </div>
             </details>
           </div>
+          </div> : null}
+        </div>
+
+        <div className="quick-setup-panel quick-setup-panel--team-color">
+          <button
+            type="button"
+            className="quick-setup-panel-toggle"
+            aria-expanded={openPanel === 'team-color'}
+            onClick={() => setOpenPanel((current) => current === 'team-color' ? null : 'team-color')}
+          >
+            <span><i className="fas fa-palette"></i> Team Color Browser Source</span>
+            <i className={`fas fa-chevron-${openPanel === 'team-color' ? 'up' : 'down'}`} aria-hidden="true"></i>
+          </button>
+          {openPanel === 'team-color' ? <div className="quick-setup-panel-content">
+            <TeamColorBrowserSourcePanel
+              settings={teamColorSettings}
+              urls={teamColorUrls}
+              onSettingsChange={onTeamColorSettingsChange}
+              onCopyUrl={onCopyTeamColorUrl}
+              obsBusy={teamColorObsBusy}
+              obsConnected={teamColorObsConnected}
+              obsMessage={teamColorObsMessage}
+              onQuickAdd={onQuickAddTeamColor}
+            />
           </div> : null}
         </div>
 

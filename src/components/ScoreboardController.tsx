@@ -25,6 +25,7 @@ import { getOrigin } from '../config/obsSetupConfig';
 import { buildTeamNameBrowserUrl } from '../utils/teamNameBrowserUrl';
 import { OBSSetupService } from '../services/obsSetupService';
 import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
+import { buildTeamColorBrowserUrl } from '../utils/teamColorBrowserUrl';
 import {
   DEFAULT_LOGO_BROWSER_SETTINGS,
   LOGO_SETTINGS_STORAGE_KEY,
@@ -89,6 +90,16 @@ const reportControllerRender: ProfilerOnRenderCallback = (
   });
 };
 
+type TeamColorColumn = 'color_primary' | 'color_secondary';
+
+interface TeamColorPersistenceState {
+  pending: Partial<Record<TeamColorColumn, string>>;
+  serverSnapshot: Partial<Record<TeamColorColumn, string>>;
+  timer: number | null;
+  revision: number;
+  inFlight: boolean;
+}
+
 export default function ScoreboardController() {
   const navigate = useNavigate();
   const authAccess = useAuthAccess();
@@ -145,6 +156,8 @@ export default function ScoreboardController() {
   const {
     nameA, setNameA,
     nameB, setNameB,
+    teamIdA, setTeamIdA,
+    teamIdB, setTeamIdB,
     scoreA, setScoreA,
     scoreB, setScoreB,
     colorA1, setColorA1,
@@ -201,10 +214,12 @@ export default function ScoreboardController() {
   const {
     teamNameSettings,
     scoreSettings,
+    teamColorSettings,
     scope: browserSettingsScope,
     saveStatus: browserSettingsSaveStatus,
     updateTeamNameSettings,
     updateScoreSettings,
+    updateTeamColorSettings,
   } = useLeagueBrowserSourceSettings({
     activeLeague: supabaseLeague.activeLeague,
     updateLeague: supabaseLeague.updateLeague,
@@ -225,6 +240,8 @@ export default function ScoreboardController() {
   const [logoObsMessage, setLogoObsMessage] = useState('');
   const [scoreObsBusy, setScoreObsBusy] = useState(false);
   const [scoreObsMessage, setScoreObsMessage] = useState('');
+  const [teamColorObsBusy, setTeamColorObsBusy] = useState(false);
+  const [teamColorObsMessage, setTeamColorObsMessage] = useState('');
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
   const [showLeagueManagementModal, setShowLeagueManagementModal] = useState<boolean>(false);
@@ -289,6 +306,20 @@ export default function ScoreboardController() {
     both: buildScoreBrowserUrl(getOrigin(), 'both', scoreSettings),
   }), [scoreSettings]);
 
+  const teamColorUrls = useMemo(() => ({
+    A: buildTeamColorBrowserUrl(getOrigin(), 'A', supabaseLeague.activeLeagueId),
+    B: buildTeamColorBrowserUrl(getOrigin(), 'B', supabaseLeague.activeLeagueId),
+  }), [supabaseLeague.activeLeagueId]);
+
+  const copyTeamColorUrl = useCallback(async (side: 'A' | 'B') => {
+    try {
+      await navigator.clipboard.writeText(teamColorUrls[side]);
+      triggerToast(`คัดลอก URL Team Color ${side} แล้ว`, 'success');
+    } catch {
+      triggerToast('ไม่สามารถคัดลอก URL ได้', 'error');
+    }
+  }, [teamColorUrls, triggerToast]);
+
   const updateLogoSettings = useCallback((patch: Partial<LogoBrowserSettings>) => {
     setLogoSettings((current) => normalizeLogoBrowserSettings({ ...current, ...patch }));
   }, []);
@@ -352,11 +383,127 @@ export default function ScoreboardController() {
     }
   }, [obs, scoreSettings, triggerToast]);
 
+  const runTeamColorObsAction = useCallback(async (action: 'add' | 'update') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    setTeamColorObsBusy(true);
+    setTeamColorObsMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const result = action === 'add'
+        ? await service.addOrUpdateTeamColorBrowserSources(teamColorSettings, supabaseLeague.activeLeagueId)
+        : await service.updateTeamColorBrowserSources(teamColorSettings, supabaseLeague.activeLeagueId);
+      setTeamColorObsMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า Team Color ใน OBS ได้';
+      setTeamColorObsMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setTeamColorObsBusy(false);
+    }
+  }, [obs, supabaseLeague.activeLeagueId, teamColorSettings, triggerToast]);
+
   const {
     teams: supabaseTeams,
     updateTeam: updateSupabaseTeam,
     uploadTeamLogo,
   } = supabaseLeague;
+  const teamColorPersistenceRef = useRef<Record<string, TeamColorPersistenceState>>({});
+
+  const flushTeamColorSave = useCallback(async (teamId: string): Promise<void> => {
+    const state = teamColorPersistenceRef.current[teamId];
+    if (!state || state.inFlight || Object.keys(state.pending).length === 0) return;
+
+    if (state.timer !== null) {
+      window.clearTimeout(state.timer);
+      state.timer = null;
+    }
+
+    const pending = state.pending;
+    const revision = state.revision;
+    state.pending = {};
+    state.inFlight = true;
+
+    try {
+      await updateSupabaseTeam(teamId, pending);
+      Object.assign(state.serverSnapshot, pending);
+    } catch (error: unknown) {
+      // Only roll back when no newer edit was queued while this request ran.
+      if (state.revision === revision && Object.keys(state.pending).length === 0) {
+        const currentSide = teamIdA === teamId ? 'A' : teamIdB === teamId ? 'B' : null;
+        if (currentSide === 'A') {
+          if (pending.color_primary && state.serverSnapshot.color_primary) {
+            setColorA1(state.serverSnapshot.color_primary);
+            obs.setSourceColor('Color_Team_A', state.serverSnapshot.color_primary);
+          }
+          if (pending.color_secondary && state.serverSnapshot.color_secondary) {
+            setColorA2(state.serverSnapshot.color_secondary);
+            obs.setSourceColor('Color_Team_A_2', state.serverSnapshot.color_secondary);
+          }
+        } else if (currentSide === 'B') {
+          if (pending.color_primary && state.serverSnapshot.color_primary) {
+            setColorB1(state.serverSnapshot.color_primary);
+            obs.setSourceColor('Color_Team_B', state.serverSnapshot.color_primary);
+          }
+          if (pending.color_secondary && state.serverSnapshot.color_secondary) {
+            setColorB2(state.serverSnapshot.color_secondary);
+            obs.setSourceColor('Color_Team_B_2', state.serverSnapshot.color_secondary);
+          }
+        }
+      }
+      const message = error instanceof Error ? error.message : 'ไม่สามารถบันทึกสีทีมลง Supabase ได้';
+      triggerToast(message, 'error');
+    } finally {
+      state.inFlight = false;
+      if (Object.keys(state.pending).length > 0) {
+        state.timer = window.setTimeout(() => {
+          state.timer = null;
+          void flushTeamColorSave(teamId);
+        }, 0);
+      }
+    }
+  }, [obs, setColorA1, setColorA2, setColorB1, setColorB2, teamIdA, teamIdB, triggerToast, updateSupabaseTeam]);
+
+  const queueTeamColorSave = useCallback((
+    teamId: string | null,
+    column: TeamColorColumn,
+    color: string,
+  ) => {
+    if (!teamId || !/^#[0-9a-f]{6}$/i.test(color)) return;
+
+    const state = teamColorPersistenceRef.current[teamId] ?? {
+      pending: {},
+      serverSnapshot: {},
+      timer: null,
+      revision: 0,
+      inFlight: false,
+    } satisfies TeamColorPersistenceState;
+    teamColorPersistenceRef.current[teamId] = state;
+
+    if (!state.serverSnapshot[column]) {
+      const serverTeam = supabaseTeams.find((team) => team.id === teamId);
+      state.serverSnapshot[column] = serverTeam?.[column] || undefined;
+    }
+    state.pending[column] = color;
+    state.revision += 1;
+
+    if (state.timer !== null) window.clearTimeout(state.timer);
+    state.timer = window.setTimeout(() => {
+      state.timer = null;
+      void flushTeamColorSave(teamId);
+    }, 500);
+  }, [flushTeamColorSave, supabaseTeams]);
+
+  useEffect(() => () => {
+    Object.values(teamColorPersistenceRef.current).forEach((state) => {
+      if (state.timer !== null) window.clearTimeout(state.timer);
+    });
+  }, []);
   const saveTeamLogo = useCallback(async (teamName: string, url: string): Promise<boolean> => {
     const normalizedName = teamName.trim().toLowerCase();
     const cleanUrl = url.trim();
@@ -470,10 +617,10 @@ export default function ScoreboardController() {
   });
 
   const scoreboardStatePayload = useMemo(() => {
-    const normalizedNameA = nameA.trim().toLowerCase();
-    const normalizedNameB = nameB.trim().toLowerCase();
-    const teamA = supabaseLeague.teams.find((team) => team.name.trim().toLowerCase() === normalizedNameA);
-    const teamB = supabaseLeague.teams.find((team) => team.name.trim().toLowerCase() === normalizedNameB);
+    // Crop metadata belongs to persisted Supabase teams. Temporary teams have
+    // no teamId and therefore must not accidentally match a same-named team.
+    const teamA = teamIdA ? supabaseLeague.teams.find((team) => team.id === teamIdA) : undefined;
+    const teamB = teamIdB ? supabaseLeague.teams.find((team) => team.id === teamIdB) : undefined;
 
     return {
       scoreA,
@@ -482,8 +629,8 @@ export default function ScoreboardController() {
       nameB,
       leagueId: supabaseLeague.activeLeagueId || null,
       leagueLogoSizing: parseLeagueLogoSizing(supabaseLeague.activeLeague?.settings),
-      teamIdA: teamA?.id || null,
-      teamIdB: teamB?.id || null,
+      teamIdA,
+      teamIdB,
       logoA: resolveLogoSrc(logoA, nameA, logoFolderPath),
       logoB: resolveLogoSrc(logoB, nameB, logoFolderPath),
       colorA1,
@@ -508,6 +655,8 @@ export default function ScoreboardController() {
     supabaseLeague.activeLeague?.settings,
     supabaseLeague.activeLeagueId,
     supabaseLeague.teams,
+    teamIdA,
+    teamIdB,
   ]);
 
   // Keep the persistent score Browser Source synchronized, including after
@@ -633,6 +782,7 @@ export default function ScoreboardController() {
 
     if (target === 'A') {
       setNameA(team.name);
+      setTeamIdA(team.id);
       setColorA1(primaryColor);
       setColorA2(secondaryColor);
       setLogoA(logoSrc);
@@ -642,6 +792,7 @@ export default function ScoreboardController() {
       obs.setSourceColor('Color_Team_A_2', secondaryColor);
     } else {
       setNameB(team.name);
+      setTeamIdB(team.id);
       setColorB1(primaryColor);
       setColorB2(secondaryColor);
       setLogoB(logoSrc);
@@ -667,6 +818,8 @@ export default function ScoreboardController() {
     clearTeamDataTimerRef.current = window.setTimeout(() => {
       setNameA('');
       setNameB('');
+      setTeamIdA(null);
+      setTeamIdB(null);
       setScoreA(0);
       setScoreB(0);
       setLogoA('');
@@ -688,7 +841,7 @@ export default function ScoreboardController() {
       
       clearTeamDataTimerRef.current = null;
     }, 50);
-  }, [setNameA, setNameB, setScoreA, setScoreB, setLogoA, setLogoB, setColorA1, setColorA2, setColorB1, setColorB2, obs, logoFolderPath]);
+  }, [setNameA, setNameB, setTeamIdA, setTeamIdB, setScoreA, setScoreB, setLogoA, setLogoB, setColorA1, setColorA2, setColorB1, setColorB2, obs, logoFolderPath]);
 
   // 🔥 P2 Fix: Stable ref to prevent useEffect re-trigger
   const clearTeamDataRef = useRef(clearTeamData);
@@ -746,6 +899,8 @@ export default function ScoreboardController() {
 
     setNameA(teamAName);
     setNameB(teamBName);
+    setTeamIdA(teamAObj?.id ?? null);
+    setTeamIdB(teamBObj?.id ?? null);
     setScoreA(initialScoreA);
     setScoreB(initialScoreB);
     timerResetToZero();
@@ -805,6 +960,8 @@ export default function ScoreboardController() {
     setLogoB,
     setNameA,
     setNameB,
+    setTeamIdA,
+    setTeamIdB,
     setScoreA,
     setScoreB,
     getTeamColors,
@@ -897,14 +1054,17 @@ export default function ScoreboardController() {
     const tempLogoA = logoA;
     const tempColorA1 = colorA1;
     const tempColorA2 = colorA2;
+    const tempTeamIdA = teamIdA;
 
     setNameA(nameB);
+    setTeamIdA(teamIdB);
     setScoreA(scoreB);
     setLogoA(logoB);
     setColorA1(colorB1);
     setColorA2(colorB2);
 
     setNameB(tempNameA);
+    setTeamIdB(tempTeamIdA);
     setScoreB(tempScoreA);
     setLogoB(tempLogoA);
     setColorB1(tempColorA1);
@@ -941,8 +1101,12 @@ export default function ScoreboardController() {
     setLogoB,
     setNameA,
     setNameB,
+    setTeamIdA,
+    setTeamIdB,
     setScoreA,
     setScoreB,
+    teamIdA,
+    teamIdB,
     trans.toastSwapped,
     triggerToast,
   ]);
@@ -1324,35 +1488,41 @@ export default function ScoreboardController() {
         setColorA1(color);
         obs.setSourceColor('Color_Team_A', color);
         saveTeamColors(nameA, { color1: color, color2: colorA2 });
+        queueTeamColorSave(teamIdA, 'color_primary', color);
       } else {
         setColorA2(color);
         obs.setSourceColor('Color_Team_A_2', color);
         saveTeamColors(nameA, { color1: colorA1, color2: color });
+        queueTeamColorSave(teamIdA, 'color_secondary', color);
       }
     } else {
       if (which === 1) {
         setColorB1(color);
         obs.setSourceColor('Color_Team_B', color);
         saveTeamColors(nameB, { color1: color, color2: colorB2 });
+        queueTeamColorSave(teamIdB, 'color_primary', color);
       } else {
         setColorB2(color);
         obs.setSourceColor('Color_Team_B_2', color);
         saveTeamColors(nameB, { color1: colorB1, color2: color });
+        queueTeamColorSave(teamIdB, 'color_secondary', color);
       }
     }
-  }, [colorA1, colorA2, colorB1, colorB2, nameA, nameB, obs, saveTeamColors, setColorA1, setColorA2, setColorB1, setColorB2]);
+  }, [colorA1, colorA2, colorB1, colorB2, nameA, nameB, obs, queueTeamColorSave, saveTeamColors, setColorA1, setColorA2, setColorB1, setColorB2, teamIdA, teamIdB]);
 
   const handleQuickColor = useCallback((team: 'A' | 'B', color: string) => {
     if (team === 'A') {
       setColorA1(color);
       obs.setSourceColor('Color_Team_A', color);
       saveTeamColors(nameA, { color1: color, color2: colorA2 });
+      queueTeamColorSave(teamIdA, 'color_primary', color);
     } else {
       setColorB1(color);
       obs.setSourceColor('Color_Team_B', color);
       saveTeamColors(nameB, { color1: color, color2: colorB2 });
+      queueTeamColorSave(teamIdB, 'color_primary', color);
     }
-  }, [colorA2, colorB2, nameA, nameB, obs, saveTeamColors, setColorA1, setColorB1]);
+  }, [colorA2, colorB2, nameA, nameB, obs, queueTeamColorSave, saveTeamColors, setColorA1, setColorB1, teamIdA, teamIdB]);
 
   const handleLogoClick = useCallback(() => {
     setShowLeagueManagementModal(true);
@@ -1411,14 +1581,16 @@ export default function ScoreboardController() {
   const handleSaveEditName = useCallback((team: 'A' | 'B') => {
     if (team === 'A') {
       setNameA(editNameAVal);
+      setTeamIdA(null);
       setIsEditingA(false);
       obs.setText('name_team_a', editNameAVal.replace(/\//g, '\n'));
     } else {
       setNameB(editNameBVal);
+      setTeamIdB(null);
       setIsEditingB(false);
       obs.setText('name_team_b', editNameBVal.replace(/\//g, '\n'));
     }
-  }, [editNameAVal, editNameBVal, obs, setNameA, setNameB, setIsEditingA, setIsEditingB]);
+  }, [editNameAVal, editNameBVal, obs, setNameA, setNameB, setTeamIdA, setTeamIdB, setIsEditingA, setIsEditingB]);
 
   const handleOpenTeamSelect = useCallback((target: 'A' | 'B') => {
     setTeamSelectTarget(target);
@@ -1462,6 +1634,7 @@ export default function ScoreboardController() {
         teamNameSettings={teamNameSettings}
         logoSettings={logoSettings}
         scoreSettings={scoreSettings}
+        teamColorSettings={teamColorSettings}
         scoreboardStatePayload={scoreboardStatePayload}
         onConnected={handleObsConnected}
         onError={handleObsError}
@@ -1943,6 +2116,14 @@ export default function ScoreboardController() {
           onCopyScoreUrl={copyScoreUrl}
           scoreObsBusy={scoreObsBusy}
           scoreObsMessage={scoreObsMessage}
+          teamColorSettings={teamColorSettings}
+          teamColorUrls={teamColorUrls}
+          onTeamColorSettingsChange={updateTeamColorSettings}
+          onCopyTeamColorUrl={copyTeamColorUrl}
+          teamColorObsBusy={teamColorObsBusy}
+          teamColorObsConnected={obs.isConnected}
+          teamColorObsMessage={teamColorObsMessage}
+          onQuickAddTeamColor={() => void runTeamColorObsAction('add')}
           logoSettings={logoSettings}
           logoUrls={logoUrls}
           logoObsBusy={logoObsBusy}

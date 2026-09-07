@@ -25,13 +25,14 @@ const AllScoreCombinedStandalone = lazy(() => import('./components/AllScoreCombi
 const PenaltyShootoutController = lazy(() => import('./components/PenaltyShootoutController'));
 const PenaltyDotsOverlay = lazy(() => import('./components/PenaltyDotsOverlay'));
 const GoalAnimationOverlay = lazy(() => import('./components/GoalAnimationOverlay'));
+const TeamColorBrowserSource = lazy(() => import('./components/TeamColorBrowserSource'));
 const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV2Page'));
 const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
 const TailwindTestPage = lazy(() => import('./pages/TailwindTestPage'));
 
 function isTransparentSurfacePath(pathname: string): boolean {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
-  return /\/(?:overlay|all-scores|league-table|all-score-combined|dots|goal-animation|var-replay(?:-v2)?\/screen|replay\/screen)$/.test(normalizedPath);
+  return /\/(?:overlay|all-scores|league-table|all-score-combined|dots|goal-animation|team-color|var-replay(?:-v2)?\/screen|replay\/screen)$/.test(normalizedPath);
 }
 
 function getAppRoutePath(pathname: string): string {
@@ -116,6 +117,7 @@ function AppRoutes() {
           />
           <Route path="/dots" element={<PenaltyDotsOverlay />} />
           <Route path="/goal-animation" element={<GoalAnimationOverlay />} />
+          <Route path="/team-color" element={<TeamColorBrowserSource />} />
 
           {/* Legacy VAR URLs are kept as compatibility aliases for VAR Controller V2. */}
           <Route

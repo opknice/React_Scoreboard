@@ -7,10 +7,16 @@ import {
   normalizeScoreBrowserSettings,
   type ScoreBrowserSettings,
 } from './scoreBrowserSettings';
+import {
+  mergeTeamColorBrowserSettings,
+  normalizeTeamColorBrowserSettings,
+  type TeamColorBrowserSettings,
+} from './teamColorBrowserSettings';
 
 export interface LeagueBrowserSourceSettings {
   teamName: TeamNameBrowserSettings;
   score: ScoreBrowserSettings;
+  teamColor: TeamColorBrowserSettings;
 }
 
 export type BrowserSourceSettingsScope = 'global' | 'league' | 'mixed';
@@ -41,9 +47,13 @@ export function resolveLeagueBrowserSourceSettings(
   const scoreCandidate = browserSources && isRecord(browserSources.score)
     ? browserSources.score
     : null;
+  const teamColorCandidate = browserSources && isRecord(browserSources.teamColor)
+    ? browserSources.teamColor
+    : null;
 
   const hasTeamName = teamNameCandidate !== null;
   const hasScore = scoreCandidate !== null;
+  const hasTeamColor = teamColorCandidate !== null;
 
   return {
     settings: {
@@ -55,10 +65,13 @@ export function resolveLeagueBrowserSourceSettings(
         ...globalSettings.score,
         ...(scoreCandidate ?? {}),
       }),
+      // Team-color settings contain nested appearance/position objects, so
+      // merge them deeply before normalizing to preserve partial overrides.
+      teamColor: mergeTeamColorBrowserSettings(globalSettings.teamColor, teamColorCandidate),
     },
-    scope: hasTeamName && hasScore
+    scope: hasTeamName && hasScore && hasTeamColor
       ? 'league'
-      : hasTeamName || hasScore
+      : hasTeamName || hasScore || hasTeamColor
         ? 'mixed'
         : 'global',
   };
@@ -78,6 +91,7 @@ export function mergeLeagueBrowserSourceSettings(
       ...currentBrowserSources,
       teamName: normalizeTeamNameBrowserSettings(browserSourceSettings.teamName),
       score: normalizeScoreBrowserSettings(browserSourceSettings.score),
+      teamColor: normalizeTeamColorBrowserSettings(browserSourceSettings.teamColor),
     },
   } as unknown as Json;
 }

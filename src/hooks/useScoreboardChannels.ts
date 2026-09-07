@@ -6,6 +6,7 @@ import {
   type GoalScoredPayload,
   type ScoreboardStatePayload,
 } from '../types/scoreboardEvent';
+import type { TeamColorBrowserSettings } from '../types/teamColorBrowserSettings';
 
 export function broadcastScoreboardButton(buttonId: string): void {
   postMacroChannelMessage(MACRO_CHANNELS.buttonEvents, {
@@ -46,6 +47,19 @@ export function broadcastScoreboardState(payload: ScoreboardStatePayload): void 
   }
 
   postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, event);
+}
+
+/** Notify transparent Team Color Browser Sources of a static-settings update. */
+export function broadcastTeamColorSettings(
+  leagueId: string | null | undefined,
+  settings: TeamColorBrowserSettings,
+): void {
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
+    type: 'TeamColorSettingsUpdated',
+    leagueId: leagueId ?? null,
+    settings,
+    timestamp: Date.now(),
+  });
 }
 
 export function requestScoreboardState(): void {

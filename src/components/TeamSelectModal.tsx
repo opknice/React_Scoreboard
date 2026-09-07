@@ -1,4 +1,5 @@
 export interface SelectableTeam {
+  id: string;
   name: string;
   short_name?: string | null;
   color_primary?: string;

@@ -1,0 +1,74 @@
+.team-color-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.team-color-control-group {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.team-color-control-group-title {
+  color: #bfdbfe;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.team-color-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.team-color-control-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.team-color-control-field input,
+.team-color-control-field select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.team-color-control-field input[type='color'] {
+  height: 30px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.team-color-control-field input[type='range'] {
+  accent-color: #38bdf8;
+}
+
+.team-color-url-list {
+  display: grid;
+  gap: 6px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.team-color-url-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.team-color-url-row span {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 520px) {
+  .team-color-control-grid {
+    grid-template-columns: 1fr;
+  }
+}
