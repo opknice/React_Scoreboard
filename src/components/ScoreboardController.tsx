@@ -19,7 +19,7 @@ import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
 import ModalBackdrop from './ModalBackdrop';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
-import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
+import { useObsVideoFolderConnection } from '../context/useObsVideoFolderContext';
 import { useObsReplayBufferFolderRescan } from '../hooks/useObsReplayBufferFolderRescan';
 import { useScoreboardModalState } from '../hooks/useScoreboardModalState';
 import { useScoreboardMatchState } from '../hooks/useScoreboardMatchState';
@@ -122,7 +122,7 @@ export default function ScoreboardController() {
   // without being re-registered every render (avoids stale closure on hotkeys)
   const hotkeyHandlerRef = useRef<((action: string) => void) | null>(null);
 
-  const videoFolder = useObsVideoFolderContext();
+  const videoFolder = useObsVideoFolderConnection();
   const handleObsReplayBufferSaved = useObsReplayBufferFolderRescan(videoFolder.rescan);
 
   const obs = useOBSWebSocket(
@@ -580,6 +580,7 @@ export default function ScoreboardController() {
   }, [supabaseTeams, triggerToast, updateSupabaseTeam]);
   const {
     activeLeagueId: activeSupabaseLeagueId,
+    captureActiveContext,
     activeLeague: activeSupabaseLeague,
     matches: supabaseMatches,
     refreshLeagueDetails,
@@ -589,6 +590,15 @@ export default function ScoreboardController() {
     getPlayerMatchStats,
     upsertPlayerMatchStat,
   } = supabaseLeague;
+  const matchSelection = useMemo(() => ({ matchIdInput, teamIdA, teamIdB }), [matchIdInput, teamIdA, teamIdB]);
+  const matchSelectionRef = useRef(matchSelection);
+  matchSelectionRef.current = matchSelection;
+  const captureMatchContext = useCallback(() => {
+    const selection = matchSelectionRef.current;
+    const isLeagueCurrent = captureActiveContext();
+    return () => isLeagueCurrent() && matchSelectionRef.current === selection;
+  }, [captureActiveContext]);
+
   const persistedLeagueDetailLabels = useMemo(
     () => parseLeagueDetailLabels(activeSupabaseLeague?.settings),
     [activeSupabaseLeague?.settings],
@@ -1298,6 +1308,7 @@ export default function ScoreboardController() {
 
   // --- Confirm and Save Match (with Modal confirmation) ---
   const confirmAndSaveMatch = async () => {
+    const isCurrent = captureMatchContext();
     setShowConfirmSaveModal(false);
     setIsSavingMatch(true); // เริ่ม loading
     
@@ -1306,7 +1317,7 @@ export default function ScoreboardController() {
       const success = await handleSaveMatchToSupabase();
       
       // ถ้าบันทึกสำเร็จ → โหลดแมตช์คู่ถัดไป
-      if (success) {
+      if (success && isCurrent()) {
         await loadNextPendingMatch();
       }
     } catch {
@@ -1318,9 +1329,11 @@ export default function ScoreboardController() {
 
   // --- Load Next Pending Match (after successful save) ---
   const loadNextPendingMatch = useCallback(async () => {
+    const isCurrent = captureMatchContext();
     // Use the fresh server result directly. Reading React state after await
     // would still read this callback's old render snapshot.
     const refreshedDetails = await refreshLeagueDetails();
+    if (!isCurrent()) return;
     if (!refreshedDetails) {
       triggerToast('โหลดข้อมูลลีกล่าสุดไม่สำเร็จ กรุณารีเฟรชแล้วลองอีกครั้ง', 'error');
       return;
@@ -1353,6 +1366,7 @@ export default function ScoreboardController() {
       triggerToast(`📋 โหลดแมตช์คู่ถัดไป: ${nextMatch.team_a_name} vs ${nextMatch.team_b_name}`, 'info');
     }
   }, [
+    captureMatchContext,
     applyMatchFromSupabase,
     clearTeamData,
     matchIdInput,
@@ -1469,7 +1483,7 @@ export default function ScoreboardController() {
     if (result.success) {
       const pathInfo = videoFolder.savedPath ? ` (${videoFolder.savedPath})` : '';
       triggerToast(
-        `เชื่อมต่อโฟลเดอร์ "${result.folderName || videoFolder.folderName}" แล้ว${pathInfo} · ${result.fileCount ?? videoFolder.videoFiles.length} ไฟล์`,
+        `เชื่อมต่อโฟลเดอร์ "${result.folderName || videoFolder.folderName}" แล้ว${pathInfo} · ${result.fileCount ?? videoFolder.getVideoFiles().length} ไฟล์`,
         'success'
       );
       if (result.pathMismatch && videoFolder.savedPath) {
@@ -1772,6 +1786,7 @@ export default function ScoreboardController() {
   }, [playerDisplay]);
 
   const handleRecordGoalAndShow = useCallback(async (team: 'A' | 'B', player: Player) => {
+    const isCurrent = captureMatchContext();
     const leagueId = activeSupabaseLeagueId;
     const selectedTeamId = team === 'A' ? teamIdA : teamIdB;
     const currentMatch = supabaseMatches.find((match) => (
@@ -1797,6 +1812,7 @@ export default function ScoreboardController() {
     setRecordingPlayerId(player.id);
     try {
       const stats = await getPlayerMatchStats(player.team_id);
+      if (!isCurrent()) return;
       const existing = stats.find((stat) => stat.match_id === currentMatch.id && stat.player_id === player.id);
       await upsertPlayerMatchStat({
         league_id: leagueId,
@@ -1806,14 +1822,14 @@ export default function ScoreboardController() {
         goals: (existing?.goals ?? 0) + 1,
       });
       triggerToast(`บันทึกประตูของ ${player.name} สำเร็จ`, 'success');
-      handleShowPlayer(team, player);
+      if (isCurrent()) handleShowPlayer(team, player);
     } catch (error: unknown) {
       triggerToast(error instanceof Error ? `บันทึกประตูไม่สำเร็จ: ${error.message}` : 'บันทึกประตูไม่สำเร็จ', 'error');
     } finally {
       recordingPlayerRef.current = null;
       setRecordingPlayerId(null);
     }
-  }, [activeSupabaseLeagueId, getPlayerMatchStats, handleShowPlayer, matchIdInput, supabaseMatches, teamIdA, teamIdB, triggerToast, upsertPlayerMatchStat]);
+  }, [captureMatchContext, activeSupabaseLeagueId, getPlayerMatchStats, handleShowPlayer, matchIdInput, supabaseMatches, teamIdA, teamIdB, triggerToast, upsertPlayerMatchStat]);
 
   const playerBrowserUrl = useMemo(
     () => buildPlayerBrowserUrl(getOrigin(), activeSupabaseLeagueId),

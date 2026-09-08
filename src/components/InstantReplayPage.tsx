@@ -1,5 +1,6 @@
-import InstantReplayControl from './InstantReplayControl';
-import InstantReplayScreen from './InstantReplayScreen';
+import { lazy, Suspense } from 'react';
+const InstantReplayControl = lazy(() => import('./InstantReplayControl'));
+const InstantReplayScreen = lazy(() => import('./InstantReplayScreen'));
 
 interface InstantReplayPageProps {
   mode?: 'control' | 'screen';
@@ -15,8 +16,8 @@ interface InstantReplayPageProps {
  */
 export default function InstantReplayPage({ mode = 'control' }: InstantReplayPageProps) {
   if (mode === 'screen') {
-    return <InstantReplayScreen />;
+    return <Suspense fallback={null}><InstantReplayScreen /></Suspense>;
   }
 
-  return <InstantReplayControl />;
+  return <Suspense fallback={<div role="status">กำลังโหลด Replay...</div>}><InstantReplayControl /></Suspense>;
 }

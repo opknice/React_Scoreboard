@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Player } from '../config/supabaseClient';
+import { subscribeTeamData } from '../utils/leagueDataEvents';
 
 export interface ScoreboardTeamPlayersState {
   players: Player[];
@@ -57,6 +58,11 @@ export function useScoreboardTeamPlayers(
   const refresh = useCallback(() => {
     setRefreshToken((current) => current + 1);
   }, []);
+
+  useEffect(() => {
+    if (!teamId || !leagueId) return;
+    return subscribeTeamData(leagueId, teamId, ['players'], refresh);
+  }, [leagueId, teamId, refresh]);
 
   return { players, loading, error, refresh };
 }

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { useLocalFontOptions } from '../hooks/useLocalFontOptions';
 import type { Team } from '../config/supabaseClient';
 import {
-  TEAM_NAME_FONT_OPTIONS,
   TEAM_NAME_MAX_FONT_SIZE,
   TEAM_NAME_MIN_FONT_SIZE,
   FONT_WEIGHT_OPTIONS,
@@ -29,25 +29,10 @@ import {
   type PlayerBrowserSettings,
 } from '../types/playerBrowserSettings';
 import LogoWithCrop from './LogoWithCrop';
-import LogoBrowserCropModal from './LogoBrowserCropModal';
+const LogoBrowserCropModal = lazy(() => import('./LogoBrowserCropModal'));
 import TeamColorBrowserSourcePanel from './TeamColorBrowserSourcePanel';
 import ModalBackdrop from './ModalBackdrop';
 import './QuickSetupModal.css';
-
-interface LocalFontData {
-  family: string;
-  fullName?: string;
-  style?: string;
-}
-
-interface FontAccessWindow extends Window {
-  queryLocalFonts?: () => Promise<LocalFontData[]>;
-}
-
-interface FontOption {
-  value: string;
-  label: string;
-}
 
 interface QuickSetupModalProps {
   isOpen: boolean;
@@ -166,8 +151,16 @@ export default function QuickSetupModal({
   const [isCustomBrowserSourceOpen, setIsCustomBrowserSourceOpen] = useState(false);
   const [isPlayerBroadcastOpen, setIsPlayerBroadcastOpen] = useState(false);
   const [isFootballLeagueTableOpen, setIsFootballLeagueTableOpen] = useState(false);
-  const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
-  const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
+  const { fontOptions, localFontMessage, loading: fontsLoading, refresh: loadLocalFonts } = useLocalFontOptions(
+    isOpen && (openPanel === 'team-name' || openPanel === 'score'),
+  );
+  const displayedFontOptions = useMemo(() => {
+    const options = new Map(fontOptions.map(option => [option.value, option]));
+    for (const family of [teamNameSettings.fontFamily, scoreSettings.fontFamily]) {
+      if (family && !options.has(family)) options.set(family, { value: family, label: family });
+    }
+    return [...options.values()];
+  }, [fontOptions, teamNameSettings.fontFamily, scoreSettings.fontFamily]);
   const [logoPreviewSide, setLogoPreviewSide] = useState<'A' | 'B' | 'both'>('both');
   const [cropModalTeam, setCropModalTeam] = useState<Team | null>(null);
   const [matchState] = useState(() => {
@@ -219,34 +212,6 @@ export default function QuickSetupModal({
     });
   };
 
-  const loadLocalFonts = useCallback(async () => {
-    const queryLocalFonts = typeof window === 'undefined'
-      ? undefined
-      : (window as FontAccessWindow).queryLocalFonts;
-
-    if (!queryLocalFonts) {
-      setLocalFontMessage('Browser นี้ไม่รองรับการอ่านรายชื่อ Font ในเครื่อง ใช้รายการสำรอง');
-      return;
-    }
-
-    try {
-      const fonts = await queryLocalFonts();
-      const options = new Map<string, FontOption>(
-        TEAM_NAME_FONT_OPTIONS.map((option) => [option.value, option]),
-      );
-      fonts.forEach((font) => {
-        const family = font.family.trim();
-        if (family && !options.has(family)) {
-          options.set(family, { value: family, label: `${family} (ในเครื่อง)` });
-        }
-      });
-      setFontOptions(Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label)));
-      setLocalFontMessage(`พบ Font ในเครื่อง ${fonts.length} รายการ`);
-    } catch {
-      setLocalFontMessage('ไม่ได้รับสิทธิ์อ่าน Font ในเครื่อง ใช้รายการสำรอง');
-    }
-  }, []);
-
   useEffect(() => {
     if (!isOpen) {
       setOpenPanel(null);
@@ -255,10 +220,6 @@ export default function QuickSetupModal({
       setIsFootballLeagueTableOpen(false);
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen) void loadLocalFonts();
-  }, [isOpen, loadLocalFonts]);
 
   if (!isOpen) return null;
 
@@ -406,11 +367,11 @@ export default function QuickSetupModal({
                 value={teamNameSettings.fontFamily}
                 onChange={(event) => onTeamNameSettingsChange({ fontFamily: event.target.value as TeamNameBrowserSettings['fontFamily'] })}
               >
-                {fontOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {displayedFontOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <div className="quick-setup-local-font-row">
                 <span>{localFontMessage}</span>
-                <button type="button" className="btn-secondary" onClick={() => void loadLocalFonts()}>โหลดใหม่</button>
+                <button type="button" className="btn-secondary" disabled={fontsLoading} onClick={loadLocalFonts}>โหลดใหม่</button>
               </div>
             </label>
 
@@ -754,27 +715,29 @@ export default function QuickSetupModal({
 
             {/* Logo Browser Crop Modal */}
             {cropModalTeam && (
-              <LogoBrowserCropModal
-                isOpen
-                onClose={() => setCropModalTeam(null)}
-                team={cropModalTeam}
-                cropMetadata={cropModalTeam.logo_browser_crop_metadata}
-                cropContext="logo-browser"
-                initialFrameScalePercent={
-                  parseCropMetadata(cropModalTeam.logo_browser_crop_metadata)?.frameScalePercent
-                  ?? logoBrowserScalePercent
-                }
-                onSave={async (crop) => {
-                  await onUpdateTeam(cropModalTeam.id, {
-                    logo_browser_crop_metadata: cropMetadataToJson(crop),
-                  });
-                }}
-                onReset={async () => {
-                  await onUpdateTeam(cropModalTeam.id, {
-                    logo_browser_crop_metadata: null,
-                  });
-                }}
-              />
+              <Suspense fallback={<div role="status">กำลังโหลดเครื่องมือตัดภาพ...</div>}>
+                <LogoBrowserCropModal
+                  isOpen
+                  onClose={() => setCropModalTeam(null)}
+                  team={cropModalTeam}
+                  cropMetadata={cropModalTeam.logo_browser_crop_metadata}
+                  cropContext="logo-browser"
+                  initialFrameScalePercent={
+                    parseCropMetadata(cropModalTeam.logo_browser_crop_metadata)?.frameScalePercent
+                    ?? logoBrowserScalePercent
+                  }
+                  onSave={async (crop) => {
+                    await onUpdateTeam(cropModalTeam.id, {
+                      logo_browser_crop_metadata: cropMetadataToJson(crop),
+                    });
+                  }}
+                  onReset={async () => {
+                    await onUpdateTeam(cropModalTeam.id, {
+                      logo_browser_crop_metadata: null,
+                    });
+                  }}
+                />
+              </Suspense>
             )}
           </div> : null}
         </div>
@@ -798,11 +761,11 @@ export default function QuickSetupModal({
                 value={scoreSettings.fontFamily}
                 onChange={(event) => onScoreSettingsChange({ fontFamily: event.target.value as ScoreBrowserSettings['fontFamily'] })}
               >
-                {fontOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {displayedFontOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <div className="quick-setup-local-font-row">
                 <span>{localFontMessage}</span>
-                <button type="button" className="btn-secondary" onClick={() => void loadLocalFonts()}>โหลดใหม่</button>
+                <button type="button" className="btn-secondary" disabled={fontsLoading} onClick={loadLocalFonts}>โหลดใหม่</button>
               </div>
             </label>
 

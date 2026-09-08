@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Match, Player, PlayerMatchStat, PlayerPosition, Team } from '../../config/supabaseClient';
 import ModalBackdrop from '../ModalBackdrop';
+import { subscribeTeamData, type LeagueDataTable } from '../../utils/leagueDataEvents';
 import { usePlayerImageUploadQuota } from '../../hooks/usePlayerImageUploadQuota';
 import { uploadPlayerImage } from '../../services/playerImageStorageService';
 
@@ -78,33 +79,46 @@ export default function PlayerManagementModal({
     [leagueId, matches, team?.id],
   );
 
-  const reload = async () => {
-    if (!team) return;
-    const [nextPlayers, nextStats] = await Promise.all([onGetPlayers(team.id), onGetStats(team.id)]);
-    setPlayers(nextPlayers);
-    setStats(nextStats);
-  };
+  const contextRef = useRef(0);
+  const playersRequestRef = useRef(0);
+  const statsRequestRef = useRef(0);
+  const [loadError, setLoadError] = useState('');
+  const teamId = team?.id;
+  const reload = useCallback(async (tables = new Set<LeagueDataTable>(['players', 'player_match_stats'])) => {
+    if (!teamId) return;
+    const context = contextRef.current;
+    setLoadError('');
+    try {
+      await Promise.all([
+        tables.has('players') ? (async () => {
+          const request = ++playersRequestRef.current;
+          const rows = await onGetPlayers(teamId);
+          if (context === contextRef.current && request === playersRequestRef.current) setPlayers(rows);
+        })() : undefined,
+        tables.has('player_match_stats') ? (async () => {
+          const request = ++statsRequestRef.current;
+          const rows = await onGetStats(teamId);
+          if (context === contextRef.current && request === statsRequestRef.current) setStats(rows);
+        })() : undefined,
+      ]);
+    } catch (error) {
+      if (context === contextRef.current) setLoadError(error instanceof Error ? error.message : 'โหลดข้อมูลนักเตะไม่สำเร็จ');
+    }
+  }, [teamId, onGetPlayers, onGetStats]);
 
   useEffect(() => {
-    if (!isOpen || !team) return;
-    void reload();
-  // reload is intentionally scoped to the selected team and modal instance.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, team?.id, leagueId]);
+    contextRef.current += 1;
+    setPlayers([]);
+    setStats([]);
+    setBusy(false);
+    if (isOpen && teamId) void reload();
+    return () => { contextRef.current += 1; };
+  }, [isOpen, teamId, leagueId, reload]);
 
   useEffect(() => {
-    if (!isOpen || !team) return;
-    const handleRemoteChange = (event: Event) => {
-      if (!(event instanceof CustomEvent)) return;
-      const leagueChanged = event.detail && typeof event.detail === 'object'
-        && (event.detail as { leagueId?: unknown }).leagueId === leagueId;
-      if (leagueChanged) void reload();
-    };
-    window.addEventListener('supabase_league_changed', handleRemoteChange);
-    return () => window.removeEventListener('supabase_league_changed', handleRemoteChange);
-  // reload is intentionally scoped to the selected team and modal instance.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, team?.id, leagueId]);
+    if (!isOpen || !teamId) return;
+    return subscribeTeamData(leagueId, teamId, ['players', 'player_match_stats'], (tables) => void reload(tables));
+  }, [isOpen, teamId, leagueId, reload]);
 
   if (!isOpen || !team) return null;
 
@@ -117,19 +131,22 @@ export default function PlayerManagementModal({
   const savePlayer = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!draft.name.trim()) return;
+    const context = contextRef.current;
     setBusy(true);
     try {
       if (editingId) {
         const updated = await onUpdatePlayer(editingId, { ...draft, name: draft.name.trim(), team_id: team.id, league_id: leagueId });
+        if (context !== contextRef.current) return;
         setPlayers((current) => current.map((player) => player.id === updated.id ? updated : player));
       } else {
         const created = await onCreatePlayer({ ...draft, name: draft.name.trim(), team_id: team.id, league_id: leagueId });
+        if (context !== contextRef.current) return;
         setPlayers((current) => [...current, created].sort((a, b) => a.jersey_number - b.jersey_number));
       }
       resetDraft();
       setIsPlayerFormOpen(false);
     } finally {
-      setBusy(false);
+      if (context === contextRef.current) setBusy(false);
     }
   };
 
@@ -169,14 +186,16 @@ export default function PlayerManagementModal({
 
   const removePlayer = async (player: Player) => {
     if (!window.confirm(`ลบนักเตะ "${player.name}" และสถิติประตูทั้งหมดใช่หรือไม่?`)) return;
+    const context = contextRef.current;
     setBusy(true);
     try {
       await onDeletePlayer(player.id, team.id);
+      if (context !== contextRef.current) return;
       setPlayers((current) => current.filter((item) => item.id !== player.id));
       setStats((current) => current.filter((item) => item.player_id !== player.id));
       if (statsPlayerId === player.id) setStatsPlayerId(null);
     } finally {
-      setBusy(false);
+      if (context === contextRef.current) setBusy(false);
     }
   };
 
@@ -190,25 +209,29 @@ export default function PlayerManagementModal({
   const saveStats = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!statsPlayerId || !statsMatchId) return;
+    const context = contextRef.current;
     setBusy(true);
     try {
       const saved = await onUpsertStat({ league_id: leagueId, match_id: statsMatchId, player_id: statsPlayerId, team_id: team.id, goals: Math.max(0, Math.floor(statsGoals)) });
+      if (context !== contextRef.current) return;
       setStats((current) => [...current.filter((stat) => stat.id !== saved.id && !(stat.match_id === saved.match_id && stat.player_id === saved.player_id)), saved]);
     } finally {
-      setBusy(false);
+      if (context === contextRef.current) setBusy(false);
     }
   };
 
   const removeStats = async () => {
     const existing = stats.find((stat) => stat.player_id === statsPlayerId && stat.match_id === statsMatchId);
     if (!existing || !window.confirm('ลบสถิติประตูของแมตช์นี้ใช่หรือไม่?')) return;
+    const context = contextRef.current;
     setBusy(true);
     try {
       await onDeleteStat(existing.id);
+      if (context !== contextRef.current) return;
       setStats((current) => current.filter((stat) => stat.id !== existing.id));
       setStatsGoals(0);
     } finally {
-      setBusy(false);
+      if (context === contextRef.current) setBusy(false);
     }
   };
 
@@ -226,6 +249,7 @@ export default function PlayerManagementModal({
       <div className="league-card league-player-modal" role="dialog" aria-modal="true" aria-labelledby="player-modal-title">
         <div className="league-team-modal-header">
           <h3 id="player-modal-title" className="league-card-title"><i className="fas fa-user-shield" style={{ color: '#38bdf8' }} /><span>จัดการนักเตะ</span>{team.logo_url && !teamLogoFailed && <img className="league-player-modal-team-logo" src={team.logo_url} alt={`โลโก้ทีม ${team.name}`} onError={() => setTeamLogoFailed(true)} />}<span> {team.name}</span></h3>
+        {loadError && <p role="alert">{loadError}</p>}
           <div className="league-player-modal-header-actions">
             <button type="button" className={isPlayerFormOpen ? 'league-btn-secondary' : 'league-btn-primary'} onClick={togglePlayerForm}>
               <i className={`fas ${isPlayerFormOpen ? 'fa-times' : 'fa-plus'}`} aria-hidden="true" />

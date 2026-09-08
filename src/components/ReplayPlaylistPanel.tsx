@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { formatSize } from '../utils/replayFormatters';
 import type {
   ReplayPlaylistItem,
@@ -37,7 +38,7 @@ function getItemStatusLabel(
   return 'รอเล่น';
 }
 
-export default function ReplayPlaylistPanel({
+function ReplayPlaylistPanel({
   items,
   missingItems,
   status,
@@ -169,3 +170,5 @@ export default function ReplayPlaylistPanel({
     </div>
   );
 }
+
+export default memo(ReplayPlaylistPanel);

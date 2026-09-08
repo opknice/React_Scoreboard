@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isVideoFile } from '../utils/replayFormatters';
 
 export const STORAGE_KEYS = {
@@ -186,6 +186,11 @@ export function useObsVideoFolder() {
   const [folderHandle, setFolderHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [videoFiles, setVideoFiles] = useState<File[]>([]);
   const [lastScanTimestamp, setLastScanTimestamp] = useState(0);
+  const filesRef = useRef(videoFiles);
+  const handleRef = useRef(folderHandle);
+  const scanVersionRef = useRef(0);
+  useEffect(() => () => { scanVersionRef.current += 1; }, []);
+  const getVideoFiles = useCallback(() => filesRef.current, []);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -195,6 +200,9 @@ export function useObsVideoFolder() {
 
   const applyConnectedState = useCallback(
     (handle: FileSystemDirectoryHandle | null, files: File[], name: string) => {
+      scanVersionRef.current += 1;
+      handleRef.current = handle;
+      filesRef.current = files;
       setFolderHandle(handle);
       setVideoFiles(files);
       setFolderName(name);
@@ -324,6 +332,9 @@ export function useObsVideoFolder() {
   );
 
   const disconnect = useCallback(() => {
+    scanVersionRef.current += 1;
+    handleRef.current = null;
+    filesRef.current = [];
     setFolderHandle(null);
     setVideoFiles([]);
     setIsConnected(false);
@@ -349,23 +360,34 @@ export function useObsVideoFolder() {
   }, [disconnect]);
 
   const rescan = useCallback(async (): Promise<File[]> => {
-    if (!folderHandle) {
-      return videoFiles;
-    }
-
+    const handle = handleRef.current;
+    if (!handle) return filesRef.current;
+    const version = ++scanVersionRef.current;
     try {
-      const files = await scanVideosFromHandle(folderHandle);
-      setVideoFiles(files);
+      const files = await scanVideosFromHandle(handle);
+      if (version !== scanVersionRef.current) return filesRef.current;
+      const previous = filesRef.current;
+      const unchanged = previous.length === files.length && previous.every((file, index) => {
+        const next = files[index];
+        return file.name === next.name && file.size === next.size && file.lastModified === next.lastModified
+          && file.type === next.type && file.webkitRelativePath === next.webkitRelativePath;
+      });
+      const nextFiles = unchanged ? previous : files;
+      filesRef.current = nextFiles;
+      setVideoFiles(nextFiles);
       setLastScanTimestamp(Date.now());
-      return files;
+      return nextFiles;
     } catch (error) {
-      console.warn('Failed to rescan video folder:', error);
-      setLastError('สканโฟลเดอร์ใหม่ไม่สำเร็จ');
-      return videoFiles;
+      if (version === scanVersionRef.current) {
+        console.warn('Failed to rescan video folder:', error);
+        setLastError('สแกนโฟลเดอร์ใหม่ไม่สำเร็จ');
+      }
+      return filesRef.current;
     }
-  }, [folderHandle, videoFiles]);
+  }, []);
 
-  return {
+  return useMemo(() => ({
+    getVideoFiles,
     savedPath,
     setSavedPath,
     savePathToStorage,
@@ -383,7 +405,9 @@ export function useObsVideoFolder() {
     clearStoredFolder,
     rescan,
     handleFallbackFolderChange,
-  };
+  }), [getVideoFiles, savedPath, savePathToStorage, folderName, folderHandle, videoFiles, lastScanTimestamp,
+    isConnected, isConnecting, lastError, supportsDirectoryPicker, connect, disconnect, clearStoredFolder,
+    rescan, handleFallbackFolderChange]);
 }
 
 export type ObsVideoFolderContextValue = ReturnType<typeof useObsVideoFolder>;

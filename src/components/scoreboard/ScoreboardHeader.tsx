@@ -4,6 +4,12 @@ import type { AccessDecision } from '../../types/authAccess';
 import UserAvatar from '../UserAvatar';
 import { formatTrialRemaining } from '../../utils/trialAccess';
 import UiIcon from '../UiIcon';
+import { useObsVideoFolderFiles } from '../../context/useObsVideoFolderContext';
+
+function VideoFileCount() {
+  const { videoFiles } = useObsVideoFolderFiles();
+  return <>{videoFiles.length} files</>;
+}
 
 export interface ScoreboardHeaderProps {
   videoFolder: {
@@ -11,7 +17,6 @@ export interface ScoreboardHeaderProps {
     isConnecting: boolean;
     folderName: string;
     savedPath: string;
-    videoFiles: unknown[];
   };
   onConnectVideoFolder: () => void;
   onResetVideoFolder: () => void;
@@ -64,7 +69,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
               <span>Connecting ....</span>
             ) : videoFolder.isConnected ? (
               <span>
-                📂 {videoFolder.savedPath || videoFolder.folderName} ({videoFolder.videoFiles.length} files)
+                📂 {videoFolder.savedPath || videoFolder.folderName} (<VideoFileCount />)
               </span>
             ) : (
               <span>Status OFF</span>

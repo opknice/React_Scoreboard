@@ -28,7 +28,8 @@ const GoalAnimationOverlay = lazy(() => import('./components/GoalAnimationOverla
 const TeamColorBrowserSource = lazy(() => import('./components/TeamColorBrowserSource'));
 const PlayerBrowserSource = lazy(() => import('./components/PlayerBrowserSource'));
 const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV2Page'));
-const InstantReplayPage = lazy(() => import('./components/InstantReplayPage'));
+const InstantReplayControl = lazy(() => import('./components/InstantReplayControl'));
+const InstantReplayScreen = lazy(() => import('./components/InstantReplayScreen'));
 const TailwindTestPage = lazy(() => import('./pages/TailwindTestPage'));
 
 function isTransparentSurfacePath(pathname: string): boolean {
@@ -148,11 +149,11 @@ function AppRoutes() {
             path="/replay"
             element={
               <AuthGuard>
-                <InstantReplayPage mode="control" />
+                <InstantReplayControl />
               </AuthGuard>
             }
           />
-          <Route path="/replay/screen" element={<InstantReplayPage mode="screen" />} />
+          <Route path="/replay/screen" element={<InstantReplayScreen />} />
 
           {/* Tailwind CSS Test Page */}
           <Route path="/test-tailwind" element={<TailwindTestPage />} />

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useReplayChannel } from '../hooks/useReplayChannel';
 import { useReplayPlaylist } from '../hooks/useReplayPlaylist';
-import { formatTime, formatSize, findLatestFile, getVideoMimeType } from '../utils/replayFormatters';
+import { formatSize, findLatestFile, getVideoMimeType } from '../utils/replayFormatters';
 import ReplayPlaylistPanel from './ReplayPlaylistPanel';
+import ReplayTimeline from './ReplayTimeline';
+import { createReplayClock } from '../utils/replayClock';
 import { MACRO_CHANNELS, postMacroChannelMessage } from '../macros/macroChannels';
 import {
   isReplayPlaylistItemEndedEvent,
@@ -66,12 +68,7 @@ export default function InstantReplayControl() {
 
   const [loadedFileName, setLoadedFileName] = useState('');
   const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  // State values are intentionally unused in the current UI (tracked for future use);
-  // setMarkerA/setMarkerB are actively called to mirror the screen's marker state.
-  // Prefixed with _ to satisfy TS6133 while keeping the setter names readable.
-  const [_markerA, setMarkerA] = useState<number | null>(null);
-  const [_markerB, setMarkerB] = useState<number | null>(null);
+  const [replayClock] = useState(createReplayClock);
   // Fix #1: use lazy initializers so loadSettings() runs once on mount only
   const [replayDuration, setReplayDuration] = useState(() => loadSettings().replayDuration);
   // Fix #4: track "Full" preset active state separately from replayDuration value
@@ -171,9 +168,8 @@ export default function InstantReplayControl() {
       setLoadedFileName(targetFile.name);
       durationRef.current = 0;
       setDuration(0);
-      setCurrentTime(0);
-      setMarkerA(null);
-      setMarkerB(null);
+      replayClock.setTime(0);
+
 
       if (mode === 'playlist') {
         // Highlights should play in full at natural speed, independently of
@@ -194,7 +190,7 @@ export default function InstantReplayControl() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, [cancelPlaylist, createPlaybackId, send, sendCommand]);
+  }, [cancelPlaylist, createPlaybackId, send, sendCommand, replayClock]);
 
   const finishPlaylist = useCallback((status: ReplayPlaylistStatus) => {
     const completedSessionId = playlistSessionRef.current;
@@ -327,8 +323,7 @@ export default function InstantReplayControl() {
     sendCommand('setB', clipDuration);
     sendCommand('seek', trimStartTime);
     sendCommand('play');
-    setMarkerA(trimStartTime);
-    setMarkerB(clipDuration);
+
   }, [replayDuration, calculateTrimStartTime, sendCommand]);
 
   const handleReplayDurationChange = useCallback((value: number) => {
@@ -341,8 +336,7 @@ export default function InstantReplayControl() {
       sendCommand('setA', trimStartTime);
       sendCommand('setB', duration);
       sendCommand('seek', trimStartTime);
-      setMarkerA(trimStartTime);
-      setMarkerB(duration);
+
     }
   }, [duration, calculateTrimStartTime, sendCommand]);
 
@@ -371,14 +365,6 @@ export default function InstantReplayControl() {
     }
   }, []);
 
-  const handleTimelineClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    if (duration <= 0) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    sendCommand('seek', percentage * duration);
-  }, [duration, sendCommand]);
-
   useEffect(() => {
     const channel = channelRef.current;
     if (!channel) return;
@@ -388,29 +374,24 @@ export default function InstantReplayControl() {
       if (message.type !== 'status') return;
       if (message.playbackId && message.playbackId !== currentPlaybackIdRef.current) return;
 
-      setDuration(message.duration);
-      setCurrentTime(message.currentTime);
-      setMarkerA(message.markerA);
-      setMarkerB(message.markerB);
+      if (!Number.isFinite(message.duration) || message.duration < 0) return;
+      if (message.duration !== durationRef.current) setDuration(message.duration);
+      replayClock.setTime(message.currentTime);
 
       // Fix #2: use durationRef to avoid stale closure — applyAutoTrim fires
       // correctly on first status message after a new file is loaded
       if (message.duration > 0 && durationRef.current === 0) {
         if (playbackModeRef.current === 'single') {
           applyAutoTrim(message.duration);
-        } else {
-          // Playlist items are full-length highlights and must not inherit the
-          // short Instant Replay trim markers from the previous clip.
-          setMarkerA(null);
-          setMarkerB(null);
         }
       }
+      durationRef.current = message.duration;
     };
 
     channel.addEventListener('message', handleMessage);
     return () => channel.removeEventListener('message', handleMessage);
   // duration removed from deps — durationRef handles it without causing re-registration
-  }, [channelRef, applyAutoTrim]);
+  }, [channelRef, applyAutoTrim, replayClock]);
 
   // The screen notifies the control panel when a playlist item ends. This is
   // intentionally a private channel so Auto Macros only see the final
@@ -479,6 +460,15 @@ export default function InstantReplayControl() {
       }
     };
   }, [loadAndPlayLatestFile]);
+
+  const handleSeek = useCallback((seconds: number) => sendCommand('seek', seconds), [sendCommand]);
+  const handlePlayAll = useCallback(() => { void startPlaylist(); }, [startPlaylist]);
+  const clearPlaylist = playlist.clear;
+  const handleClearPlaylist = useCallback(() => {
+    clearPlaylist();
+    setPlaylistCurrentItemId(null);
+    setPlaylistCurrentIndex(-1);
+  }, [clearPlaylist]);
 
   const trimStart = duration > 0
     ? calculateTrimStartTime(duration, replayDuration)
@@ -639,31 +629,7 @@ export default function InstantReplayControl() {
               <span>ไทม์ไลน์ · จุดตัด</span>
               
             </div>
-            <div className="timeline-container">
-              <div className="timeline-labels">
-                <span>00:00</span>
-                <span className="current-time-label">{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-              <div className="timeline-track" onClick={handleTimelineClick}>
-                <div className="timeline-progress" style={{ width: `${(currentTime / duration) * 100}%` }} />
-                {trimStart !== null && (
-                  <div
-                    className="timeline-trim-region"
-                    style={{
-                      left: `${(trimStart / duration) * 100}%`,
-                      width: `${((duration - trimStart) / duration) * 100}%`,
-                    }}
-                  />
-                )}
-                {trimStart !== null && (
-                  <div className="timeline-marker timeline-marker-trim" style={{ left: `${(trimStart / duration) * 100}%` }}>
-                    <span>ตัด</span>
-                  </div>
-                )}
-                <div className="timeline-playhead" style={{ left: `${(currentTime / duration) * 100}%` }} />
-              </div>
-            </div>
+            <ReplayTimeline clock={replayClock} duration={duration} trimStart={trimStart} onSeek={handleSeek} />
           </div>
         )}
 
@@ -723,15 +689,11 @@ export default function InstantReplayControl() {
           currentIndex={playlistCurrentIndex}
           isLoading={isLoadingFile}
           isFolderConnected={videoFolder.isConnected}
-          onPlayAll={() => void startPlaylist()}
+          onPlayAll={handlePlayAll}
           onStop={stopPlaylist}
           onRemove={playlist.removeItem}
           onMove={playlist.moveItem}
-          onClear={() => {
-            playlist.clear();
-            setPlaylistCurrentItemId(null);
-            setPlaylistCurrentIndex(-1);
-          }}
+          onClear={handleClearPlaylist}
         />
 
       </section>
