@@ -15,6 +15,8 @@ import { buildInstantReplayBrowserUrl, buildVarReplayBrowserUrl } from '../utils
 
 export const VAR_REPLAY_BROWSER_SOURCE_NAME = 'VAR_Replay_Screen';
 export const INSTANT_REPLAY_BROWSER_SOURCE_NAME = 'Instant_Replay_Screen';
+export const VAR_REPLAY_SCENE_NAME = 'VAR';
+export const INSTANT_REPLAY_SCENE_NAME = 'REPLAY';
 
 export interface SetupProgress {
   step: string;
@@ -670,7 +672,7 @@ export class OBSSetupService {
     };
   }
 
-  async addOrUpdateVarReplayBrowserSource(sceneName = MAIN_SCENE_CONFIG.name) {
+  async addOrUpdateVarReplayBrowserSource(sceneName = VAR_REPLAY_SCENE_NAME) {
     return this.addOrUpdateReplayBrowserSource('var', sceneName);
   }
 
@@ -678,7 +680,7 @@ export class OBSSetupService {
     return this.updateReplayBrowserSource('var');
   }
 
-  async addOrUpdateInstantReplayBrowserSource(sceneName = MAIN_SCENE_CONFIG.name) {
+  async addOrUpdateInstantReplayBrowserSource(sceneName = INSTANT_REPLAY_SCENE_NAME) {
     return this.addOrUpdateReplayBrowserSource('instant', sceneName);
   }
 

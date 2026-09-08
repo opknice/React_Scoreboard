@@ -4,6 +4,7 @@ import { useTimerSnapshot, type TimerStore } from '../hooks/useTimer';
 import UiIcon from './UiIcon';
 
 interface ScoreboardTimerPanelProps {
+  embedded?: boolean;
   timer: TimerStore;
   onOpenPresetTime: () => void;
   onHideTime: () => void;
@@ -13,6 +14,7 @@ interface ScoreboardTimerPanelProps {
 }
 
 function ScoreboardTimerPanel({
+  embedded = false,
   timer,
   onOpenPresetTime,
   onHideTime,
@@ -23,7 +25,7 @@ function ScoreboardTimerPanel({
   const timerState = useTimerSnapshot(timer);
 
   return (
-    <div className="card" style={{ padding: '12px 16px' }}>
+    <div className={embedded ? 'scoreboard-timer-panel-section' : 'card'} style={embedded ? undefined : { padding: '12px 16px' }}>
       <div className="row timer-area-container" style={{ marginBottom: 0 }}>
         <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button className="btn-secondary btn-sm" onClick={onOpenPresetTime}>

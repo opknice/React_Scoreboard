@@ -1955,6 +1955,36 @@ export default function ScoreboardController() {
     />
   ), [teamIdB, activeSupabaseLeagueId, selectedPlayerB?.id, supabaseLeague.getPlayersByTeam, handleSelectPlayerB, playerDisplay?.playerId, playerDisplay?.visible, handleShowPlayer, handleHidePlayer, canRecordPlayerGoal, recordingPlayerId, handleRecordGoalAndShow]);
 
+  const labelsPanel = useMemo(() => (
+    (Boolean(label1 || label2 || label3) || hasAnyMatches) ? (
+      <div className="match-labels-panel">
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+            <strong>Label 1:</strong> {label1 || '-'}
+          </div>
+          <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+            <strong>Label 2:</strong> {label2 || '-'}
+          </div>
+          <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
+            <strong>Label 3:</strong> {label3 || '-'}
+          </div>
+        </div>
+      </div>
+    ) : null
+  ), [label1, label2, label3, hasAnyMatches]);
+
+  const timerPanel = useMemo(() => (
+    <ScoreboardTimerPanel
+      embedded
+      timer={timerStore}
+      onOpenPresetTime={handleOpenPresetTime}
+      onHideTime={handleHideTimer}
+      onPenaltyShootout={handleOpenPenaltyShootoutCallback}
+      onOpenVarReplay={handleOpenVarReplay}
+      onOpenInstantReplay={handleOpenInstantReplay}
+    />
+  ), [timerStore, handleOpenPresetTime, handleHideTimer, handleOpenPenaltyShootoutCallback, handleOpenVarReplay, handleOpenInstantReplay]);
+
   return (
     <Profiler id="ScoreboardController" onRender={reportControllerRender}>
       <div className="container">
@@ -1986,38 +2016,40 @@ export default function ScoreboardController() {
 
       {/* Header */}
       <div className="card scoreboard-top-card">
-        <ScoreboardHeader
-          embedded
-          videoFolder={videoFolder}
-          onConnectVideoFolder={handleVideoFolderConnect}
-          onResetVideoFolder={handleVideoFolderReset}
-          currentUser={currentUser}
-          authAccess={authAccess}
-          isSuperAdminUser={isSuperAdmin(currentUser?.email)}
-          onNavigateWhitelist={handleNavigateWhitelist}
-          onLogout={handleLogout}
-        />
-
-        {isSetupComplete && (
-          <ScoreboardControlsBar
+        <div className="scoreboard-top-card-content">
+          <ScoreboardHeader
             embedded
-            leagues={supabaseLeague.leagues}
-            activeLeagueId={supabaseLeague.activeLeagueId || ''}
-            selectedLeagueId={selectedLeagueIdToLoad}
-            loading={supabaseLeague.loading}
-            detailsLoading={supabaseLeague.detailsLoading}
-            refreshing={supabaseLeague.refreshing}
-            matches={supabaseLeague.matches}
-            pendingMatches={pendingMatches}
-            matchIdInput={matchIdInput}
-            onOpenLeagueManagement={handleOpenLeagueManagementFromControls}
-            onPrefetchLeagueManagement={handlePrefetchLeagueManagement}
-            onSelectLeague={handleSelectLeagueFromControls}
-            onRefreshLeague={handleRefreshLeague}
-            onNavigateMatch={handleNavigateMatch}
-            onSelectMatch={handleSelectMatchFromControls}
+            videoFolder={videoFolder}
+            onConnectVideoFolder={handleVideoFolderConnect}
+            onResetVideoFolder={handleVideoFolderReset}
+            currentUser={currentUser}
+            authAccess={authAccess}
+            isSuperAdminUser={isSuperAdmin(currentUser?.email)}
+            onNavigateWhitelist={handleNavigateWhitelist}
+            onLogout={handleLogout}
           />
-        )}
+
+          {isSetupComplete && (
+            <ScoreboardControlsBar
+              embedded
+              leagues={supabaseLeague.leagues}
+              activeLeagueId={supabaseLeague.activeLeagueId || ''}
+              selectedLeagueId={selectedLeagueIdToLoad}
+              loading={supabaseLeague.loading}
+              detailsLoading={supabaseLeague.detailsLoading}
+              refreshing={supabaseLeague.refreshing}
+              matches={supabaseLeague.matches}
+              pendingMatches={pendingMatches}
+              matchIdInput={matchIdInput}
+              onOpenLeagueManagement={handleOpenLeagueManagementFromControls}
+              onPrefetchLeagueManagement={handlePrefetchLeagueManagement}
+              onSelectLeague={handleSelectLeagueFromControls}
+              onRefreshLeague={handleRefreshLeague}
+              onNavigateMatch={handleNavigateMatch}
+              onSelectMatch={handleSelectMatchFromControls}
+            />
+          )}
+        </div>
       </div>
 
       {/* 2-Step Setup Onboarding Wizard Gate */}
@@ -2039,6 +2071,8 @@ export default function ScoreboardController() {
         <>
           {/* Team score and editor panel (Memoized) */}
           <MatchTeamsPanel
+            labelsPanel={labelsPanel}
+            timerPanel={timerPanel}
             scoreA={scoreA}
             scoreB={scoreB}
             nameA={nameA}
@@ -2072,20 +2106,12 @@ export default function ScoreboardController() {
           />
 
 
-          <ScoreboardTimerPanel
-            timer={timerStore}
-            onOpenPresetTime={handleOpenPresetTime}
-            onHideTime={handleHideTimer}
-            onPenaltyShootout={handleOpenPenaltyShootoutCallback}
-            onOpenVarReplay={handleOpenVarReplay}
-            onOpenInstantReplay={handleOpenInstantReplay}
-          />
+          {/* Match save triggers dynamically and footer settings */}
+          <div className="card scoreboard-actions-card">
+            {/* Match save triggers dynamically (Supabase) */}
+            <div className="match-save-section">
 
-          {/* Match save triggers dynamically */}
-          {/* Match save triggers dynamically (Supabase) */}
-          <div className="card" style={{ padding: '14px 18px', background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px' }}>
-
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center' }}>
               {!supabaseLeague.activeLeague ? (
                 // ไม่มีลีก → แสดงปุ่มเลือกลีก
                 <button
@@ -2094,7 +2120,7 @@ export default function ScoreboardController() {
                   onClick={() => setShowLeagueManagementModal(true)}
                   onFocus={handlePrefetchLeagueManagement}
                   onPointerEnter={handlePrefetchLeagueManagement}
-                  style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', padding: '8px 16px', fontWeight: 600 }}
+                  style={{ background: 'linear-gradient(135deg, #c77502 0%, #0369a1 100%)', border: 'none', padding: '8px 16px', fontWeight: 600 }}
                 >
                   <UiIcon name="trophy" /> เลือกลีก Supabase เพื่อเปิดใช้ปุ่มบันทึกผลบอล
                 </button>
@@ -2155,12 +2181,12 @@ export default function ScoreboardController() {
                 </button>
               )}
 
+              </div>
             </div>
-          </div>
 
-          {/* Footer Settings & Buttons */}
-          <div className="card">
-            <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
+            {/* Footer Settings & Buttons */}
+            <div className="footer-settings-section">
+              <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
               <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
                 <UiIcon name="sliders" />
                 <span>Quick Setup</span>
@@ -2177,25 +2203,10 @@ export default function ScoreboardController() {
                 <UiIcon name="copy" />
                 <span>คัดลอกข้อความ</span>
               </button>
+              </div>
             </div>
           </div>
 
-          {/* Labels display bar */}
-          {(Boolean(label1 || label2 || label3) || supabaseLeague.matches.length > 0) && (
-            <div className="card" style={{ padding: '8px 12px' }}>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-                  <strong>Label 1:</strong> {label1 || '-'}
-                </div>
-                <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-                  <strong>Label 2:</strong> {label2 || '-'}
-                </div>
-                <div style={{ flex: 1, minWidth: '180px', background: '#0f1115', padding: '4px 8px', borderRadius: '4px', textAlign: 'center', fontSize: '0.8rem', wordBreak: 'break-word' }}>
-                  <strong>Label 3:</strong> {label3 || '-'}
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
       <Suspense fallback={<ScoreboardLazyFallback onClose={() => {

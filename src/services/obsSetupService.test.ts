@@ -97,24 +97,26 @@ describe('OBSSetupService replay screen sources', () => {
     {
       label: 'VAR Replay',
       name: 'VAR_Replay_Screen',
+      scene: 'VAR',
       route: '/var-replay-v2/screen',
       add: (service: OBSSetupService) => service.addOrUpdateVarReplayBrowserSource(),
     },
     {
       label: 'Instant Replay',
       name: 'Instant_Replay_Screen',
+      scene: 'REPLAY',
       route: '/replay/screen',
       add: (service: OBSSetupService) => service.addOrUpdateInstantReplayBrowserSource(),
     },
   ] as const;
 
-  it.each(cases)('creates the $label source at 60 FPS and refreshes it', async ({ name, route, add }) => {
+  it.each(cases)('creates the $label source at 60 FPS and refreshes it', async ({ name, scene, route, add }) => {
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
     const obs = {
       call: vi.fn(async (method: string, params?: Record<string, unknown>) => {
         calls.push({ method, params });
         switch (method) {
-          case 'GetSceneList': return { scenes: [{ sceneName: 'Main Stream' }] };
+          case 'GetSceneList': return { scenes: [{ sceneName: 'Main Stream' }, { sceneName: 'VAR' }, { sceneName: 'REPLAY' }] };
           case 'GetInputSettings': throw new Error('source does not exist');
           case 'GetSceneItemId': return { sceneItemId: 71 };
           case 'CreateInput':
@@ -130,7 +132,7 @@ describe('OBSSetupService replay screen sources', () => {
     const create = calls.find(call => call.method === 'CreateInput');
     const settings = create?.params?.inputSettings as Record<string, unknown>;
     expect(result.updatedSources).toEqual([name]);
-    expect(create?.params).toMatchObject({ sceneName: 'Main Stream', inputName: name, inputKind: 'browser_source' });
+    expect(create?.params).toMatchObject({ sceneName: scene, inputName: name, inputKind: 'browser_source' });
     expect(settings).toMatchObject({
       url: `http://localhost:3000${route}`,
       width: 1920,
@@ -151,7 +153,7 @@ describe('OBSSetupService replay screen sources', () => {
       call: vi.fn(async (method: string, params?: Record<string, unknown>) => {
         calls.push({ method, params });
         switch (method) {
-          case 'GetSceneList': return { scenes: [{ sceneName: 'Main Stream' }] };
+          case 'GetSceneList': return { scenes: [{ sceneName: 'Main Stream' }, { sceneName: 'VAR' }, { sceneName: 'REPLAY' }] };
           case 'GetInputSettings': return { inputSettings: { url: 'http://localhost:5173/old' } };
           case 'GetSceneItemId': return { sceneItemId: 72 };
           case 'SetInputSettings':

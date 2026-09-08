@@ -2,6 +2,8 @@ import React from 'react';
 import UiIcon from '../UiIcon';
 
 export interface MatchTeamsPanelProps {
+  labelsPanel?: React.ReactNode;
+  timerPanel?: React.ReactNode;
   playerSelectorA?: React.ReactNode;
   playerSelectorB?: React.ReactNode;
   scoreA: number;
@@ -52,6 +54,8 @@ function getTeamInitials(nameStr: string) {
 }
 
 export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
+  labelsPanel,
+  timerPanel,
   scoreA,
   scoreB,
   nameA,
@@ -84,17 +88,20 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
   playerSelectorB,
 }) => {
   return (
-    <div className="card" style={{ padding: '12px', overflowX: 'auto' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          flexWrap: 'nowrap',
-          minWidth: '540px',
-        }}
-      >
+    <div className="card match-teams-panel">
+      <div className="match-teams-panel-inner">
+        {labelsPanel}
+        <div
+          className="match-teams-panel-content"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            flexWrap: 'nowrap',
+            minWidth: '540px',
+          }}
+        >
         {/* Score Team A */}
         <div className="score-buttons" style={{ flexShrink: 0 }}>
           <button className="plus" onClick={() => onAddGoal('A')}>
@@ -334,6 +341,8 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
             -
           </button>
         </div>
+        </div>
+        {timerPanel}
       </div>
     </div>
   );
