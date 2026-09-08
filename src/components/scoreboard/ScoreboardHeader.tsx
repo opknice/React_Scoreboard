@@ -12,6 +12,7 @@ function VideoFileCount() {
 }
 
 export interface ScoreboardHeaderProps {
+  embedded?: boolean;
   videoFolder: {
     isConnected: boolean;
     isConnecting: boolean;
@@ -28,6 +29,7 @@ export interface ScoreboardHeaderProps {
 }
 
 export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
+  embedded = false,
   videoFolder,
   onConnectVideoFolder,
   onResetVideoFolder,
@@ -39,8 +41,8 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
 }) => {
   return (
     <div
-      className="card"
-      style={{
+      className={embedded ? 'scoreboard-header-row' : 'card'}
+      style={embedded ? undefined : {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',

@@ -3,6 +3,7 @@ import type { League, Match } from '../../config/supabaseClient';
 import UiIcon from '../UiIcon';
 
 interface ScoreboardControlsBarProps {
+  embedded?: boolean;
   leagues: League[];
   activeLeagueId: string;
   selectedLeagueId: string;
@@ -21,6 +22,7 @@ interface ScoreboardControlsBarProps {
 }
 
 function ScoreboardControlsBar({
+  embedded = false,
   leagues,
   activeLeagueId,
   selectedLeagueId,
@@ -40,7 +42,7 @@ function ScoreboardControlsBar({
   const isRefreshing = loading || detailsLoading || refreshing;
 
   return (
-    <div className="card" style={{ padding: '8px 12px' }}>
+    <div className={embedded ? 'scoreboard-controls-row' : 'card'} style={embedded ? undefined : { padding: '8px 12px' }}>
       <div className="row space-between" style={{ gap: '8px', marginBottom: 0 }}>
         <div className="row" style={{ marginBottom: 0, gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
           <button

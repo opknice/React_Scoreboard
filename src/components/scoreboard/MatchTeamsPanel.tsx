@@ -2,6 +2,8 @@ import React from 'react';
 import UiIcon from '../UiIcon';
 
 export interface MatchTeamsPanelProps {
+  playerSelectorA?: React.ReactNode;
+  playerSelectorB?: React.ReactNode;
   scoreA: number;
   scoreB: number;
   nameA: string;
@@ -78,6 +80,8 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
   onSwapTeams,
   onResetScore,
   getLogoSrc,
+  playerSelectorA,
+  playerSelectorB,
 }) => {
   return (
     <div className="card" style={{ padding: '12px', overflowX: 'auto' }}>
@@ -106,7 +110,8 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
         </div>
 
         {/* Team Row A */}
-        <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
+        <div className="scoreboard-team-column">
+        <div className="team-row">
           <div className="color-picker-stack">
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
@@ -194,6 +199,9 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
           </div>
         </div>
 
+        {playerSelectorA}
+        </div>
+
         {/* Center Swapper */}
         <div
           style={{
@@ -222,7 +230,8 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
         </div>
 
         {/* Team Row B */}
-        <div className="team-row" style={{ flex: '1 1 0%', minWidth: '120px' }}>
+        <div className="scoreboard-team-column">
+        <div className="team-row">
           <div className="color-picker-stack">
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
@@ -307,6 +316,9 @@ export const MatchTeamsPanel: React.FC<MatchTeamsPanelProps> = React.memo(({
               </>
             )}
           </div>
+        </div>
+
+        {playerSelectorB}
         </div>
 
         <div className="score-display" style={{ flexShrink: 0 }}>

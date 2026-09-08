@@ -118,6 +118,23 @@ html[data-surface='transparent'] body:has(.container) {
   backdrop-filter: blur(10px);
 }
 
+.scoreboard-top-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 14px;
+}
+
+.scoreboard-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scoreboard-controls-row { padding: 2px 0; }
+
 .row {
   display: flex;
   gap: 12px;
@@ -385,11 +402,12 @@ button:disabled {
   gap: 4px;
 }
 
-.scoreboard-player-selectors {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.scoreboard-team-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-width: 120px;
   gap: 8px;
-  align-items: start;
 }
 
 .scoreboard-player-selector {
@@ -401,34 +419,22 @@ button:disabled {
 }
 
 .scoreboard-player-selector-header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 6px;
   color: #f8fafc;
 }
 
-.scoreboard-player-selector-kicker {
-  white-space: nowrap;
-  color: #38bdf8;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
 .scoreboard-player-show-toggle {
-  grid-column: 3;
-  grid-row: 1;
-  min-height: 32px;
-  padding: 5px 8px;
-  font-size: 0.72rem;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 0.68rem;
   white-space: nowrap;
 }
 
 .scoreboard-player-select {
-  grid-column: 2;
-  grid-row: 1;
+  flex: 1 1 auto;
   width: 100%;
   min-width: 0;
   min-height: 32px;
@@ -568,14 +574,6 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
-  .scoreboard-player-selectors {
-    grid-template-columns: 1fr;
-  }
-
-  .scoreboard-player-selector-header {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
   .scoreboard-player-decision-actions {
     flex-direction: column;
   }

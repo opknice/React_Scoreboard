@@ -1921,6 +1921,40 @@ export default function ScoreboardController() {
     applyMatchFromSupabase(match);
   }, [applyMatchFromSupabase]);
 
+  const playerSelectorA = useMemo(() => (
+    <ScoreboardPlayerSelector
+      team="A"
+      teamId={teamIdA}
+      leagueId={activeSupabaseLeagueId}
+      selectedPlayerId={selectedPlayerA?.id ?? null}
+      fetchPlayers={supabaseLeague.getPlayersByTeam}
+      onSelect={handleSelectPlayerA}
+      isDisplayed={playerDisplay?.playerId === selectedPlayerA?.id && playerDisplay?.visible === true}
+      onShow={(player) => handleShowPlayer('A', player)}
+      onHide={handleHidePlayer}
+      canRecordGoal={canRecordPlayerGoal}
+      recordingGoal={recordingPlayerId === selectedPlayerA?.id}
+      onRecordGoalAndShow={(player) => { void handleRecordGoalAndShow('A', player); }}
+    />
+  ), [teamIdA, activeSupabaseLeagueId, selectedPlayerA?.id, supabaseLeague.getPlayersByTeam, handleSelectPlayerA, playerDisplay?.playerId, playerDisplay?.visible, handleShowPlayer, handleHidePlayer, canRecordPlayerGoal, recordingPlayerId, handleRecordGoalAndShow]);
+
+  const playerSelectorB = useMemo(() => (
+    <ScoreboardPlayerSelector
+      team="B"
+      teamId={teamIdB}
+      leagueId={activeSupabaseLeagueId}
+      selectedPlayerId={selectedPlayerB?.id ?? null}
+      fetchPlayers={supabaseLeague.getPlayersByTeam}
+      onSelect={handleSelectPlayerB}
+      isDisplayed={playerDisplay?.playerId === selectedPlayerB?.id && playerDisplay?.visible === true}
+      onShow={(player) => handleShowPlayer('B', player)}
+      onHide={handleHidePlayer}
+      canRecordGoal={canRecordPlayerGoal}
+      recordingGoal={recordingPlayerId === selectedPlayerB?.id}
+      onRecordGoalAndShow={(player) => { void handleRecordGoalAndShow('B', player); }}
+    />
+  ), [teamIdB, activeSupabaseLeagueId, selectedPlayerB?.id, supabaseLeague.getPlayersByTeam, handleSelectPlayerB, playerDisplay?.playerId, playerDisplay?.visible, handleShowPlayer, handleHidePlayer, canRecordPlayerGoal, recordingPlayerId, handleRecordGoalAndShow]);
+
   return (
     <Profiler id="ScoreboardController" onRender={reportControllerRender}>
       <div className="container">
@@ -1951,16 +1985,40 @@ export default function ScoreboardController() {
       </div>
 
       {/* Header */}
-      <ScoreboardHeader
-        videoFolder={videoFolder}
-        onConnectVideoFolder={handleVideoFolderConnect}
-        onResetVideoFolder={handleVideoFolderReset}
-        currentUser={currentUser}
-        authAccess={authAccess}
-        isSuperAdminUser={isSuperAdmin(currentUser?.email)}
-        onNavigateWhitelist={handleNavigateWhitelist}
-        onLogout={handleLogout}
-      />
+      <div className="card scoreboard-top-card">
+        <ScoreboardHeader
+          embedded
+          videoFolder={videoFolder}
+          onConnectVideoFolder={handleVideoFolderConnect}
+          onResetVideoFolder={handleVideoFolderReset}
+          currentUser={currentUser}
+          authAccess={authAccess}
+          isSuperAdminUser={isSuperAdmin(currentUser?.email)}
+          onNavigateWhitelist={handleNavigateWhitelist}
+          onLogout={handleLogout}
+        />
+
+        {isSetupComplete && (
+          <ScoreboardControlsBar
+            embedded
+            leagues={supabaseLeague.leagues}
+            activeLeagueId={supabaseLeague.activeLeagueId || ''}
+            selectedLeagueId={selectedLeagueIdToLoad}
+            loading={supabaseLeague.loading}
+            detailsLoading={supabaseLeague.detailsLoading}
+            refreshing={supabaseLeague.refreshing}
+            matches={supabaseLeague.matches}
+            pendingMatches={pendingMatches}
+            matchIdInput={matchIdInput}
+            onOpenLeagueManagement={handleOpenLeagueManagementFromControls}
+            onPrefetchLeagueManagement={handlePrefetchLeagueManagement}
+            onSelectLeague={handleSelectLeagueFromControls}
+            onRefreshLeague={handleRefreshLeague}
+            onNavigateMatch={handleNavigateMatch}
+            onSelectMatch={handleSelectMatchFromControls}
+          />
+        )}
+      </div>
 
       {/* 2-Step Setup Onboarding Wizard Gate */}
       {!isSetupComplete ? (
@@ -1979,24 +2037,6 @@ export default function ScoreboardController() {
         />
       ) : (
         <>
-          <ScoreboardControlsBar
-            leagues={supabaseLeague.leagues}
-            activeLeagueId={supabaseLeague.activeLeagueId || ''}
-            selectedLeagueId={selectedLeagueIdToLoad}
-            loading={supabaseLeague.loading}
-            detailsLoading={supabaseLeague.detailsLoading}
-            refreshing={supabaseLeague.refreshing}
-            matches={supabaseLeague.matches}
-            pendingMatches={pendingMatches}
-            matchIdInput={matchIdInput}
-            onOpenLeagueManagement={handleOpenLeagueManagementFromControls}
-            onPrefetchLeagueManagement={handlePrefetchLeagueManagement}
-            onSelectLeague={handleSelectLeagueFromControls}
-            onRefreshLeague={handleRefreshLeague}
-            onNavigateMatch={handleNavigateMatch}
-            onSelectMatch={handleSelectMatchFromControls}
-          />
-
           {/* Team score and editor panel (Memoized) */}
           <MatchTeamsPanel
             scoreA={scoreA}
@@ -2027,40 +2067,10 @@ export default function ScoreboardController() {
             onSwapTeams={swapTeams}
             onResetScore={resetScore}
             getLogoSrc={getLogoSrc}
+            playerSelectorA={playerSelectorA}
+            playerSelectorB={playerSelectorB}
           />
 
-          <div className="scoreboard-player-selectors" aria-label="เลือกนักเตะสำหรับการแสดงผล">
-            <ScoreboardPlayerSelector
-              team="A"
-              teamName={nameA}
-              teamId={teamIdA}
-              leagueId={activeSupabaseLeagueId}
-              selectedPlayerId={selectedPlayerA?.id ?? null}
-              fetchPlayers={supabaseLeague.getPlayersByTeam}
-              onSelect={handleSelectPlayerA}
-              isDisplayed={playerDisplay?.playerId === selectedPlayerA?.id && playerDisplay?.visible === true}
-              onShow={(player) => handleShowPlayer('A', player)}
-              onHide={handleHidePlayer}
-              canRecordGoal={canRecordPlayerGoal}
-              recordingGoal={recordingPlayerId === selectedPlayerA?.id}
-              onRecordGoalAndShow={(player) => { void handleRecordGoalAndShow('A', player); }}
-            />
-            <ScoreboardPlayerSelector
-              team="B"
-              teamName={nameB}
-              teamId={teamIdB}
-              leagueId={activeSupabaseLeagueId}
-              selectedPlayerId={selectedPlayerB?.id ?? null}
-              fetchPlayers={supabaseLeague.getPlayersByTeam}
-              onSelect={handleSelectPlayerB}
-              isDisplayed={playerDisplay?.playerId === selectedPlayerB?.id && playerDisplay?.visible === true}
-              onShow={(player) => handleShowPlayer('B', player)}
-              onHide={handleHidePlayer}
-              canRecordGoal={canRecordPlayerGoal}
-              recordingGoal={recordingPlayerId === selectedPlayerB?.id}
-              onRecordGoalAndShow={(player) => { void handleRecordGoalAndShow('B', player); }}
-            />
-          </div>
 
           <ScoreboardTimerPanel
             timer={timerStore}
@@ -2188,7 +2198,6 @@ export default function ScoreboardController() {
           )}
         </>
       )}
-
       <Suspense fallback={<ScoreboardLazyFallback onClose={() => {
         setShowSettingsModal(false);
         setShowDetailLabelsModal(false);

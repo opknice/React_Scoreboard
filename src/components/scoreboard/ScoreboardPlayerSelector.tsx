@@ -7,7 +7,6 @@ import UiIcon from '../UiIcon';
 
 interface ScoreboardPlayerSelectorProps {
   team: 'A' | 'B';
-  teamName: string;
   teamId: string | null;
   leagueId: string;
   selectedPlayerId: string | null;
@@ -23,7 +22,6 @@ interface ScoreboardPlayerSelectorProps {
 
 function ScoreboardPlayerSelector({
   team,
-  teamName,
   teamId,
   leagueId,
   selectedPlayerId,
@@ -78,7 +76,6 @@ function ScoreboardPlayerSelector({
   return (
     <section className="scoreboard-player-selector" aria-label={`เลือกนักเตะทีม ${team}`}>
       <div className="scoreboard-player-selector-header">
-        <span className="scoreboard-player-selector-kicker" title={teamName}>ทีม {team}</span>
         <button
           type="button"
           className={`${isDisplayed ? 'btn-secondary' : 'btn-primary'} scoreboard-player-show-toggle`}
