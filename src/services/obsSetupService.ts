@@ -10,6 +10,7 @@ import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
 import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
 import type { TeamColorBrowserSettings } from '../types/teamColorBrowserSettings';
 import { buildTeamColorBrowserUrl } from '../utils/teamColorBrowserUrl';
+import { buildPlayerBrowserUrl } from '../utils/playerBrowserUrl';
 
 export interface SetupProgress {
   step: string;
@@ -388,6 +389,18 @@ export class OBSSetupService {
     };
   }
 
+  private getPlayerBrowserConfig(leagueId?: string): SourceConfig {
+    const baseConfig = BROWSER_SOURCES.find((source) => source.name === 'Player_Display');
+    if (!baseConfig) throw new Error('Missing OBS configuration for Player_Display');
+    return {
+      ...baseConfig,
+      settings: {
+        ...baseConfig.settings,
+        url: buildPlayerBrowserUrl(getOrigin(), leagueId),
+      },
+    };
+  }
+
   /**
    * Add or update the two persistent Team Name Browser Sources. Existing GDI
    * sources are kept intact and simply hidden so the migration is reversible.
@@ -521,6 +534,60 @@ export class OBSSetupService {
         ? `อัปเดต Team Color Sources แล้ว: ${updatedSources.join(', ')}${missingSources.length ? `; ไม่พบและข้าม: ${missingSources.join(', ')}` : ''}`
         : 'ไม่พบ Team Color Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
       updatedSources,
+    };
+  }
+
+  /** Add or update the persistent single Player Browser Source. */
+  async addOrUpdatePlayerBrowserSource(
+    leagueId?: string,
+    sceneName = MAIN_SCENE_CONFIG.name,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
+
+    const config = this.getPlayerBrowserConfig(leagueId);
+    if (!(await this.sourceExists(config.name))) {
+      await this.obsRef.call('CreateInput', {
+        sceneName,
+        inputName: config.name,
+        inputKind: 'browser_source',
+        inputSettings: config.settings,
+        sceneItemEnabled: true,
+      });
+    } else {
+      await this.updateSourceSettings(config.name, config.settings);
+    }
+
+    await this.ensureSceneItem(sceneName, config.name, true);
+    await this.refreshBrowserSource(config.name);
+    if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
+
+    return {
+      success: true,
+      message: 'เพิ่ม/อัปเดต Player Browser Source และรีเฟรช OBS แล้ว',
+      updatedSources: [config.name],
+    };
+  }
+
+  /** Update only the existing Player Browser Source; never creates a missing input. */
+  async updatePlayerBrowserSource(leagueId?: string): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+
+    const config = this.getPlayerBrowserConfig(leagueId);
+    if (!(await this.sourceExists(config.name))) {
+      return {
+        success: true,
+        message: 'ไม่พบ Player Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่',
+        updatedSources: [],
+      };
+    }
+
+    await this.updateSourceSettings(config.name, config.settings);
+    await this.refreshBrowserSource(config.name);
+    return {
+      success: true,
+      message: 'อัปเดต Player Browser Source และรีเฟรช OBS แล้ว',
+      updatedSources: [config.name],
     };
   }
 

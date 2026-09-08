@@ -11,6 +11,8 @@ import {
   useScoreboardKeyboardBroadcast,
   broadcastGoalScored,
   broadcastScoreboardState,
+  broadcastPlayerDisplayState,
+  broadcastPlayerBrowserSettings,
 } from '../hooks/useScoreboardChannels';
 import { translations } from '../constants/translations';
 import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
@@ -34,6 +36,7 @@ import {
   type LogoBrowserSettings,
 } from '../types/logoBrowserSettings';
 import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
+import { buildPlayerBrowserUrl } from '../utils/playerBrowserUrl';
 import { getLogoSyncSessionId } from '../hooks/useLogoCropPreviewSync';
 import { parseLeagueLogoSizing } from '../types/leagueLogoSizing';
 import {
@@ -42,6 +45,13 @@ import {
 } from '../types/leagueDetailLabels';
 import { useLeagueBrowserSourceSettings } from '../hooks/useLeagueBrowserSourceSettings';
 import { getThaiDateString, renderDetailsTemplate } from '../utils/detailsTemplate';
+import type { PlayerDisplayPayload } from '../types/playerDisplayEvent';
+import {
+  DEFAULT_PLAYER_BROWSER_SETTINGS,
+  normalizePlayerBrowserSettings,
+  PLAYER_BROWSER_SETTINGS_STORAGE_KEY,
+  type PlayerBrowserSettings,
+} from '../types/playerBrowserSettings';
 
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
@@ -54,13 +64,14 @@ const PenaltyShootoutModal = lazy(() => import('./PenaltyShootoutModal'));
 const ScoreboardSettingsModal = lazy(() => import('./ScoreboardSettingsModal'));
 const LeagueDetailLabelsModal = lazy(() => import('./LeagueDetailLabelsModal'));
 import { useSupabaseLeague } from '../hooks/useSupabaseLeague';
-import type { Match as SupabaseMatch, Team as SupabaseTeam } from '../config/supabaseClient';
+import type { Match as SupabaseMatch, Player, Team as SupabaseTeam } from '../config/supabaseClient';
 import { parseCropMetadata } from '../types/teamLogo';
 import { getFirstUnplayedMatch, isUnplayedMatch } from './league-management/leagueMatchUtils';
 import type { SelectableTeam } from './TeamSelectModal';
 import ScoreboardHeader from './scoreboard/ScoreboardHeader';
 import ScoreboardSetupWizard from './scoreboard/ScoreboardSetupWizard';
 import MatchTeamsPanel from './scoreboard/MatchTeamsPanel';
+import ScoreboardPlayerSelector from './scoreboard/ScoreboardPlayerSelector';
 import ScoreboardObsRuntime from './scoreboard/ScoreboardObsRuntime';
 import ScoreboardControlsBar from './scoreboard/ScoreboardControlsBar';
 import LazyLeagueManagementModal from './scoreboard/LazyLeagueManagementModal';
@@ -216,8 +227,6 @@ export default function ScoreboardController() {
     teamNameSettings,
     scoreSettings,
     teamColorSettings,
-    scope: browserSettingsScope,
-    saveStatus: browserSettingsSaveStatus,
     updateTeamNameSettings,
     updateScoreSettings,
     updateTeamColorSettings,
@@ -243,8 +252,29 @@ export default function ScoreboardController() {
   const [scoreObsMessage, setScoreObsMessage] = useState('');
   const [teamColorObsBusy, setTeamColorObsBusy] = useState(false);
   const [teamColorObsMessage, setTeamColorObsMessage] = useState('');
+  const [playerObsBusy, setPlayerObsBusy] = useState(false);
+  const [playerObsMessage, setPlayerObsMessage] = useState('');
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
+  const [selectedPlayerA, setSelectedPlayerA] = useState<Player | null>(null);
+  const [selectedPlayerB, setSelectedPlayerB] = useState<Player | null>(null);
+  const [playerDisplay, setPlayerDisplay] = useState<PlayerDisplayPayload | null>(null);
+  const [playerBrowserSettings, setPlayerBrowserSettings] = useState<PlayerBrowserSettings>(() => {
+    try {
+      const saved = localStorage.getItem(PLAYER_BROWSER_SETTINGS_STORAGE_KEY);
+      return saved ? normalizePlayerBrowserSettings(JSON.parse(saved)) : DEFAULT_PLAYER_BROWSER_SETTINGS;
+    } catch {
+      return DEFAULT_PLAYER_BROWSER_SETTINGS;
+    }
+  });
+  const [recordingPlayerId, setRecordingPlayerId] = useState<string | null>(null);
+  const [playerAutoHideEnabled, setPlayerAutoHideEnabled] = useState<boolean>(() => localStorage.getItem('player_auto_hide_enabled') === 'true');
+  const [playerAutoHideSeconds, setPlayerAutoHideSeconds] = useState<number>(() => {
+    const stored = Number.parseInt(localStorage.getItem('player_auto_hide_seconds') || '8', 10);
+    return Number.isFinite(stored) && stored > 0 ? stored : 8;
+  });
+  const playerDisplayTimerRef = useRef<number | null>(null);
+  const recordingPlayerRef = useRef<string | null>(null);
   const [showLeagueManagementModal, setShowLeagueManagementModal] = useState<boolean>(false);
   const [leagueModalInitialTab, setLeagueModalInitialTab] = useState<'league' | 'teams' | 'matches'>('matches');
   const [showConfirmSaveModal, setShowConfirmSaveModal] = useState<boolean>(false);
@@ -409,6 +439,31 @@ export default function ScoreboardController() {
     }
   }, [obs, supabaseLeague.activeLeagueId, teamColorSettings, triggerToast]);
 
+  const runPlayerObsAction = useCallback(async (action: 'add' | 'update') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    setPlayerObsBusy(true);
+    setPlayerObsMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const result = action === 'add'
+        ? await service.addOrUpdatePlayerBrowserSource(supabaseLeague.activeLeagueId)
+        : await service.updatePlayerBrowserSource(supabaseLeague.activeLeagueId);
+      setPlayerObsMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'ไม่สามารถตั้งค่า Player Browser Source ใน OBS ได้';
+      setPlayerObsMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setPlayerObsBusy(false);
+    }
+  }, [obs, supabaseLeague.activeLeagueId, triggerToast]);
+
   const {
     teams: supabaseTeams,
     updateTeam: updateSupabaseTeam,
@@ -526,8 +581,13 @@ export default function ScoreboardController() {
   const {
     activeLeagueId: activeSupabaseLeagueId,
     activeLeague: activeSupabaseLeague,
+    matches: supabaseMatches,
     refreshLeagueDetails,
     selectLeague,
+  } = supabaseLeague;
+  const {
+    getPlayerMatchStats,
+    upsertPlayerMatchStat,
   } = supabaseLeague;
   const persistedLeagueDetailLabels = useMemo(
     () => parseLeagueDetailLabels(activeSupabaseLeague?.settings),
@@ -581,6 +641,43 @@ export default function ScoreboardController() {
   useEffect(() => {
     setSelectedLeagueIdToLoad(supabaseLeague.activeLeagueId || '');
   }, [supabaseLeague.activeLeagueId]);
+
+  // A selected player belongs to the currently loaded team and league only.
+  // Clear it as soon as either context changes so a player cannot cross sides.
+  useEffect(() => {
+    setSelectedPlayerA(null);
+  }, [supabaseLeague.activeLeagueId, teamIdA]);
+
+  useEffect(() => {
+    setSelectedPlayerB(null);
+  }, [supabaseLeague.activeLeagueId, teamIdB]);
+
+  useEffect(() => {
+    localStorage.setItem('player_auto_hide_enabled', String(playerAutoHideEnabled));
+  }, [playerAutoHideEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('player_auto_hide_seconds', String(playerAutoHideSeconds));
+  }, [playerAutoHideSeconds]);
+
+  useEffect(() => () => {
+    if (playerDisplayTimerRef.current !== null) window.clearTimeout(playerDisplayTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!playerDisplay) return;
+    const activeTeamId = playerDisplay.team === 'A' ? teamIdA : teamIdB;
+    const contextChanged = playerDisplay.leagueId !== (activeSupabaseLeagueId || null)
+      || activeTeamId !== playerDisplay.teamId;
+    if (!contextChanged) return;
+
+    if (playerDisplayTimerRef.current !== null) {
+      window.clearTimeout(playerDisplayTimerRef.current);
+      playerDisplayTimerRef.current = null;
+    }
+    broadcastPlayerDisplayState({ ...playerDisplay, visible: false, hideAt: null });
+    setPlayerDisplay(null);
+  }, [activeSupabaseLeagueId, playerDisplay, teamIdA, teamIdB]);
 
   // --- 2-Step Setup Onboarding Gate Checks ---
   const isStep1Complete = videoFolder.isConnected;
@@ -854,6 +951,22 @@ export default function ScoreboardController() {
       .filter(isUnplayedMatch)
       .sort((a, b) => a.match_number - b.match_number);
   }, [supabaseLeague.matches]);
+
+  const currentPlayerMatch = useMemo(
+    () => supabaseLeague.matches.find((match) => (
+      match.league_id === supabaseLeague.activeLeagueId
+      && match.match_number === matchIdInput
+    )) ?? null,
+    [matchIdInput, supabaseLeague.activeLeagueId, supabaseLeague.matches],
+  );
+
+  const canRecordPlayerGoal = Boolean(
+    currentPlayerMatch
+    && teamIdA
+    && teamIdB
+    && [currentPlayerMatch.team_a_id, currentPlayerMatch.team_b_id].includes(teamIdA)
+    && [currentPlayerMatch.team_a_id, currentPlayerMatch.team_b_id].includes(teamIdB),
+  );
 
   // --- Check if there are unplayed matches and any matches at all (optimized with useMemo) ---
   const hasUnplayedMatches = useMemo(() => pendingMatches.length > 0, [pendingMatches]);
@@ -1599,6 +1712,129 @@ export default function ScoreboardController() {
     setShowTeamSelectModal(true);
   }, [setShowTeamSelectModal]);
 
+  const handleSelectPlayerA = useCallback((player: Player | null) => {
+    setSelectedPlayerA(player);
+  }, []);
+
+  const handleSelectPlayerB = useCallback((player: Player | null) => {
+    setSelectedPlayerB(player);
+  }, []);
+
+  const handleShowPlayer = useCallback((team: 'A' | 'B', player: Player) => {
+    if (!activeSupabaseLeagueId || player.league_id !== activeSupabaseLeagueId) {
+      triggerToast('ไม่สามารถแสดงนักเตะจาก League อื่นได้', 'error');
+      return;
+    }
+
+    if (playerDisplayTimerRef.current !== null) {
+      window.clearTimeout(playerDisplayTimerRef.current);
+      playerDisplayTimerRef.current = null;
+    }
+
+    const hideAt = playerAutoHideEnabled
+      ? Date.now() + Math.max(1, playerAutoHideSeconds) * 1000
+      : null;
+    const payload: PlayerDisplayPayload = {
+      visible: true,
+      leagueId: activeSupabaseLeagueId,
+      team,
+      teamId: player.team_id,
+      teamName: team === 'A' ? nameA : nameB,
+      playerId: player.id,
+      jerseyNumber: player.jersey_number,
+      name: player.name,
+      position: player.position,
+      imageUrl: player.image_url || null,
+      hideAt,
+    };
+
+    broadcastPlayerDisplayState(payload);
+    setPlayerDisplay(payload);
+
+    if (hideAt !== null) {
+      playerDisplayTimerRef.current = window.setTimeout(() => {
+        broadcastPlayerDisplayState({ ...payload, visible: false, hideAt: null });
+        setPlayerDisplay(null);
+        playerDisplayTimerRef.current = null;
+      }, Math.max(1, playerAutoHideSeconds) * 1000);
+    }
+  }, [activeSupabaseLeagueId, nameA, nameB, playerAutoHideEnabled, playerAutoHideSeconds, triggerToast]);
+
+  const handleHidePlayer = useCallback(() => {
+    if (playerDisplayTimerRef.current !== null) {
+      window.clearTimeout(playerDisplayTimerRef.current);
+      playerDisplayTimerRef.current = null;
+    }
+    if (!playerDisplay) return;
+
+    broadcastPlayerDisplayState({ ...playerDisplay, visible: false, hideAt: null });
+    setPlayerDisplay(null);
+  }, [playerDisplay]);
+
+  const handleRecordGoalAndShow = useCallback(async (team: 'A' | 'B', player: Player) => {
+    const leagueId = activeSupabaseLeagueId;
+    const selectedTeamId = team === 'A' ? teamIdA : teamIdB;
+    const currentMatch = supabaseMatches.find((match) => (
+      match.league_id === leagueId && match.match_number === matchIdInput
+    ));
+    const operationKey = `${currentMatch?.id ?? 'no-match'}:${player.id}`;
+
+    if (!leagueId || !selectedTeamId || player.league_id !== leagueId || player.team_id !== selectedTeamId) {
+      triggerToast('ข้อมูลนักเตะไม่ตรงกับทีมและ League ปัจจุบัน', 'error');
+      return;
+    }
+    if (!currentMatch) {
+      triggerToast('กรุณาเลือกแมตช์ปัจจุบันก่อนบันทึกประตูนักเตะ', 'warning');
+      return;
+    }
+    if (currentMatch.team_a_id !== player.team_id && currentMatch.team_b_id !== player.team_id) {
+      triggerToast('ทีมของนักเตะไม่ได้อยู่ในการแข่งขันแมตช์นี้', 'error');
+      return;
+    }
+    if (recordingPlayerRef.current) return;
+
+    recordingPlayerRef.current = operationKey;
+    setRecordingPlayerId(player.id);
+    try {
+      const stats = await getPlayerMatchStats(player.team_id);
+      const existing = stats.find((stat) => stat.match_id === currentMatch.id && stat.player_id === player.id);
+      await upsertPlayerMatchStat({
+        league_id: leagueId,
+        match_id: currentMatch.id,
+        player_id: player.id,
+        team_id: player.team_id,
+        goals: (existing?.goals ?? 0) + 1,
+      });
+      triggerToast(`บันทึกประตูของ ${player.name} สำเร็จ`, 'success');
+      handleShowPlayer(team, player);
+    } catch (error: unknown) {
+      triggerToast(error instanceof Error ? `บันทึกประตูไม่สำเร็จ: ${error.message}` : 'บันทึกประตูไม่สำเร็จ', 'error');
+    } finally {
+      recordingPlayerRef.current = null;
+      setRecordingPlayerId(null);
+    }
+  }, [activeSupabaseLeagueId, getPlayerMatchStats, handleShowPlayer, matchIdInput, supabaseMatches, teamIdA, teamIdB, triggerToast, upsertPlayerMatchStat]);
+
+  const playerBrowserUrl = useMemo(
+    () => buildPlayerBrowserUrl(getOrigin(), activeSupabaseLeagueId),
+    [activeSupabaseLeagueId],
+  );
+
+  const copyPlayerBrowserUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(playerBrowserUrl);
+      triggerToast('คัดลอก URL Player Browser Source แล้ว', 'success');
+    } catch {
+      triggerToast('ไม่สามารถคัดลอก URL Player Browser Source ได้', 'error');
+    }
+  }, [playerBrowserUrl, triggerToast]);
+
+  const handlePlayerBrowserSettingsChange = useCallback((settings: PlayerBrowserSettings) => {
+    const normalized = normalizePlayerBrowserSettings(settings);
+    setPlayerBrowserSettings(normalized);
+    broadcastPlayerBrowserSettings(normalized);
+  }, []);
+
   const handleObsConnected = useCallback(() => {
     triggerToast(trans.toastObsSuccess, 'success');
   }, [trans.toastObsSuccess, triggerToast]);
@@ -1729,6 +1965,39 @@ export default function ScoreboardController() {
             onResetScore={resetScore}
             getLogoSrc={getLogoSrc}
           />
+
+          <div className="scoreboard-player-selectors" aria-label="เลือกนักเตะสำหรับการแสดงผล">
+            <ScoreboardPlayerSelector
+              team="A"
+              teamName={nameA}
+              teamId={teamIdA}
+              leagueId={activeSupabaseLeagueId}
+              selectedPlayerId={selectedPlayerA?.id ?? null}
+              fetchPlayers={supabaseLeague.getPlayersByTeam}
+              onSelect={handleSelectPlayerA}
+              isDisplayed={playerDisplay?.playerId === selectedPlayerA?.id && playerDisplay?.visible === true}
+              onShow={(player) => handleShowPlayer('A', player)}
+              onHide={handleHidePlayer}
+              canRecordGoal={canRecordPlayerGoal}
+              recordingGoal={recordingPlayerId === selectedPlayerA?.id}
+              onRecordGoalAndShow={(player) => { void handleRecordGoalAndShow('A', player); }}
+            />
+            <ScoreboardPlayerSelector
+              team="B"
+              teamName={nameB}
+              teamId={teamIdB}
+              leagueId={activeSupabaseLeagueId}
+              selectedPlayerId={selectedPlayerB?.id ?? null}
+              fetchPlayers={supabaseLeague.getPlayersByTeam}
+              onSelect={handleSelectPlayerB}
+              isDisplayed={playerDisplay?.playerId === selectedPlayerB?.id && playerDisplay?.visible === true}
+              onShow={(player) => handleShowPlayer('B', player)}
+              onHide={handleHidePlayer}
+              canRecordGoal={canRecordPlayerGoal}
+              recordingGoal={recordingPlayerId === selectedPlayerB?.id}
+              onRecordGoalAndShow={(player) => { void handleRecordGoalAndShow('B', player); }}
+            />
+          </div>
 
           <ScoreboardTimerPanel
             timer={timerStore}
@@ -2097,9 +2366,6 @@ export default function ScoreboardController() {
           logoBrowserScalePercent={parseLeagueLogoSizing(supabaseLeague.activeLeague?.settings).logoBrowserScalePercent}
           tickerSpeed={tickerSpeed}
           closeLabel={trans.close}
-          activeLeagueName={supabaseLeague.activeLeague?.name}
-          browserSettingsScope={browserSettingsScope}
-          browserSettingsSaveStatus={browserSettingsSaveStatus}
           onTickerSpeedChange={(speed) => {
             setTickerSpeed(speed);
             localStorage.setItem('tickerSpeed', String(speed));
@@ -2135,6 +2401,18 @@ export default function ScoreboardController() {
           onQuickAddLogo={() => void runLogoObsAction('add')}
           onQuickAddScore={() => void runScoreObsAction('add')}
           onQuickAddTeamNames={() => void runTeamNameObsAction('add')}
+          playerAutoHideEnabled={playerAutoHideEnabled}
+          playerAutoHideSeconds={playerAutoHideSeconds}
+          playerBrowserUrl={playerBrowserUrl}
+          playerBrowserSettings={playerBrowserSettings}
+          playerObsBusy={playerObsBusy}
+          playerObsConnected={obs.isConnected}
+          playerObsMessage={playerObsMessage}
+          onPlayerAutoHideEnabledChange={setPlayerAutoHideEnabled}
+          onPlayerAutoHideSecondsChange={setPlayerAutoHideSeconds}
+          onCopyPlayerBrowserUrl={copyPlayerBrowserUrl}
+          onPlayerBrowserSettingsChange={handlePlayerBrowserSettingsChange}
+          onQuickAddPlayer={() => void runPlayerObsAction('add')}
           onOpenObsSetup={() => {
             setShowQuickSetupModal(false);
             setShowOBSSetupModal(true);

@@ -201,6 +201,25 @@ export const BROWSER_SOURCES: SourceConfig[] = [
     }
   },
   {
+    name: 'Player_Display',
+    type: 'browser_source',
+    settings: {
+      url: `${getOrigin()}/player`,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      // Keep the persistent player source loaded so it can receive live updates.
+      shutdown: false,
+      restart_when_active: false,
+      css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }'
+    },
+    transform: {
+      position: { x: 0, y: 0 },
+      scale: { x: 1.0, y: 1.0 },
+      alignment: 5
+    }
+  },
+  {
     name: 'Color_Display_A',
     type: 'browser_source',
     settings: {

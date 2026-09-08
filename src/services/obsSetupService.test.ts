@@ -53,3 +53,41 @@ describe('OBSSetupService Team Color sources', () => {
       && call.params?.sceneItemId === 41)).toBe(true);
   });
 });
+
+describe('OBSSetupService Player source', () => {
+  it('creates a persistent league-scoped Player Browser Source and refreshes it', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    const obs = {
+      call: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+        calls.push({ method, params });
+        switch (method) {
+          case 'GetSceneList':
+            return { scenes: [{ sceneName: 'Main Stream' }] };
+          case 'GetInputSettings':
+            throw new Error('source does not exist');
+          case 'GetSceneItemId':
+            return { sceneItemId: 55 };
+          case 'SetSceneItemEnabled':
+          case 'PressInputPropertiesButton':
+          case 'SetSceneItemTransform':
+          case 'CreateInput':
+            return {};
+          default:
+            throw new Error(`Unexpected OBS call: ${method}`);
+        }
+      }),
+    };
+
+    const result = await new OBSSetupService(obs).addOrUpdatePlayerBrowserSource('league-1');
+    const createCall = calls.find((call) => call.method === 'CreateInput');
+    const createSettings = createCall?.params?.inputSettings as Record<string, unknown> | undefined;
+
+    expect(result.updatedSources).toEqual(['Player_Display']);
+    expect(createCall?.params?.inputName).toBe('Player_Display');
+    expect(createSettings?.url).toBe(
+      'http://localhost:3000/player?league=league-1',
+    );
+    expect(calls.some((call) => call.method === 'PressInputPropertiesButton'
+      && call.params?.inputName === 'Player_Display')).toBe(true);
+  });
+});

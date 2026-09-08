@@ -17,12 +17,17 @@ import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types
 import { getLogoSrc } from '../utils/logoResolver';
 import { LOGO_FRAME_SIZE_PX, cropMetadataToJson, parseCropMetadata } from '../types/teamLogo';
 import { getEffectiveLogoScalePercent, scaleLogoPixels } from '../types/leagueLogoSizing';
-import type { BrowserSourceSettingsScope } from '../types/leagueBrowserSourceSettings';
-import type { BrowserSourceSettingsSaveStatus } from '../hooks/useLeagueBrowserSourceSettings';
 import type {
   TeamColorBrowserSettings,
   TeamColorBrowserSettingsPatch,
 } from '../types/teamColorBrowserSettings';
+import {
+  DEFAULT_PLAYER_BROWSER_SETTINGS,
+  PLAYER_BROWSER_CANVAS_HEIGHT,
+  PLAYER_BROWSER_CANVAS_WIDTH,
+  type PlayerBrowserElementSettings,
+  type PlayerBrowserSettings,
+} from '../types/playerBrowserSettings';
 import LogoWithCrop from './LogoWithCrop';
 import LogoBrowserCropModal from './LogoBrowserCropModal';
 import TeamColorBrowserSourcePanel from './TeamColorBrowserSourcePanel';
@@ -51,9 +56,6 @@ interface QuickSetupModalProps {
   logoBrowserScalePercent?: number;
   tickerSpeed: number;
   closeLabel: string;
-  activeLeagueName?: string;
-  browserSettingsScope: BrowserSourceSettingsScope;
-  browserSettingsSaveStatus: BrowserSourceSettingsSaveStatus;
   onTickerSpeedChange: (speed: number) => void;
   teamNameSettings: TeamNameBrowserSettings;
   teamNameUrls: { A: string; B: string };
@@ -86,6 +88,18 @@ interface QuickSetupModalProps {
   onCopyLogoUrl: (side: 'A' | 'B') => void;
   onQuickAddLogo: () => void;
   onQuickAddTeamNames: () => void;
+  playerAutoHideEnabled: boolean;
+  playerAutoHideSeconds: number;
+  playerBrowserUrl: string;
+  playerBrowserSettings: PlayerBrowserSettings;
+  playerObsBusy: boolean;
+  playerObsConnected: boolean;
+  playerObsMessage: string;
+  onPlayerAutoHideEnabledChange: (enabled: boolean) => void;
+  onPlayerAutoHideSecondsChange: (seconds: number) => void;
+  onCopyPlayerBrowserUrl: () => void;
+  onPlayerBrowserSettingsChange: (settings: PlayerBrowserSettings) => void;
+  onQuickAddPlayer: () => void;
   onOpenObsSetup: () => void;
   onCopyOverlay: (viewType: string, standaloneFile?: string) => void;
   onOpenLeagueManager?: () => void;
@@ -99,9 +113,6 @@ export default function QuickSetupModal({
   logoBrowserScalePercent = 100,
   tickerSpeed,
   closeLabel,
-  activeLeagueName,
-  browserSettingsScope,
-  browserSettingsSaveStatus,
   onTickerSpeedChange,
   teamNameSettings,
   teamNameUrls,
@@ -134,6 +145,18 @@ export default function QuickSetupModal({
   onCopyLogoUrl,
   onQuickAddLogo,
   onQuickAddTeamNames,
+  playerAutoHideEnabled,
+  playerAutoHideSeconds,
+  playerBrowserUrl,
+  playerBrowserSettings,
+  playerObsBusy,
+  playerObsConnected,
+  playerObsMessage,
+  onPlayerAutoHideEnabledChange,
+  onPlayerAutoHideSecondsChange,
+  onCopyPlayerBrowserUrl,
+  onPlayerBrowserSettingsChange,
+  onQuickAddPlayer,
   onOpenObsSetup,
   onCopyOverlay,
   onOpenLeagueManager,
@@ -141,6 +164,7 @@ export default function QuickSetupModal({
 }: QuickSetupModalProps) {
   const [openPanel, setOpenPanel] = useState<'team-name' | 'team-color' | 'score' | 'logo' | null>(null);
   const [isCustomBrowserSourceOpen, setIsCustomBrowserSourceOpen] = useState(false);
+  const [isPlayerBroadcastOpen, setIsPlayerBroadcastOpen] = useState(false);
   const [isFootballLeagueTableOpen, setIsFootballLeagueTableOpen] = useState(false);
   const [fontOptions, setFontOptions] = useState<FontOption[]>(TEAM_NAME_FONT_OPTIONS);
   const [localFontMessage, setLocalFontMessage] = useState('กำลังโหลด Font ในเครื่อง...');
@@ -181,6 +205,20 @@ export default function QuickSetupModal({
     return teams.find((team) => team.name.trim().toLowerCase() === normalizedName);
   };
 
+  const updatePlayerElement = (
+    element: keyof PlayerBrowserSettings,
+    field: keyof PlayerBrowserElementSettings,
+    value: number,
+  ) => {
+    onPlayerBrowserSettingsChange({
+      ...playerBrowserSettings,
+      [element]: {
+        ...playerBrowserSettings[element],
+        [field]: value,
+      },
+    });
+  };
+
   const loadLocalFonts = useCallback(async () => {
     const queryLocalFonts = typeof window === 'undefined'
       ? undefined
@@ -213,6 +251,7 @@ export default function QuickSetupModal({
     if (!isOpen) {
       setOpenPanel(null);
       setIsCustomBrowserSourceOpen(false);
+      setIsPlayerBroadcastOpen(false);
       setIsFootballLeagueTableOpen(false);
     }
   }, [isOpen]);
@@ -244,23 +283,109 @@ export default function QuickSetupModal({
             <i className={`fas fa-chevron-${isCustomBrowserSourceOpen ? 'up' : 'down'}`} aria-hidden="true"></i>
           </button>
           {isCustomBrowserSourceOpen ? <div id="custom-browser-source-content" className="quick-setup-panel-content">
-          <p style={{ color: 'var(--text-muted-color)', marginBottom: '12px' }}>คัดลอก Overlay URL ไปใส่เป็น Browser Source ใน OBS Studio</p>
-          <div className={`quick-setup-persistence-status is-${browserSettingsSaveStatus}`} role="status">
-            <span>
-              <i className={`fas ${activeLeagueName ? 'fa-trophy' : 'fa-globe'}`} aria-hidden="true"></i>{' '}
-              {activeLeagueName
-                ? browserSettingsScope === 'league'
-                  ? `ค่าของลีก: ${activeLeagueName}`
-                  : browserSettingsScope === 'mixed'
-                    ? `ค่าของลีก + Global fallback: ${activeLeagueName}`
-                    : `Global fallback: ${activeLeagueName} ยังไม่มีค่าของลีก`
-                : 'Global settings (เครื่องนี้)'}
-            </span>
-            <span className="quick-setup-persistence-save-state">
-              {browserSettingsSaveStatus === 'saving' && 'กำลังบันทึก...'}
-              {browserSettingsSaveStatus === 'saved' && (activeLeagueName ? 'บันทึกลง Supabase แล้ว' : 'บันทึกในเครื่องแล้ว')}
-              {browserSettingsSaveStatus === 'error' && 'บันทึกไม่สำเร็จ'}
-            </span>
+
+          <div className="quick-setup-panel quick-setup-panel--player" aria-label="ตั้งค่าการแสดงนักเตะ">
+            <button
+              type="button"
+              className="quick-setup-panel-toggle"
+              aria-expanded={isPlayerBroadcastOpen}
+              aria-controls="player-browser-source-content"
+              onClick={() => setIsPlayerBroadcastOpen((current) => !current)}
+            >
+              <span><i className="fas fa-user-shield" /> Player Browser Source</span>
+              <i className={`fas fa-chevron-${isPlayerBroadcastOpen ? 'up' : 'down'}`} aria-hidden="true" />
+            </button>
+
+            {isPlayerBroadcastOpen ? <div id="player-browser-source-content" className="quick-setup-panel-content">
+              <section className="scoreboard-player-control-group" aria-labelledby="player-auto-hide-title">
+                <div className="scoreboard-player-section-heading scoreboard-player-auto-hide-heading" id="player-auto-hide-title">
+                  <span><strong><i className="fas fa-clock" /> ซ่อนอัตโนมัติ</strong><span>กำหนดเวลาซ่อนนักเตะหลังจากแสดงผล</span></span>
+                  <label className="scoreboard-player-switch">
+                    <input
+                      type="checkbox"
+                      checked={playerAutoHideEnabled}
+                      onChange={(event) => onPlayerAutoHideEnabledChange(event.target.checked)}
+                      aria-label="เปิดใช้การซ่อนนักเตะอัตโนมัติ"
+                    />
+                    <span aria-hidden="true" />
+                  </label>
+                </div>
+                <div className="scoreboard-player-auto-hide-fields">
+                  <label htmlFor="player-auto-hide-seconds">ระยะเวลา</label>
+                  <div className="scoreboard-player-duration-input">
+                    <input
+                      id="player-auto-hide-seconds"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={playerAutoHideSeconds}
+                      onChange={(event) => {
+                        const next = Number.parseInt(event.target.value, 10);
+                        if (Number.isFinite(next) && next > 0) onPlayerAutoHideSecondsChange(next);
+                      }}
+                      disabled={!playerAutoHideEnabled}
+                      aria-label="จำนวนวินาทีซ่อนอัตโนมัติ"
+                    />
+                    <span>วินาที</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="quick-player-canvas-editor" aria-labelledby="player-canvas-title">
+                <div className="quick-player-canvas-heading">
+                  <div>
+                    <strong id="player-canvas-title"><i className="fas fa-up-down-left-right" /> ตำแหน่งบน Canvas</strong>
+                    <span>Canvas {PLAYER_BROWSER_CANVAS_WIDTH} × {PLAYER_BROWSER_CANVAS_HEIGHT}px · ใช้ร่วมกันทุกนักเตะ</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => onPlayerBrowserSettingsChange(DEFAULT_PLAYER_BROWSER_SETTINGS)}
+                  >
+                    <i className="fas fa-rotate-left" /> รีเซ็ตค่าเริ่มต้น
+                  </button>
+                </div>
+
+                <div className="quick-player-canvas-fields">
+                  {([
+                    ['image', 'รูปนักเตะ', 720],
+                    ['jersey', 'หมายเลขเสื้อ', 240],
+                    ['name', 'ชื่อ', 180],
+                  ] as const).map(([element, label, maxSize]) => (
+                    <div key={element} className="quick-player-canvas-field-row">
+                      <strong>{label}</strong>
+                      <label>X<input type="number" min={0} max={PLAYER_BROWSER_CANVAS_WIDTH} value={playerBrowserSettings[element].x} onChange={(event) => updatePlayerElement(element, 'x', Number(event.target.value))} /></label>
+                      <label>Y<input type="number" min={0} max={PLAYER_BROWSER_CANVAS_HEIGHT} value={playerBrowserSettings[element].y} onChange={(event) => updatePlayerElement(element, 'y', Number(event.target.value))} /></label>
+                      <label>{element === 'name' || element === 'jersey' ? 'ขนาดตัวอักษร' : 'ขนาด'}<input type="number" min={8} max={maxSize} value={playerBrowserSettings[element].size} onChange={(event) => updatePlayerElement(element, 'size', Number(event.target.value))} /></label>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="scoreboard-player-control-group scoreboard-player-obs-group" aria-labelledby="player-obs-title">
+                <div className="scoreboard-player-section-heading" id="player-obs-title">
+                  <span><strong><i className="fas fa-plug" /> เชื่อมต่อ OBS Browser Source</strong><span>เพิ่มหรืออัปเดต Player Browser Source ในฉากหลักของ OBS</span></span>
+                </div>
+                <button type="button" className="btn-success" disabled={playerObsBusy || !playerObsConnected} onClick={onQuickAddPlayer}>
+                  <i className="fas fa-plug" /> Quick Add to OBS
+                </button>
+                <div className="scoreboard-player-obs-status" role="status">
+                  <span className={playerObsConnected ? 'is-connected' : 'is-disconnected'}>
+                    OBS WebSocket: {playerObsConnected ? 'Connected' : 'ยังไม่เชื่อมต่อ'}
+                  </span>
+                  {playerObsMessage ? <span> — {playerObsMessage}</span> : null}
+                </div>
+                <details className="scoreboard-player-url-details">
+                  <summary>URL สำหรับ Browser Source</summary>
+                  <div className="scoreboard-player-url-list">
+                    <div className="scoreboard-player-url-row">
+                      <span>{playerBrowserUrl}</span>
+                      <button type="button" className="btn-secondary" onClick={onCopyPlayerBrowserUrl}>Copy</button>
+                    </div>
+                  </div>
+                </details>
+              </section>
+            </div> : null}
           </div>
         <div className="quick-setup-panel quick-setup-panel--team-name">
           <button

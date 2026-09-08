@@ -7,6 +7,15 @@ import {
   type ScoreboardStatePayload,
 } from '../types/scoreboardEvent';
 import type { TeamColorBrowserSettings } from '../types/teamColorBrowserSettings';
+import {
+  createPlayerDisplayState,
+  PLAYER_DISPLAY_STORAGE_KEY,
+  type PlayerDisplayPayload,
+} from '../types/playerDisplayEvent';
+import {
+  PLAYER_BROWSER_SETTINGS_STORAGE_KEY,
+  type PlayerBrowserSettings,
+} from '../types/playerBrowserSettings';
 
 export function broadcastScoreboardButton(buttonId: string): void {
   postMacroChannelMessage(MACRO_CHANNELS.buttonEvents, {
@@ -65,6 +74,33 @@ export function broadcastTeamColorSettings(
 export function requestScoreboardState(): void {
   postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
     type: 'ScoreboardStateRequest',
+    timestamp: Date.now(),
+  });
+}
+
+/** Broadcasts and persists the latest player card for the standalone Browser Source. */
+export function broadcastPlayerDisplayState(payload: PlayerDisplayPayload): void {
+  const state = createPlayerDisplayState(payload);
+
+  try {
+    localStorage.setItem(PLAYER_DISPLAY_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // OBS Browser Sources may restrict storage; BroadcastChannel can still work.
+  }
+
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, { ...state });
+}
+
+export function broadcastPlayerBrowserSettings(settings: PlayerBrowserSettings): void {
+  try {
+    localStorage.setItem(PLAYER_BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Continue with BroadcastChannel when storage is unavailable.
+  }
+
+  postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
+    type: 'PlayerBrowserSettingsUpdated',
+    settings,
     timestamp: Date.now(),
   });
 }
