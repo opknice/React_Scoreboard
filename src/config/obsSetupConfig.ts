@@ -1,6 +1,8 @@
 // OBS Setup Configuration
 // This file contains the configuration for automatically setting up OBS scenes and sources
 
+import { getAppBaseUrl } from '../utils/appBaseUrl';
+
 export interface SourceConfig {
   name: string;
   type: 'browser_source' | 'text_gdiplus_v3' | 'image_source' | 'color_source_v3';
@@ -23,13 +25,7 @@ export interface SceneConfig {
 
 // Get the application origin including the Vite base path. This keeps
 // generated OBS URLs valid on both GitHub Pages and Vercel.
-export const getOrigin = () => {
-  const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}${basePath}`;
-  }
-  return `http://localhost:5173${basePath}`;
-};
+export const getOrigin = getAppBaseUrl;
 
 // Browser Sources Configuration
 export const BROWSER_SOURCES: SourceConfig[] = [

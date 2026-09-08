@@ -164,7 +164,7 @@ export const MatchesTab: React.FC<MatchesTabProps> = ({
               </h3>
               <button
                 type="button"
-                className="league-btn-secondary"
+                className="league-btn-secondary modal-header-close"
                 onClick={handleCancelEditMatch}
                 autoFocus
                 style={{ padding: '4px 10px', fontSize: '0.78rem' }}

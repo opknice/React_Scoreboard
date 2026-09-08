@@ -36,6 +36,20 @@
   font-size: .72em;
 }
 
+.replay-header-obs-status {
+  margin-top: 5px;
+  color: #8194a3;
+  font-size: .65rem;
+}
+.replay-header-obs-status .is-connected { color: #6ee7b7; }
+.replay-header-obs-status .is-disconnected { color: #fca5a5; }
+
+.replay-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .replay-subtitle {
   margin-top: 4px;
   color: #8194a3;
@@ -106,6 +120,20 @@
   margin: 0 auto;
   padding: 16px;
 }
+
+.replay-obs-add-button {
+  min-height: 34px;
+  padding: 8px 12px;
+  border: 1px solid #28c98b;
+  border-radius: 6px;
+  color: #071510;
+  background: #28c98b;
+  font-size: .68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.replay-obs-add-button:disabled { cursor: not-allowed; opacity: .45; }
 
 /* ── Playlist ───────────────────────────────────────────── */
 .replay-playlist-section {
@@ -757,6 +785,8 @@
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 560px) {
   .replay-header             { align-items: flex-start; flex-direction: column; }
+  .replay-header-actions     { width: 100%; }
+  .replay-header-actions button { flex: 1; }
   .replay-control-body       { padding: 10px; }
   .preset-buttons            { grid-template-columns: repeat(3, 1fr); }
   .speed-presets             { grid-template-columns: repeat(4, 1fr); }

@@ -1,6 +1,8 @@
-import { memo, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { memo, useEffect, useId, useState } from 'react';
 import type { Player } from '../../config/supabaseClient';
 import { useScoreboardTeamPlayers } from '../../hooks/useScoreboardTeamPlayers';
+import ModalBackdrop from '../ModalBackdrop';
 import UiIcon from '../UiIcon';
 
 interface ScoreboardPlayerSelectorProps {
@@ -34,13 +36,9 @@ function ScoreboardPlayerSelector({
   recordingGoal,
   onRecordGoalAndShow,
 }: ScoreboardPlayerSelectorProps) {
-  const { players, loading, error, refresh } = useScoreboardTeamPlayers(teamId, leagueId, fetchPlayers);
+  const { players, loading, error } = useScoreboardTeamPlayers(teamId, leagueId, fetchPlayers);
   const selectedPlayer = players.find((player) => player.id === selectedPlayerId) ?? null;
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [selectedPlayer?.image_url]);
+  const [pendingShowPlayer, setPendingShowPlayer] = useState<Player | null>(null);
 
   useEffect(() => {
     if (selectedPlayerId && !loading && !selectedPlayer) {
@@ -52,47 +50,69 @@ function ScoreboardPlayerSelector({
     onSelect(players.find((player) => player.id === value) ?? null);
   };
 
+  const handleShowToggle = () => {
+    if (!selectedPlayer) return;
+    if (isDisplayed) {
+      onHide();
+      return;
+    }
+    setPendingShowPlayer(selectedPlayer);
+  };
+
+  const closeShowDialog = () => setPendingShowPlayer(null);
+
+  const handleShowOnly = () => {
+    if (!pendingShowPlayer) return;
+    const player = pendingShowPlayer;
+    closeShowDialog();
+    onShow(player);
+  };
+
+  const handleRecordGoalAndShow = () => {
+    if (!pendingShowPlayer || !canRecordGoal || recordingGoal) return;
+    const player = pendingShowPlayer;
+    closeShowDialog();
+    onRecordGoalAndShow(player);
+  };
+
   return (
     <section className="scoreboard-player-selector" aria-label={`เลือกนักเตะทีม ${team}`}>
       <div className="scoreboard-player-selector-header">
-        <div>
-          <div className="scoreboard-player-selector-kicker">นักเตะทีม {team}</div>
-          <strong>{teamName || `Team ${team}`}</strong>
-        </div>
+        <span className="scoreboard-player-selector-kicker" title={teamName}>ทีม {team}</span>
         <button
           type="button"
-          className="btn-secondary scoreboard-player-refresh"
-          onClick={refresh}
-          disabled={!teamId || loading}
-          title="รีเฟรชรายชื่อนักเตะ"
-          aria-label={`รีเฟรชรายชื่อนักเตะทีม ${team}`}
+          className={`${isDisplayed ? 'btn-secondary' : 'btn-primary'} scoreboard-player-show-toggle`}
+          onClick={handleShowToggle}
+          disabled={!selectedPlayer}
+          title={isDisplayed ? 'ซ่อนนักเตะจาก Browser Source' : 'แสดงนักเตะบน Browser Source'}
+          aria-label={isDisplayed ? `ซ่อนนักเตะทีม ${team}` : `แสดงนักเตะทีม ${team}`}
         >
-          <UiIcon name={loading ? 'spinner' : 'sync'} />
+          <UiIcon name={isDisplayed ? 'pause' : 'playCircle'} />
+          {isDisplayed ? 'ซ่อน' : 'แสดง'}
         </button>
-      </div>
-
-      <select
-        className="scoreboard-player-select"
-        value={selectedPlayerId ?? ''}
-        onChange={(event) => handleSelectionChange(event.target.value)}
-        disabled={!teamId || loading || players.length === 0}
-        aria-label={`รายชื่อนักเตะทีม ${team}`}
-      >
-        <option value="">
-          {!teamId
-            ? 'กรุณาเลือกทีมจาก Supabase'
-            : loading
-              ? 'กำลังโหลดรายชื่อนักเตะ...'
-              : players.length === 0
-                ? 'ยังไม่มีรายชื่อนักเตะ'
-                : '-- เลือกนักเตะ --'}
-        </option>
-        {players.map((player) => (
-          <option key={player.id} value={player.id}>
-            #{player.jersey_number} — {player.name}
+        <select
+          className="scoreboard-player-select"
+          value={selectedPlayerId ?? ''}
+          onChange={(event) => handleSelectionChange(event.target.value)}
+          disabled={!teamId || loading || players.length === 0}
+          aria-label={`รายชื่อนักเตะทีม ${team}`}
+        >
+          <option value="">
+            {!teamId
+              ? 'กรุณาเลือกทีมจาก Supabase'
+              : loading
+                ? 'กำลังโหลดรายชื่อนักเตะ...'
+                : players.length === 0
+                  ? 'ยังไม่มีรายชื่อนักเตะ'
+                  : '-- เลือกนักเตะ --'}
           </option>
-        ))}
-      </select>
+          {players.map((player) => (
+            <option key={player.id} value={player.id}>
+              #{player.jersey_number} — {player.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {error && (
         <div className="scoreboard-player-selector-message scoreboard-player-selector-error" role="alert">
@@ -100,60 +120,97 @@ function ScoreboardPlayerSelector({
         </div>
       )}
 
-      {selectedPlayer ? (
-        <div className="scoreboard-player-preview">
-          {selectedPlayer.image_url && !imageFailed ? (
-            <img
-              src={selectedPlayer.image_url}
-              alt={`รูปนักเตะ ${selectedPlayer.name}`}
-              onError={() => setImageFailed(true)}
-            />
-          ) : (
-            <div className="scoreboard-player-preview-placeholder" aria-hidden="true">
-              <UiIcon name="users" />
-            </div>
-          )}
-          <div className="scoreboard-player-preview-details">
-            <span className="scoreboard-player-jersey">#{selectedPlayer.jersey_number}</span>
-            <strong>{selectedPlayer.name}</strong>
-            <span>{selectedPlayer.position}</span>
-          </div>
-          <div className="scoreboard-player-preview-actions">
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => onShow(selectedPlayer)}
-              title="แสดงนักเตะบน Browser Source"
-            >
-              <UiIcon name="playCircle" />
-              {isDisplayed ? 'แสดงซ้ำ' : 'แสดงบนจอ'}
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={onHide}
-              disabled={!isDisplayed}
-              title="ซ่อนนักเตะจาก Browser Source"
-            >
-              <UiIcon name="pause" />
-              ซ่อน
-            </button>
-            <button
-              type="button"
-              className="btn-success"
-              onClick={() => onRecordGoalAndShow(selectedPlayer)}
-              disabled={!canRecordGoal || recordingGoal}
-              title={canRecordGoal ? 'เพิ่มประตูในสถิติแมตช์ปัจจุบันแล้วแสดงนักเตะ' : 'ต้องเลือกแมตช์ปัจจุบันก่อนบันทึกประตู'}
-            >
-              <UiIcon name={recordingGoal ? 'spinner' : 'plusCircle'} />
-              {recordingGoal ? 'กำลังบันทึก...' : 'บันทึกประตู + แสดง'}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="scoreboard-player-selector-message">เลือกนักเตะเพื่อดู Preview</div>
+      {pendingShowPlayer && (
+        <PlayerShowDecisionDialog
+          player={pendingShowPlayer}
+          canRecordGoal={canRecordGoal}
+          recordingGoal={recordingGoal}
+          onRecordGoalAndShow={handleRecordGoalAndShow}
+          onShowOnly={handleShowOnly}
+          onClose={closeShowDialog}
+        />
       )}
     </section>
+  );
+}
+
+interface PlayerShowDecisionDialogProps {
+  player: Player;
+  canRecordGoal: boolean;
+  recordingGoal: boolean;
+  onRecordGoalAndShow: () => void;
+  onShowOnly: () => void;
+  onClose: () => void;
+}
+
+function PlayerShowDecisionDialog({
+  player,
+  canRecordGoal,
+  recordingGoal,
+  onRecordGoalAndShow,
+  onShowOnly,
+  onClose,
+}: PlayerShowDecisionDialogProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  return createPortal(
+    <ModalBackdrop
+      className="scoreboard-player-decision-overlay"
+      onEscape={onClose}
+      role="presentation"
+    >
+      <section
+        className="scoreboard-player-decision-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <header className="scoreboard-player-decision-header">
+          <div>
+            <h3 id={titleId}>
+              <UiIcon name="users" />
+              แสดงนักเตะบน Browser Source
+            </h3>
+            <p id={descriptionId}>
+              ต้องการบันทึกเพิ่ม score นักเตะ <strong>#{player.jersey_number} — {player.name}</strong> ด้วยไหม
+            </p>
+          </div>
+          <button type="button" className="scoreboard-player-decision-close modal-header-close" onClick={onClose} aria-label="ปิดหน้าต่าง">
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+
+        <div className="scoreboard-player-decision-actions">
+          <button
+            type="button"
+            className="btn-success"
+            onClick={onRecordGoalAndShow}
+            disabled={!canRecordGoal || recordingGoal}
+            title={canRecordGoal ? 'บันทึกประตูในสถิติแมตช์ปัจจุบันแล้วแสดงนักเตะ' : 'ต้องเลือกแมตช์ปัจจุบันก่อนบันทึกประตู'}
+          >
+            <UiIcon name={recordingGoal ? 'spinner' : 'plusCircle'} />
+            {recordingGoal ? 'กำลังบันทึก...' : 'บันทึกประตู + แสดง'}
+          </button>
+          <button type="button" className="btn-primary" onClick={onShowOnly}>
+            <UiIcon name="playCircle" />
+            แสดงอย่างเดียว
+          </button>
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            <span aria-hidden="true">×</span>
+            ยกเลิก
+          </button>
+        </div>
+
+        {!canRecordGoal && (
+          <p className="scoreboard-player-decision-hint" role="status">
+            ต้องเลือกแมตช์ปัจจุบันก่อนจึงจะบันทึกประตูได้ แต่ยังสามารถแสดงนักเตะอย่างเดียวได้
+          </p>
+        )}
+      </section>
+    </ModalBackdrop>,
+    document.body,
   );
 }
 

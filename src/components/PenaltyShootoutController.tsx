@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { translations } from '../constants/translations';
 import { useOBSWebSocket } from '../hooks/useOBSWebSocket';
@@ -610,6 +611,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       {showSettingsModal && (
         <ModalBackdrop className="modal-overlay" onEscape={() => setShowSettingsModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <ModalCloseButton onClose={() => setShowSettingsModal(false)} />
             <h3><i className="fas fa-cog"></i> ตั้งค่าจุดยิงจุดโทษ</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
@@ -664,6 +666,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       {showSceneSettingsModal && (
         <ModalBackdrop className="modal-overlay" onEscape={() => setShowSceneSettingsModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <ModalCloseButton onClose={() => setShowSceneSettingsModal(false)} />
             <h3><i className="fas fa-tv"></i> ตั้งค่า OBS Scene Toggle</h3>
             <p style={{ color: 'var(--text-muted-color)', fontSize: '0.85rem', marginBottom: '16px' }}>
               ตั้งค่า Source ที่จะ Show/Hide เมื่อเปิดหน้าจอยิงจุดโทษ
@@ -736,6 +739,7 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       {showHelpModal && (
         <ModalBackdrop className="modal-overlay" onEscape={() => setShowHelpModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <ModalCloseButton onClose={() => setShowHelpModal(false)} />
             <h3><i className="fas fa-question-circle"></i> วิธีตั้งค่าใน OBS Studio</h3>
             <div style={{ fontSize: '0.95rem', lineHeight: '1.5', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <p>เพิ่ม Source เหล่านี้ใน OBS เพื่อให้คะแนนและกราฟิกแสดงผลได้:</p>

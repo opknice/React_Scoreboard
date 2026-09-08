@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import { useState } from 'react';
 import { useTimerSnapshot, type TimerStore } from '../hooks/useTimer';
 import ModalBackdrop from './ModalBackdrop';
@@ -79,6 +80,7 @@ export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate
     <>
       <ModalBackdrop className="modal-overlay" onEscape={onClose}>
         <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '620px' }}>
+        <ModalCloseButton onClose={onClose} disabled={isSaving} />
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
           <h3 style={{ margin: 0 }}><i className="fas fa-cog"></i> {trans.settings}</h3>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap', marginLeft: 'auto' }}>
@@ -122,6 +124,7 @@ export default function ScoreboardSettingsModal({ isOpen, trans, detailsTemplate
             onClick={(event) => event.stopPropagation()}
             style={{ maxWidth: '620px' }}
           >
+            <ModalCloseButton onClose={() => setIsPreviewOpen(false)} />
             <h3 id="details-preview-title">
               <i className="fas fa-eye" aria-hidden="true"></i> Preview ข้อความ
             </h3>

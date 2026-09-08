@@ -255,7 +255,7 @@ export default function PlayerManagementModal({
               <i className={`fas ${isPlayerFormOpen ? 'fa-times' : 'fa-plus'}`} aria-hidden="true" />
               {isPlayerFormOpen ? 'ปิดฟอร์ม' : 'เพิ่มนักเตะ'}
             </button>
-            <button type="button" className="league-btn-secondary" onClick={onClose}>ปิด</button>
+            <button aria-label="ปิดหน้าต่าง" type="button" className="league-btn-secondary modal-header-close" onClick={onClose}><span aria-hidden="true">×</span></button>
           </div>
         </div>
 

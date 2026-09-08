@@ -7,7 +7,7 @@ const LeagueManagementModal = lazy(loadLeagueManagementModal);
 
 function LazyLeagueManagementModal(props: LeagueManagementModalProps) {
   return (
-    <Suspense fallback={<ScoreboardLazyFallback />}>
+    <Suspense fallback={<ScoreboardLazyFallback onClose={props.onClose} />}>
       <LeagueManagementModal {...props} />
     </Suspense>
   );

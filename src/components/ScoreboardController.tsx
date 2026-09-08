@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import { lazy, Profiler, Suspense, useState, useEffect, useRef, useCallback, useMemo, type ProfilerOnRenderCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { User } from '@supabase/supabase-js';
@@ -254,6 +255,10 @@ export default function ScoreboardController() {
   const [teamColorObsMessage, setTeamColorObsMessage] = useState('');
   const [playerObsBusy, setPlayerObsBusy] = useState(false);
   const [playerObsMessage, setPlayerObsMessage] = useState('');
+  const [varReplayObsBusy, setVarReplayObsBusy] = useState(false);
+  const [varReplayObsMessage, setVarReplayObsMessage] = useState('');
+  const [instantReplayObsBusy, setInstantReplayObsBusy] = useState(false);
+  const [instantReplayObsMessage, setInstantReplayObsMessage] = useState('');
   const [teamSelectTarget, setTeamSelectTarget] = useState<'A' | 'B'>('A');
   const [teamSelectSearch, setTeamSelectSearch] = useState<string>('');
   const [selectedPlayerA, setSelectedPlayerA] = useState<Player | null>(null);
@@ -463,6 +468,48 @@ export default function ScoreboardController() {
       setPlayerObsBusy(false);
     }
   }, [obs, supabaseLeague.activeLeagueId, triggerToast]);
+
+  const runReplayObsAction = useCallback(async (type: 'var' | 'instant') => {
+    const obsRef = obs.getObsRef();
+    if (!obs.isConnected || !obsRef) {
+      triggerToast('กรุณาเชื่อมต่อ OBS WebSocket ก่อน', 'error');
+      return;
+    }
+
+    const setBusy = type === 'var' ? setVarReplayObsBusy : setInstantReplayObsBusy;
+    const setMessage = type === 'var' ? setVarReplayObsMessage : setInstantReplayObsMessage;
+    setBusy(true);
+    setMessage('กำลังดำเนินการ...');
+    try {
+      const service = new OBSSetupService(obsRef);
+      const result = type === 'var'
+        ? await service.addOrUpdateVarReplayBrowserSource()
+        : await service.addOrUpdateInstantReplayBrowserSource();
+      setMessage(result.message);
+      triggerToast(result.message, 'success');
+    } catch (error: unknown) {
+      const label = type === 'var' ? 'VAR Replay' : 'Instant Replay';
+      const message = error instanceof Error ? error.message : `ไม่สามารถตั้งค่า ${label} Browser Source ใน OBS ได้`;
+      setMessage(message);
+      triggerToast(message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }, [obs, triggerToast]);
+
+  const varReplayObsSetup = useMemo(() => ({
+    connected: obs.isConnected,
+    busy: varReplayObsBusy,
+    message: varReplayObsMessage,
+    onQuickAdd: () => void runReplayObsAction('var'),
+  }), [obs.isConnected, runReplayObsAction, varReplayObsBusy, varReplayObsMessage]);
+
+  const instantReplayObsSetup = useMemo(() => ({
+    connected: obs.isConnected,
+    busy: instantReplayObsBusy,
+    message: instantReplayObsMessage,
+    onQuickAdd: () => void runReplayObsAction('instant'),
+  }), [instantReplayObsBusy, instantReplayObsMessage, obs.isConnected, runReplayObsAction]);
 
   const {
     teams: supabaseTeams,
@@ -2142,7 +2189,24 @@ export default function ScoreboardController() {
         </>
       )}
 
-      <Suspense fallback={<ScoreboardLazyFallback />}>
+      <Suspense fallback={<ScoreboardLazyFallback onClose={() => {
+        setShowSettingsModal(false);
+        setShowDetailLabelsModal(false);
+        setShowLogoPathModal(false);
+        setShowPresetTimeModal(false);
+        setShowQuickSetupModal(false);
+        setShowOBSSetupModal(false);
+        setShowHelpModal(false);
+        setShowDonateModal(false);
+        setShowChangelogModal(false);
+        setShowTeamSelectModal(false);
+        setShowAutoMacrosModal(false);
+        setShowConfirmSaveModal(false);
+        if (showPenaltyModal) closePenaltyModal();
+        if (showLeagueManagementModal) handleCloseLeagueManagement();
+        if (showVarReplayV2Modal) handleCloseVarReplay();
+        if (showInstantReplayModal) handleCloseInstantReplay();
+      }} />}>
         {showSettingsModal && <ScoreboardSettingsModal
           isOpen={showSettingsModal}
           trans={trans}
@@ -2187,6 +2251,7 @@ export default function ScoreboardController() {
         {showLogoPathModal && (
           <ModalBackdrop className="modal-overlay" onEscape={() => setShowLogoPathModal(false)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+              <ModalCloseButton onClose={() => setShowLogoPathModal(false)} />
               <h3>
                 <i className="fas fa-upload"></i> {trans.logoPathTitle || 'อัปโหลดและจัดการโลโก้'}
               </h3>
@@ -2477,6 +2542,8 @@ export default function ScoreboardController() {
           showInstantReplay={showInstantReplayModal}
           onCloseVarReplayV2={handleCloseVarReplay}
           onCloseInstantReplay={handleCloseInstantReplay}
+          varObsSetup={varReplayObsSetup}
+          instantReplayObsSetup={instantReplayObsSetup}
         />
 
         {showPenaltyModal && <PenaltyShootoutModal

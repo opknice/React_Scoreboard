@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import ModalBackdrop from './ModalBackdrop';
 
 interface ScoreboardInfoModalsProps {
@@ -24,6 +25,7 @@ export default function ScoreboardInfoModals({
       {showHelp && (
         <ModalBackdrop className="modal-overlay" onEscape={onCloseHelp}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClose={onCloseHelp} />
             <h3><i className="fas fa-question-circle"></i> {trans.helpTitle}</h3>
             <div dangerouslySetInnerHTML={{ __html: trans.helpStep1 }} />
             <div dangerouslySetInnerHTML={{ __html: trans.helpStep2 }} />
@@ -36,6 +38,7 @@ export default function ScoreboardInfoModals({
       {showDonate && (
         <ModalBackdrop className="modal-overlay" onEscape={onCloseDonate}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClose={onCloseDonate} />
             <h3><i className="fas fa-hand-holding-usd"></i> {trans.donateTitle}</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
               <div>{trans.donateThai}</div>
@@ -50,6 +53,7 @@ export default function ScoreboardInfoModals({
       {showChangelog && (
         <ModalBackdrop className="modal-overlay" onEscape={onCloseChangelog}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <ModalCloseButton onClose={onCloseChangelog} />
             <h3><i className="fas fa-history"></i> {trans.changelogTitle || 'Changelog'}</h3>
             <div style={{ maxHeight: '60vh', overflowY: 'auto' }} dangerouslySetInnerHTML={{ __html: trans.changelogContent || '<p>No changelog available.</p>' }} />
             <div style={{ marginTop: '16px', textAlign: 'right' }}><button className="btn-primary" onClick={onCloseChangelog}>{trans.close}</button></div>

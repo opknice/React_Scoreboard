@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useObsVideoFolderContext } from '../../context/useObsVideoFolderContext';
 import { getVideoMimeType, isVideoFile } from '../../utils/replayFormatters';
 import ReplayShortcutSettings from './ReplayShortcutSettings';
@@ -13,6 +12,9 @@ import {
 } from './varReplayKeybindings';
 import type { VarReplayV2Message, VarReplayV2State, VarReplayV2Transform } from './varReplayV2Protocol';
 import styles from './VarReplayV2.module.css';
+import { getAppBaseUrl } from '../../utils/appBaseUrl';
+import { buildVarReplayBrowserUrl } from '../../utils/replayBrowserUrl';
+import type { ReplayObsSetupProps } from '../../types/replayObsSetup';
 
 type VarReplayV2Mode = 'control' | 'screen';
 type Marker = 'A' | 'B';
@@ -105,36 +107,51 @@ function Header({
   screenReady,
   folderName,
   copied,
-  onBack,
   onCopy,
+  obsSetup,
 }: {
   screenUrl: string;
   screenReady: boolean;
   folderName: string;
   copied: boolean;
-  onBack: () => void;
   onCopy: () => void;
+  obsSetup?: ReplayObsSetupProps;
 }) {
   const openScreen = () => window.open(screenUrl, '_blank', 'noopener,noreferrer');
 
   return (
     <header className={styles.header}>
       <div className={styles.brandBlock}>
-        <div className={styles.brand}>VAR Controller</div>
+        <div className={styles.brand}>VAR Controllerหห</div>
         <div className={styles.headerMeta}>
           <span className={`${styles.statusDot} ${screenReady ? styles.statusReady : styles.statusWaiting}`} />
           {screenReady ? 'OBS Screen พร้อมใช้งาน' : 'รอ OBS Screen'}
           <span className={styles.separator}>·</span>
           โฟลเดอร์: {folderName || 'ยังไม่ได้เชื่อมต่อ'}
         </div>
+        {obsSetup && (
+          <div className={styles.obsHeaderStatus} role="status">
+            <span className={obsSetup.connected ? styles.obsConnected : styles.obsDisconnected}>
+              OBS WebSocket: {obsSetup.connected ? 'Connected' : 'ยังไม่เชื่อมต่อ'}
+            </span>
+            {obsSetup.message && <span> — {obsSetup.message}</span>}
+          </div>
+        )}
       </div>
       <div className={styles.headerActions}>
-        <button className={styles.secondaryButton} type="button" onClick={onBack}>
-          กลับ Scoreboard Control
-        </button>
         <button className={styles.secondaryButton} type="button" onClick={openScreen}>
           เปิด Screen
         </button>
+        {obsSetup && (
+          <button
+            className={styles.primaryButton}
+            type="button"
+            disabled={!obsSetup.connected || obsSetup.busy}
+            onClick={obsSetup.onQuickAdd}
+          >
+            {obsSetup.busy ? 'กำลังตั้งค่า...' : 'Quick Add to OBS'}
+          </button>
+        )}
         <button className={styles.primaryButton} type="button" onClick={onCopy}>
           {copied ? 'คัดลอกแล้ว!' : 'คัดลอก URL OBS'}
         </button>
@@ -492,8 +509,7 @@ function SpeedControl({
   );
 }
 
-function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
-  const navigate = useNavigate();
+function VarReplayV2Control({ onBack, obsSetup }: { onBack?: () => void; obsSetup?: ReplayObsSetupProps }) {
   const videoFolder = useObsVideoFolderContext();
   const { channelRef, send } = useVarReplayV2Channel();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -863,23 +879,15 @@ function VarReplayV2Control({ onBack }: { onBack?: () => void }) {
     resetTransform: formatReplayBinding(bindingByAction.get('resetTransform')),
   }), [bindingByAction]);
 
-  const screenUrl = `${window.location.origin}${import.meta.env.BASE_URL}var-replay-v2/screen`;
+  const screenUrl = buildVarReplayBrowserUrl(getAppBaseUrl());
   const copyUrl = () => {
     void navigator.clipboard?.writeText(screenUrl);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   };
-  const backToScoreboard = () => {
-    if (onBack) {
-      onBack();
-      return;
-    }
-    navigate('/');
-  };
-
   return (
     <main className={`${styles.control} ${onBack ? styles.modalControl : ''}`}>
-      <Header screenUrl={screenUrl} screenReady={screenReady} folderName={videoFolder.folderName} copied={copied} onBack={backToScoreboard} onCopy={copyUrl} />
+      <Header screenUrl={screenUrl} screenReady={screenReady} folderName={videoFolder.folderName} copied={copied} onCopy={copyUrl} obsSetup={obsSetup} />
       <div className={styles.body}>
         {!videoFolder.isConnected && (
           <div className={styles.infoBanner}>
@@ -1130,6 +1138,6 @@ function VarReplayV2Screen() {
   );
 }
 
-export default function VarReplayV2Page({ mode, onBack }: { mode: VarReplayV2Mode; onBack?: () => void }) {
-  return mode === 'screen' ? <VarReplayV2Screen /> : <VarReplayV2Control onBack={onBack} />;
+export default function VarReplayV2Page({ mode, onBack, obsSetup }: { mode: VarReplayV2Mode; onBack?: () => void; obsSetup?: ReplayObsSetupProps }) {
+  return mode === 'screen' ? <VarReplayV2Screen /> : <VarReplayV2Control onBack={onBack} obsSetup={obsSetup} />;
 }

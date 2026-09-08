@@ -150,7 +150,7 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
             </h3>
             <p className="league-database-modal-subtitle">แก้ไขข้อมูลการแข่งขันที่เลือก</p>
           </div>
-          <button type="button" className="league-btn-secondary" onClick={onClose} autoFocus aria-label="ปิดฟอร์มแก้ไข">
+          <button type="button" className="league-btn-secondary modal-header-close" onClick={onClose} autoFocus aria-label="ปิดฟอร์มแก้ไข">
             <i className="fas fa-times"></i> ปิด
           </button>
         </div>

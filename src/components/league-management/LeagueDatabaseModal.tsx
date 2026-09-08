@@ -117,7 +117,7 @@ export const LeagueDatabaseModal: React.FC<LeagueDatabaseModalProps> = ({
           </div>
           <button
             type="button"
-            className="league-btn-secondary"
+            className="league-btn-secondary modal-header-close"
             onClick={onClose}
             autoFocus
             aria-label="ปิดหน้าจัดการการแข่งขัน"

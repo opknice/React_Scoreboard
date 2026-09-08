@@ -388,28 +388,28 @@ button:disabled {
 .scoreboard-player-selectors {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
+  align-items: start;
 }
 
 .scoreboard-player-selector {
   min-width: 0;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.84));
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.45);
 }
 
 .scoreboard-player-selector-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 9px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
   color: #f8fafc;
 }
 
 .scoreboard-player-selector-kicker {
-  margin-bottom: 2px;
+  white-space: nowrap;
   color: #38bdf8;
   font-size: 0.72rem;
   font-weight: 700;
@@ -417,83 +417,27 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.scoreboard-player-refresh {
-  width: 34px;
+.scoreboard-player-show-toggle {
+  grid-column: 3;
+  grid-row: 1;
   min-height: 32px;
-  padding: 5px;
-}
-
-.scoreboard-player-select {
-  width: 100%;
-  min-width: 0;
-}
-
-.scoreboard-player-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 68px;
-  margin-top: 10px;
-  padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.42);
-}
-
-.scoreboard-player-preview img,
-.scoreboard-player-preview-placeholder {
-  width: 52px;
-  height: 52px;
-  flex: 0 0 52px;
-  border-radius: 8px;
-  object-fit: cover;
-  background: #1e293b;
-}
-
-.scoreboard-player-preview-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #64748b;
-  font-size: 1.5rem;
-}
-
-.scoreboard-player-preview-details {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  color: #cbd5e1;
-  font-size: 0.78rem;
-}
-
-.scoreboard-player-preview-details strong {
-  overflow: hidden;
-  color: #f8fafc;
-  font-size: 0.92rem;
-  text-overflow: ellipsis;
+  padding: 5px 8px;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
-.scoreboard-player-preview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-left: auto;
-}
-
-.scoreboard-player-preview-actions button {
-  padding: 6px 8px;
-  font-size: 0.72rem;
-}
-
-.scoreboard-player-jersey {
-  color: #fbbf24;
-  font-weight: 800;
+.scoreboard-player-select {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 6px;
+  font-size: 0.78rem;
 }
 
 .scoreboard-player-selector-message {
-  min-height: 18px;
-  margin-top: 8px;
+  margin-top: 6px;
   color: #94a3b8;
   font-size: 0.75rem;
 }
@@ -502,9 +446,142 @@ button:disabled {
   color: #fca5a5;
 }
 
+.scoreboard-player-decision-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(4, 8, 16, 0.85);
+}
+
+.scoreboard-player-decision-dialog {
+  width: min(480px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  color: #f8fafc;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  animation: scoreboard-player-decision-enter 0.2s ease-out;
+}
+
+.scoreboard-player-decision-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  background: rgba(15, 23, 42, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scoreboard-player-decision-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.scoreboard-player-decision-header h3 .ui-icon {
+  color: #38bdf8;
+}
+
+.scoreboard-player-decision-header p {
+  margin: 8px 0 0;
+  color: #cbd5e1;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.scoreboard-player-decision-header p strong {
+  color: #fbbf24;
+}
+
+.scoreboard-player-decision-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  color: #94a3b8;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  place-items: center;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.scoreboard-player-decision-close:hover,
+.scoreboard-player-decision-close:focus-visible {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.scoreboard-player-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 18px 22px 12px;
+}
+
+.scoreboard-player-decision-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 0.78rem;
+}
+
+.scoreboard-player-decision-hint {
+  margin: 0;
+  padding: 0 22px 18px;
+  color: #fbbf24;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+@keyframes scoreboard-player-decision-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scoreboard-player-decision-dialog {
+    animation: none;
+  }
+}
+
 @media (max-width: 640px) {
   .scoreboard-player-selectors {
     grid-template-columns: 1fr;
+  }
+
+  .scoreboard-player-selector-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .scoreboard-player-decision-actions {
+    flex-direction: column;
+  }
+
+  .scoreboard-player-decision-actions button {
+    width: 100%;
   }
 }
 
@@ -1471,3 +1548,14 @@ button:disabled {
     font-size: 1.15rem;
   }
 }
+/* Consistent red close affordance for modal headers, including inline styles. */
+button.modal-header-close {
+  color: #fff !important;
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+  flex-shrink: 0;
+  min-width: 32px;
+  min-height: 32px;
+}
+button.modal-header-close:hover { background: #dc2626 !important; }
+button.modal-header-close:focus-visible { outline: 2px solid #fca5a5; outline-offset: 3px; }

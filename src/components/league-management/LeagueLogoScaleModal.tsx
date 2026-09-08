@@ -79,7 +79,7 @@ export default function LeagueLogoScaleModal({
             </h2>
             <p>{league.name}</p>
           </div>
-          <button type="button" className="league-modal-close" onClick={requestClose} aria-label="ปิดหน้าต่าง">
+          <button type="button" className="league-modal-close modal-header-close" onClick={requestClose} aria-label="ปิดหน้าต่าง">
             <i className="fas fa-times" aria-hidden="true" />
           </button>
         </div>

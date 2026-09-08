@@ -338,7 +338,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, maxHeight: '90vh', overflow: 'auto', padding: 0 }}>
         <div style={{ padding: '18px 24px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div><h3 style={{ margin: 0 }}>สร้าง Automation</h3><div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 5 }}>ตั้งค่าแบบง่าย: เมื่อเกิดอะไรขึ้น → ให้ทำอะไร</div></div>
-          <button type="button" style={{ ...buttonStyle(), fontSize: '1.2rem', padding: '2px 9px' }} onClick={onClose}>×</button>
+          <button aria-label="ปิดหน้าต่าง" className="modal-header-close" type="button" style={{ ...buttonStyle(), fontSize: '1.2rem', padding: '2px 9px' }} onClick={onClose}>×</button>
         </div>
         <div style={{ display: 'flex', padding: '14px 24px', gap: 8, borderBottom: '1px solid #1e293b' }}>
           {['ตั้งชื่อ', 'เลือกเหตุการณ์', 'กำหนดขั้นตอน'].map((label, index) => <button key={label} type="button" disabled={index > step} onClick={() => goTo(index)} style={{ ...buttonStyle(index === step), flex: 1, opacity: index <= step ? 1 : 0.55 }}>{index + 1}. {label}</button>)}

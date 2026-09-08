@@ -21,6 +21,7 @@ it('updates the timeline without rendering the control lists, rejects old playba
   Object.defineProperty(file, 'arrayBuffer', { value: async () => new ArrayBuffer(4) });
   mocks.folder.value = { isConnected: true, videoFiles: [file], folderHandle: null };
   const { container } = render(<InstantReplayControl />);
+  expect(screen.queryByRole('button', { name: /Quick Add to OBS/ })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /คลิกเดียว โหลดและเล่น/ }));
   await waitFor(() => expect(mocks.send.mock.calls.some(([message]) => message.type === 'file')).toBe(true));
   const playbackId = mocks.send.mock.calls.find(([message]) => message.type === 'file')![0].playbackId;
@@ -42,4 +43,28 @@ it('updates the timeline without rendering the control lists, rejects old playba
   expect(mocks.send).toHaveBeenCalledWith({ type: 'cmd', action: 'seek', value: 30 });
   fireEvent.click(screen.getByRole('button', { name: '10s' }));
   expect(mocks.send).toHaveBeenCalledWith({ type: 'cmd', action: 'setA', value: 50 });
+});
+
+it('shows Quick Add only when OBS setup is provided and reflects its connection state', () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('BroadcastChannel', class { postMessage() {} close() {} });
+  mocks.folder.value = { isConnected: false, videoFiles: [], folderHandle: null };
+  const onQuickAdd = vi.fn();
+  const { rerender } = render(
+    <InstantReplayControl obsSetup={{ connected: false, busy: false, message: '', onQuickAdd }} />,
+  );
+  const button = screen.getByRole('button', { name: /Quick Add to OBS/ });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(Array.from(button.parentElement!.querySelectorAll('button')).map((item) => item.textContent?.trim())).toEqual([
+    'Quick Add to OBS',
+    'คัดลอก URL สำหรับ OBS',
+  ]);
+
+  rerender(<InstantReplayControl obsSetup={{ connected: true, busy: false, message: 'พร้อมใช้งาน', onQuickAdd }} />);
+  fireEvent.click(screen.getByRole('button', { name: /Quick Add to OBS/ }));
+  expect(onQuickAdd).toHaveBeenCalledOnce();
+  const brand = screen.getByText('Replay Controller');
+  expect(brand.nextElementSibling?.className).toBe('replay-header-obs-status');
+  expect(brand.nextElementSibling?.textContent).toContain('Connected');
+  expect(brand.nextElementSibling?.textContent).toContain('พร้อมใช้งาน');
 });

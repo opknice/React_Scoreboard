@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import ModalBackdrop from './ModalBackdrop';
 
 interface ObsSetupModalProps {
@@ -13,6 +14,7 @@ export default function ObsSetupModal({ isOpen, closeLabel, onDownload, onClose 
   return (
     <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton onClose={onClose} />
         <h3><i className="fas fa-download"></i> ดาวน์โหลด OBS Scene Collection</h3>
         <div style={{ marginBottom: '20px', padding: '20px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px', textAlign: 'center', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)' }}>
           <div style={{ fontSize: '4rem', marginBottom: '12px' }}>📦</div>

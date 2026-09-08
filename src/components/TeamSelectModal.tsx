@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import ModalBackdrop from './ModalBackdrop';
 
 export interface SelectableTeam {
@@ -41,6 +42,7 @@ export default function TeamSelectModal({
   return (
     <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: '520px' }}>
+        <ModalCloseButton onClose={onClose} />
         <h3>
           <i className="fas fa-users"></i> เลือกทีม {target}
         </h3>

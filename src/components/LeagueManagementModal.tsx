@@ -110,7 +110,7 @@ export default function LeagueManagementModal({
               </span>
             )}
           </h2>
-          <button className="league-modal-close" onClick={onClose}>
+          <button type="button" aria-label="ปิดหน้าต่าง" className="league-modal-close modal-header-close" onClick={onClose}>
             <i className="fas fa-times"></i>
           </button>
         </div>

@@ -304,7 +304,7 @@ export default function LogoBrowserCropModal({
               </span>
             </div>
           </div>
-          <button
+          <button type="button" aria-label="ปิดหน้าต่าง" className="modal-header-close"
             onClick={handleCancel}
             style={{ background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
           >

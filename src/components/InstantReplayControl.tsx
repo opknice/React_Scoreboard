@@ -16,6 +16,9 @@ import {
   type ReplayPlaylistStatus,
 } from '../types/instantReplay';
 import './InstantReplayControl.css';
+import { getAppBaseUrl } from '../utils/appBaseUrl';
+import { buildInstantReplayBrowserUrl } from '../utils/replayBrowserUrl';
+import type { ReplayObsSetupProps } from '../types/replayObsSetup';
 
 const STORAGE_KEYS = {
   REPLAY_DURATION: 'replayDuration',
@@ -56,7 +59,7 @@ function saveSettings(settings: { replayDuration?: number }) {
   }
 }
 
-export default function InstantReplayControl() {
+export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayObsSetupProps }) {
   const videoFolder = useObsVideoFolderContext();
   const { channelRef, send } = useReplayChannel();
   // Fix #2: ref to track latest duration without stale closure issues
@@ -69,6 +72,7 @@ export default function InstantReplayControl() {
   const [loadedFileName, setLoadedFileName] = useState('');
   const [duration, setDuration] = useState(0);
   const [replayClock] = useState(createReplayClock);
+  const screenUrl = buildInstantReplayBrowserUrl(getAppBaseUrl());
   // Fix #1: use lazy initializers so loadSettings() runs once on mount only
   const [replayDuration, setReplayDuration] = useState(() => loadSettings().replayDuration);
   // Fix #4: track "Full" preset active state separately from replayDuration value
@@ -346,7 +350,6 @@ export default function InstantReplayControl() {
   }, [sendCommand]);
 
   const onCopyUrl = useCallback(async () => {
-    const screenUrl = `${window.location.origin}${import.meta.env.BASE_URL}replay/screen`;
     try {
       await navigator.clipboard.writeText(screenUrl);
       setCopied(true);
@@ -363,7 +366,7 @@ export default function InstantReplayControl() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  }, []);
+  }, [screenUrl]);
 
   useEffect(() => {
     const channel = channelRef.current;
@@ -481,13 +484,34 @@ export default function InstantReplayControl() {
         <div>
           {/* VAR-style brand: cyan prefix + white label */}
           <div className="replay-brand">Replay Controller</div>
+          {obsSetup && (
+            <div className="replay-header-obs-status" role="status">
+              <span className={obsSetup.connected ? 'is-connected' : 'is-disconnected'}>
+                OBS WebSocket: {obsSetup.connected ? 'Connected' : 'ยังไม่เชื่อมต่อ'}
+              </span>
+              {obsSetup.message && <span> — {obsSetup.message}</span>}
+            </div>
+          )}
           {/* Animated live dot + subtitle */}
 
         </div>
-        <button className={`var-button var-button-header ${copied ? 'copied' : ''}`} type="button" onClick={onCopyUrl}>
-          <i className={copied ? 'fas fa-check' : 'fas fa-link'}></i>
-          <span>{copied ? 'คัดลอกแล้ว!' : 'คัดลอก URL สำหรับ OBS'}</span>
-        </button>
+        <div className="replay-header-actions">
+          {obsSetup && (
+            <button
+              type="button"
+              className="replay-obs-add-button"
+              disabled={!obsSetup.connected || obsSetup.busy}
+              onClick={obsSetup.onQuickAdd}
+            >
+              <i className={`fas ${obsSetup.busy ? 'fa-spinner fa-spin' : 'fa-plug'}`} />
+              {obsSetup.busy ? 'กำลังตั้งค่า...' : 'Quick Add to OBS'}
+            </button>
+          )}
+          <button className={`var-button var-button-header ${copied ? 'copied' : ''}`} type="button" onClick={onCopyUrl}>
+            <i className={copied ? 'fas fa-check' : 'fas fa-link'}></i>
+            <span>{copied ? 'คัดลอกแล้ว!' : 'คัดลอก URL สำหรับ OBS'}</span>
+          </button>
+        </div>
       </header>
 
       <section className="replay-control-body">

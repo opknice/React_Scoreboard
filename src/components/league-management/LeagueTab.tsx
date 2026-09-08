@@ -105,7 +105,7 @@ export const LeagueTab: React.FC<LeagueTabProps> = ({
               </h3>
               <button
                 type="button"
-                className="league-btn-secondary"
+                className="league-btn-secondary modal-header-close"
                 onClick={closeLeagueForm}
                 autoFocus
                 aria-label="ปิดฟอร์มลีก"

@@ -44,7 +44,7 @@ export default function AutoMacrosPanel({ obs, onClose, customMacrosHook }: Auto
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: '90vh', overflow: 'auto', padding: 0 }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 3, background: '#1e293b', borderBottom: '1px solid #334155', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div><h3 style={{ margin: 0 }}>Automation</h3><div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 4 }}>ตั้งค่าให้ Scoreboard และ OBS ทำงานแทนคุณ</div></div>
-          <button type="button" onClick={onClose} style={iconButton()}>×</button>
+          <button aria-label="ปิดหน้าต่าง" className="modal-header-close" type="button" onClick={onClose} style={iconButton()}>×</button>
         </div>
         <div style={{ padding: 24 }}>
           <div style={{ padding: '12px 15px', borderRadius: 8, background: obs.isConnected ? '#064e3b' : '#451a03', color: obs.isConnected ? '#a7f3d0' : '#fed7aa', fontSize: '0.82rem', marginBottom: 18 }}>

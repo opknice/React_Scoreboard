@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import { useEffect, useState } from 'react';
 import type {
   LeagueDetailLabelKey,
@@ -67,6 +68,7 @@ export default function LeagueDetailLabelsModal({
         onClick={(event) => event.stopPropagation()}
         style={{ maxWidth: '620px' }}
       >
+        <ModalCloseButton onClose={onClose} disabled={isSaving} />
         <h3 id="league-detail-labels-modal-title">
           <i className="fas fa-tags" aria-hidden="true"></i>
           ข้อความ Label ระดับ League

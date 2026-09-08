@@ -52,6 +52,10 @@
 
 .body { width: min(100%, 1280px); margin: 0 auto; padding: 18px; }
 .modalControl .body { width: 100%; max-height: calc(94vh - 70px); overflow: auto; }
+.obsHeaderStatus { color: #8194a3; font-size: .65rem; }
+.obsConnected { color: #6ee7b7; }
+.obsDisconnected { color: #fca5a5; }
+.headerActions button:disabled { cursor: not-allowed; opacity: .45; }
 .mainGrid { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
 .workspace { min-width: 0; display: grid; gap: 12px; }
 

@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import ModalBackdrop from './ModalBackdrop';
 
 interface PresetTimeModalProps {
@@ -18,6 +19,7 @@ export default function PresetTimeModal({ isOpen, minutes, seconds, title, close
   return (
     <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton onClose={onClose} />
         <h3><i className="fas fa-clock"></i> {title}</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
           {[0, 15, 20, 25, 30, 35, 40, 45].map((value) => <button key={value} className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => onSetPreset(value)}><i className="fas fa-clock"></i> {value === 0 ? '0 นาที' : `${value} นาที`}</button>)}

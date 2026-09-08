@@ -65,7 +65,7 @@ export default function SaveMatchConfirmDialog({
             ยืนยันการบันทึก
           </h3>
           <button
-            className="save-match-confirm-close"
+            className="save-match-confirm-close modal-header-close"
             type="button"
             onClick={onClose}
             aria-label="ปิดหน้าต่างยืนยันการบันทึก"

@@ -11,6 +11,10 @@ import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
 import type { TeamColorBrowserSettings } from '../types/teamColorBrowserSettings';
 import { buildTeamColorBrowserUrl } from '../utils/teamColorBrowserUrl';
 import { buildPlayerBrowserUrl } from '../utils/playerBrowserUrl';
+import { buildInstantReplayBrowserUrl, buildVarReplayBrowserUrl } from '../utils/replayBrowserUrl';
+
+export const VAR_REPLAY_BROWSER_SOURCE_NAME = 'VAR_Replay_Screen';
+export const INSTANT_REPLAY_BROWSER_SOURCE_NAME = 'Instant_Replay_Screen';
 
 export interface SetupProgress {
   step: string;
@@ -401,6 +405,29 @@ export class OBSSetupService {
     };
   }
 
+  private getReplayBrowserConfig(type: 'var' | 'instant'): SourceConfig {
+    return {
+      name: type === 'var' ? VAR_REPLAY_BROWSER_SOURCE_NAME : INSTANT_REPLAY_BROWSER_SOURCE_NAME,
+      type: 'browser_source',
+      settings: {
+        url: type === 'var'
+          ? buildVarReplayBrowserUrl(getOrigin())
+          : buildInstantReplayBrowserUrl(getOrigin()),
+        width: 1920,
+        height: 1080,
+        fps: 60,
+        shutdown: false,
+        restart_when_active: false,
+        css: 'body { background-color: rgba(0, 0, 0, 0); margin: 0; overflow: hidden; }',
+      },
+      transform: {
+        position: { x: 0, y: 0 },
+        scale: { x: 1, y: 1 },
+        alignment: 5,
+      },
+    };
+  }
+
   /**
    * Add or update the two persistent Team Name Browser Sources. Existing GDI
    * sources are kept intact and simply hidden so the migration is reversible.
@@ -589,6 +616,74 @@ export class OBSSetupService {
       message: 'อัปเดต Player Browser Source และรีเฟรช OBS แล้ว',
       updatedSources: [config.name],
     };
+  }
+
+  private async addOrUpdateReplayBrowserSource(
+    type: 'var' | 'instant',
+    sceneName = MAIN_SCENE_CONFIG.name,
+  ): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    if (!(await this.sceneExists(sceneName))) await this.createScene(sceneName);
+
+    const config = this.getReplayBrowserConfig(type);
+    if (!(await this.sourceExists(config.name))) {
+      await this.obsRef.call('CreateInput', {
+        sceneName,
+        inputName: config.name,
+        inputKind: 'browser_source',
+        inputSettings: config.settings,
+        sceneItemEnabled: true,
+      });
+    } else {
+      await this.updateSourceSettings(config.name, config.settings);
+    }
+
+    await this.ensureSceneItem(sceneName, config.name, true);
+    if (config.transform) await this.setSourceTransform(sceneName, config.name, config.transform);
+    await this.refreshBrowserSource(config.name);
+
+    const label = type === 'var' ? 'VAR Replay' : 'Instant Replay';
+    return {
+      success: true,
+      message: `เพิ่ม/อัปเดต ${label} Browser Source และรีเฟรช OBS แล้ว`,
+      updatedSources: [config.name],
+    };
+  }
+
+  private async updateReplayBrowserSource(type: 'var' | 'instant'): Promise<TeamNameBrowserSetupResult> {
+    if (!this.isConnected()) throw new Error('OBS is not connected');
+    const config = this.getReplayBrowserConfig(type);
+    const label = type === 'var' ? 'VAR Replay' : 'Instant Replay';
+    if (!(await this.sourceExists(config.name))) {
+      return {
+        success: true,
+        message: `ไม่พบ ${label} Browser Source ที่มีอยู่ จึงไม่ได้เพิ่ม Source ใหม่`,
+        updatedSources: [],
+      };
+    }
+    await this.updateSourceSettings(config.name, config.settings);
+    await this.refreshBrowserSource(config.name);
+    return {
+      success: true,
+      message: `อัปเดต ${label} Browser Source และรีเฟรช OBS แล้ว`,
+      updatedSources: [config.name],
+    };
+  }
+
+  async addOrUpdateVarReplayBrowserSource(sceneName = MAIN_SCENE_CONFIG.name) {
+    return this.addOrUpdateReplayBrowserSource('var', sceneName);
+  }
+
+  async updateVarReplayBrowserSource() {
+    return this.updateReplayBrowserSource('var');
+  }
+
+  async addOrUpdateInstantReplayBrowserSource(sceneName = MAIN_SCENE_CONFIG.name) {
+    return this.addOrUpdateReplayBrowserSource('instant', sceneName);
+  }
+
+  async updateInstantReplayBrowserSource() {
+    return this.updateReplayBrowserSource('instant');
   }
 
   /** Add or update separate Score A/B Browser Sources while preserving Both. */

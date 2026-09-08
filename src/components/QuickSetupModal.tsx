@@ -1,3 +1,4 @@
+import ModalCloseButton from './ModalCloseButton';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocalFontOptions } from '../hooks/useLocalFontOptions';
 import type { Team } from '../config/supabaseClient';
@@ -226,6 +227,7 @@ export default function QuickSetupModal({
   return (
     <ModalBackdrop className="modal-overlay" onEscape={onClose}>
       <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton onClose={onClose} />
         <h3><i className="fas fa-sliders"></i> Quick Setup</h3>
         <div style={{ display: 'flex', marginBottom: '10px' }}>
           <button type="button" className="btn-primary" style={{ width: '100%', background: '#3b82f6', borderColor: '#3b82f6', fontWeight: 'bold' }} onClick={onOpenObsSetup}>
