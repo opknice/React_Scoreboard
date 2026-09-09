@@ -43,6 +43,42 @@ describe('MacroEditorModal event step', () => {
     expect(keyInput.value).toBe('KeyA');
   });
 
+  it('requires a specific Scoreboard button and removes the all-buttons choice', () => {
+    renderEditor();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ButtonClicked' } });
+
+    expect(screen.queryByText('ทุกปุ่ม')).toBeNull();
+    expect(screen.queryByText('ปุ่มที่เลือก')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    expect(screen.getByText('กรุณาเลือกปุ่มบน Scoreboard ที่ต้องการ')).toBeTruthy();
+
+    const buttonSelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement;
+    fireEvent.change(buttonSelect, { target: { value: 'close_var_replay' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+
+    expect(screen.getByText('Automation ใหม่')).toBeTruthy();
+  });
+
+  it('requires a specific OBS hotkey and removes the all-hotkeys choice', () => {
+    renderEditor();
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'CustomEvent' } });
+
+    expect(screen.queryByText('ทุก Hotkey')).toBeNull();
+    expect(screen.queryByText('Hotkey ที่เลือก')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    expect(screen.getByText('กรุณาเลือก Hotkey จาก OBS Script')).toBeTruthy();
+
+    const hotkeySelect = screen.getAllByRole('combobox')[1] as HTMLSelectElement;
+    fireEvent.change(hotkeySelect, { target: { value: 'play1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+
+    expect(screen.getByText('Automation ใหม่')).toBeTruthy();
+  });
+
   it('does not close while Escape is being used to clear a keyboard filter', () => {
     const onClose = vi.fn();
     render(<MacroEditorModal onSave={vi.fn()} onClose={onClose} />);
@@ -87,6 +123,7 @@ describe('MacroEditorModal event step', () => {
     'closeVarReplay',
     'openReplayControl',
     'closeReplayControl',
+    'closePenaltyShootout',
     'saveReplayBuffer',
     'loadLatestReplay',
   ])('adds the selected action type: %s', (actionType) => {

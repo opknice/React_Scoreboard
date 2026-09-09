@@ -28,6 +28,7 @@ const ACTION_OPTIONS: Array<{ value: ActionType; label: string }> = [
   { value: 'closeVarReplay', label: 'ปิด VAR Controller' },
   { value: 'openReplayControl', label: 'เปิด Replay Control' },
   { value: 'closeReplayControl', label: 'ปิด Replay Control' },
+  { value: 'closePenaltyShootout', label: 'ปิดการยิงจุดโทษ' },
   { value: 'saveReplayBuffer', label: 'บันทึก Replay Buffer' },
   { value: 'loadLatestReplay', label: 'โหลด Replay ล่าสุด' },
 ];
@@ -184,6 +185,12 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
 
   const validateStep = (targetStep: number): string => {
     if (targetStep >= 1 && !name.trim()) return 'กรุณาตั้งชื่อ Automation';
+    if (targetStep >= 1 && event === 'ButtonClicked' && (filter.kind !== 'button' || !filter.value)) {
+      return 'กรุณาเลือกปุ่มบน Scoreboard ที่ต้องการ';
+    }
+    if (targetStep >= 1 && event === 'CustomEvent' && (filter.kind !== 'hotkey' || !filter.value)) {
+      return 'กรุณาเลือก Hotkey จาก OBS Script';
+    }
     if (targetStep >= 2) {
       if (actions.length === 0) return 'กรุณาเพิ่มอย่างน้อย 1 ขั้นตอน';
       for (const action of actions) {
@@ -229,7 +236,12 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
       color,
       trigger: {
         event,
-        filter: filter.kind === 'any' ? { kind: 'any' } : filter,
+        // ButtonClicked must always target one concrete Scoreboard button.
+        filter: event === 'ButtonClicked'
+          ? { kind: 'button', value: filter.value, modifiers: [] }
+          : event === 'CustomEvent'
+            ? { kind: 'hotkey', value: filter.value, modifiers: [] }
+          : (filter.kind === 'any' ? { kind: 'any' } : filter),
       },
       actions,
     });
@@ -243,16 +255,15 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
 
     if (eventOption.filterKind === 'button') {
       return (
-        <>
-          <ToggleChoice label="ทุกปุ่ม" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '', modifiers: [] })} />
-          <ToggleChoice label="ปุ่มที่เลือก" active={filter.kind === 'button'} onClick={() => updateFilter({ kind: 'button', value: filter.value || 'var_replay' })} />
-          {filter.kind === 'button' && (
-            <select style={fieldStyle()} value={filter.value || ''} onChange={(e) => updateFilter({ value: e.target.value })}>
-              <option value="">เลือกปุ่ม...</option>
-              {SCOREBOARD_BUTTON_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-          )}
-        </>
+        <select
+          aria-label="เลือกปุ่มบน Scoreboard"
+          style={fieldStyle()}
+          value={filter.kind === 'button' ? filter.value || '' : ''}
+          onChange={(e) => updateFilter({ kind: 'button', value: e.target.value, modifiers: [] })}
+        >
+          <option value="">เลือกปุ่ม...</option>
+          {SCOREBOARD_BUTTON_OPTIONS.map((item, index) => <option key={`${item.value || 'separator'}-${index}`} value={item.value}>{item.label}</option>)}
+        </select>
       );
     }
 
@@ -296,11 +307,15 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
 
     if (eventOption.filterKind === 'hotkey') {
       return (
-        <>
-          <ToggleChoice label="ทุก Hotkey" active={filter.kind === 'any'} onClick={() => updateFilter({ kind: 'any', value: '', modifiers: [] })} />
-          <ToggleChoice label="Hotkey ที่เลือก" active={filter.kind === 'hotkey'} onClick={() => updateFilter({ kind: 'hotkey', value: filter.value || OBS_HOTKEY_OPTIONS[0].value })} />
-          {filter.kind === 'hotkey' && <select style={fieldStyle()} value={filter.value || ''} onChange={(e) => updateFilter({ value: e.target.value })}>{OBS_HOTKEY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>}
-        </>
+        <select
+          aria-label="เลือก Hotkey จาก OBS Script"
+          style={fieldStyle()}
+          value={filter.kind === 'hotkey' ? filter.value || '' : ''}
+          onChange={(e) => updateFilter({ kind: 'hotkey', value: e.target.value, modifiers: [] })}
+        >
+          <option value="">เลือก Hotkey...</option>
+          {OBS_HOTKEY_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
       );
     }
 
@@ -345,7 +360,7 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
         </div>
         <div style={{ padding: 24 }}>
           {step === 0 && <div style={{ display: 'grid', gap: 18 }}><label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>ชื่อ Automation<input autoFocus style={{ ...fieldStyle(), marginTop: 7 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น VAR Replay อัตโนมัติ" /></label><div><div style={{ color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 8 }}>สีประจำรายการ</div><div style={{ display: 'flex', gap: 9 }}>{PRESET_COLORS.map((item) => <button key={item} type="button" aria-label={item} onClick={() => setColor(item)} style={{ width: 28, height: 28, borderRadius: '50%', border: color === item ? '3px solid #fff' : '2px solid transparent', background: item, cursor: 'pointer' }} />)}</div></div></div>}
-          {step === 1 && <div style={{ display: 'grid', gap: 16 }}><div><label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 7 }}>ทำงานเมื่อเกิดเหตุการณ์นี้</label><select style={fieldStyle()} value={event} onChange={(e) => selectEvent(e.target.value as MacroEvent)}>{(['scoreboard', 'obs', 'keyboard'] as const).map((category) => <optgroup key={category} label={CATEGORY_LABELS[category]}>{MACRO_EVENT_OPTIONS.filter((item) => item.category === category).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select><div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 7 }}>{eventOption.description}</div></div><div style={{ padding: 14, background: '#1e293b', borderRadius: 8, display: 'grid', gap: 10 }}><div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>เลือกเงื่อนไขเพิ่มเติม <span style={{ color: '#64748b' }}>(ถ้ามี)</span></div>{renderTriggerFilter()}</div></div>}
+          {step === 1 && <div style={{ display: 'grid', gap: 16 }}><div><label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 7 }}>ทำงานเมื่อเกิดเหตุการณ์นี้</label><select style={fieldStyle()} value={event} onChange={(e) => selectEvent(e.target.value as MacroEvent)}>{(['scoreboard', 'obs', 'keyboard'] as const).map((category) => <optgroup key={category} label={CATEGORY_LABELS[category]}>{MACRO_EVENT_OPTIONS.filter((item) => item.category === category).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select><div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: 7 }}>{eventOption.description}</div></div>{event === 'ButtonClicked' ? <div><label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 7 }}>เลือกปุ่มบน Scoreboard</label>{renderTriggerFilter()}</div> : event === 'CustomEvent' ? <div><label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', marginBottom: 7 }}>เลือก Hotkey จาก OBS Script</label>{renderTriggerFilter()}</div> : <div style={{ padding: 14, background: '#1e293b', borderRadius: 8, display: 'grid', gap: 10 }}><div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>เลือกเงื่อนไขเพิ่มเติม <span style={{ color: '#64748b' }}>(ถ้ามี)</span></div>{renderTriggerFilter()}</div>}</div>}
           {step === 2 && <div style={{ display: 'grid', gap: 14 }}><div style={{ padding: 14, background: '#064e3b', borderRadius: 8, color: '#a7f3d0', fontSize: '0.85rem' }}><strong>{name || 'Automation ใหม่'}</strong><br />{eventOption.label}{filter.kind !== 'any' && filter.value ? `: ${filter.value}` : ''}</div>{actions.map((action, index) => <div key={action.id} style={{ padding: 14, border: '1px solid #334155', borderRadius: 8, background: '#1e293b' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ width: 25, height: 25, borderRadius: '50%', background: color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>{index + 1}</span><select style={{ ...fieldStyle(), flex: 1 }} value={action.type} onChange={(e) => handleActionTypeChange(action.id, e)}>{ACTION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" title="เลื่อนขึ้น" style={buttonStyle()} onClick={() => moveAction(index, -1)} disabled={index === 0}>↑</button><button type="button" title="เลื่อนลง" style={buttonStyle()} onClick={() => moveAction(index, 1)} disabled={index === actions.length - 1}>↓</button><button type="button" title="ลบขั้นตอน" style={{ ...buttonStyle(), color: '#fca5a5' }} onClick={() => removeAction(action.id)}>×</button></div>{renderActionFields(action)}</div>)}<select style={fieldStyle()} value="" onChange={handleAddAction}><option value="">+ เพิ่มขั้นตอน</option>{ACTION_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><div style={{ padding: 14, background: '#0f172a', borderRadius: 8, color: '#cbd5e1', fontSize: '0.82rem' }}><strong>ตัวอย่างการทำงาน</strong><div style={{ marginTop: 7 }}>เมื่อ {eventOption.label.toLowerCase()} ระบบจะ:</div>{actions.map((action, index) => <div key={action.id} style={{ marginTop: 4 }}>{index + 1}. {describeAction(action)}</div>)}</div></div>}
           {isLoadingObs && <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 12 }}>กำลังโหลดรายการจาก OBS...</div>}
           {error && <div style={{ color: '#fca5a5', background: '#450a0a', padding: 10, borderRadius: 7, marginTop: 14, fontSize: '0.82rem' }}>{error}</div>}

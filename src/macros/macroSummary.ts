@@ -23,6 +23,7 @@ export function describeAction(step: ActionStep): string {
     case 'closeVarReplay': return 'ปิด VAR Controller';
     case 'openReplayControl': return 'เปิด Replay Control';
     case 'closeReplayControl': return 'ปิด Replay Control';
+    case 'closePenaltyShootout': return 'ปิดการยิงจุดโทษ';
     case 'saveReplayBuffer': return 'บันทึก Replay Buffer';
     case 'loadLatestReplay': return 'โหลด Replay ล่าสุด';
     default: return step.type;

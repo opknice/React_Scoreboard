@@ -764,12 +764,6 @@ export default function ScoreboardController() {
   }, []);
 
   useScoreboardKeyboardBroadcast();
-  useModalControlChannel({
-    // Keep the existing modal-control protocol so saved Macros continue to work,
-    // while routing VAR commands to the V2 controller.
-    onVarReplay: setShowVarReplayV2Modal,
-    onReplay: setShowInstantReplayModal,
-  });
 
   const scoreboardStatePayload = useMemo(() => {
     // Crop metadata belongs to persisted Supabase teams. Temporary teams have
@@ -1551,48 +1545,12 @@ export default function ScoreboardController() {
 
   const closePenaltyModal = useCallback(() => {
     setShowPenaltyModal(false);
-    obs.getSceneItemId('Main Stream', 'Penalty').then((id) => {
-      if (id !== null) obs.setSceneItemEnabled('Main Stream', id, false);
-    });
-    obs.getSceneItemId('Main Stream', 'Main_events').then((id) => {
-      if (id !== null) obs.setSceneItemEnabled('Main Stream', id, true);
-    });
-  }, [obs, setShowPenaltyModal]);
+  }, [setShowPenaltyModal]);
 
-  const handleOpenPenaltyShootout = useCallback(async () => {
+  const handleOpenPenaltyShootout = useCallback(() => {
     broadcastScoreboardButton('penalty_shootout');
-    const defaultPenaltyScene = {
-      sceneName: 'Main Stream',
-      showSources: 'Penalty',
-      hideSources: 'Main_events,Standings,Goal_Alert',
-    };
-    let penaltyScene = defaultPenaltyScene;
-    try {
-      const saved = localStorage.getItem('penalty_obs_scene');
-      if (saved) penaltyScene = { ...defaultPenaltyScene, ...JSON.parse(saved) };
-    } catch {
-      // Use defaults when the saved scene configuration is invalid.
-    }
-
-    const sceneName = penaltyScene.sceneName || defaultPenaltyScene.sceneName;
-    const showList = penaltyScene.showSources.split(',').map((source) => source.trim()).filter(Boolean);
-    const hideList = penaltyScene.hideSources.split(',').map((source) => source.trim()).filter(Boolean);
-
-    try {
-      for (const source of showList) {
-        const id = await obs.getSceneItemId(sceneName, source);
-        if (id !== null) await obs.setSceneItemEnabled(sceneName, id, true);
-      }
-      for (const source of hideList) {
-        const id = await obs.getSceneItemId(sceneName, source);
-        if (id !== null) await obs.setSceneItemEnabled(sceneName, id, false);
-      }
-    } catch (err) {
-      console.error('[Scoreboard] Error toggling sources:', err);
-    }
-
     setShowPenaltyModal(true);
-  }, [obs, setShowPenaltyModal]);
+  }, [setShowPenaltyModal]);
 
   const handleHideTimer = useCallback(() => {
     timerPause();
@@ -1620,12 +1578,35 @@ export default function ScoreboardController() {
   }, [setShowInstantReplayModal]);
 
   const handleCloseVarReplay = useCallback(() => {
+    broadcastScoreboardButton('close_var_replay');
     setShowVarReplayV2Modal(false);
   }, [setShowVarReplayV2Modal]);
 
   const handleCloseInstantReplay = useCallback(() => {
+    broadcastScoreboardButton('close_instant_replay');
     setShowInstantReplayModal(false);
   }, [setShowInstantReplayModal]);
+
+  const handlePenaltyModalControl = useCallback((open: boolean) => {
+    if (open) {
+      setShowPenaltyModal(true);
+      return;
+    }
+    closePenaltyModal();
+  }, [closePenaltyModal, setShowPenaltyModal]);
+
+  useModalControlChannel({
+    // Keep the existing modal-control protocol so saved Macros continue to work,
+    // while routing VAR and Replay commands to their current controllers.
+    onVarReplay: setShowVarReplayV2Modal,
+    onReplay: setShowInstantReplayModal,
+    onPenalty: handlePenaltyModalControl,
+  });
+
+  const handleClosePenaltyShootout = useCallback(() => {
+    broadcastScoreboardButton('close_penalty_shootout');
+    closePenaltyModal();
+  }, [closePenaltyModal]);
 
   const handleNavigateWhitelist = useCallback(() => {
     navigate('/admin/whitelist');
@@ -2571,7 +2552,7 @@ export default function ScoreboardController() {
           obs={obs}
           teamNameA={nameA}
           teamNameB={nameB}
-          onClose={closePenaltyModal}
+          onClose={handleClosePenaltyShootout}
         />}
 
         {/* Auto Macros Panel */}

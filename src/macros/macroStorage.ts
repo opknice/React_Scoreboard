@@ -5,7 +5,7 @@ export const CUSTOM_MACROS_STORAGE_KEY = 'customMacrosList';
 
 const ACTION_TYPES = new Set([
   'switchScene', 'showSource', 'hideSource', 'wait',
-  'openVarReplay', 'closeVarReplay', 'openReplayControl', 'closeReplayControl',
+  'openVarReplay', 'closeVarReplay', 'openReplayControl', 'closeReplayControl', 'closePenaltyShootout',
   'saveReplayBuffer', 'loadLatestReplay',
 ]);
 const FILTER_KINDS = new Set(['any', 'button', 'key', 'hotkey', 'scene', 'input']);

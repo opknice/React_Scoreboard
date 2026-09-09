@@ -21,7 +21,7 @@ export interface MacroFilter {
   keyField?: 'key' | 'code';
 }
 
-export type ActionType = 'switchScene' | 'showSource' | 'hideSource' | 'wait' | 'openVarReplay' | 'closeVarReplay' | 'openReplayControl' | 'closeReplayControl' | 'saveReplayBuffer' | 'loadLatestReplay';
+export type ActionType = 'switchScene' | 'showSource' | 'hideSource' | 'wait' | 'openVarReplay' | 'closeVarReplay' | 'openReplayControl' | 'closeReplayControl' | 'closePenaltyShootout' | 'saveReplayBuffer' | 'loadLatestReplay';
 
 export interface ActionStep {
   id: string;

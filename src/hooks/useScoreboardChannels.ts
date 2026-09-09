@@ -173,11 +173,13 @@ export function useScoreboardKeyboardBroadcast(): void {
 interface UseModalControlChannelOptions {
   onVarReplay: (open: boolean) => void;
   onReplay: (open: boolean) => void;
+  onPenalty: (open: boolean) => void;
 }
 
 export function useModalControlChannel({
   onVarReplay,
   onReplay,
+  onPenalty,
 }: UseModalControlChannelOptions): void {
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
@@ -191,6 +193,7 @@ export function useModalControlChannel({
         const isOpen = data.action === 'open';
         if (data.modalType === 'var') onVarReplay(isOpen);
         if (data.modalType === 'replay') onReplay(isOpen);
+        if (data.modalType === 'penalty') onPenalty(isOpen);
       };
     } catch (error) {
       console.error('[ModalControl] Failed to create BroadcastChannel:', error);
@@ -199,5 +202,5 @@ export function useModalControlChannel({
     return () => {
       channel?.close();
     };
-  }, [onReplay, onVarReplay]);
+  }, [onPenalty, onReplay, onVarReplay]);
 }

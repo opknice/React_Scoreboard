@@ -116,12 +116,18 @@ export async function executeMacroActions(
         || step.type === 'closeVarReplay'
         || step.type === 'openReplayControl'
         || step.type === 'closeReplayControl'
+        || step.type === 'closePenaltyShootout'
       ) {
         const isOpen = step.type.startsWith('open');
-        const modalType = step.type.includes('Var') ? 'var' : 'replay';
+        const modalType = step.type.includes('Var')
+          ? 'var'
+          : step.type.includes('Penalty') ? 'penalty' : 'replay';
+        const modalLabel = modalType === 'var'
+          ? 'VAR Replay'
+          : modalType === 'penalty' ? 'Penalty Shootout' : 'Replay Control';
         context.addLog(
           macro.id,
-          `${isOpen ? '📹 กำลังเปิด' : '✕ กำลังปิด'} ${modalType === 'var' ? 'VAR Replay' : 'Replay Control'}...`,
+          `${isOpen ? '📹 กำลังเปิด' : '✕ กำลังปิด'} ${modalLabel}...`,
         );
         const sent = postMacroChannelMessage(MACRO_CHANNELS.modalControl, {
           type: 'ModalControl',
@@ -130,7 +136,7 @@ export async function executeMacroActions(
           timestamp: Date.now(),
         });
         context.addLog(macro.id, sent
-          ? `✓ ส่งคำสั่ง ${isOpen ? 'เปิด' : 'ปิด'} ${modalType === 'var' ? 'VAR' : 'Replay'} แล้ว`
+          ? `✓ ส่งคำสั่ง ${isOpen ? 'เปิด' : 'ปิด'} ${modalLabel} แล้ว`
           : '❌ ไม่สามารถส่งคำสั่งไปยังหน้าควบคุมได้');
       } else if (step.type === 'saveReplayBuffer') {
         try {

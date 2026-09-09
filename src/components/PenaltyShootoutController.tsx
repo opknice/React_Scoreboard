@@ -21,13 +21,6 @@ interface PenaltySettings {
   layout: 'side-by-side' | 'top-bottom';
 }
 
-interface OBSSceneSettings {
-  sceneName: string;
-  showSources: string;    // comma-separated
-  hideSources: string;    // comma-separated
-  closeShowSources: string; // comma-separated — sources to SHOW when closing
-}
-
 interface PenaltyShootoutControllerProps {
   obs?: any; // OBS connection from parent
   teamNameA?: string; // Team A name from parent
@@ -43,13 +36,6 @@ function getShotsForPage(team: 'A' | 'B', page: number, currentShots: PenaltySho
   }
   return displayArray;
 }
-
-const DEFAULT_OBS_SCENE: OBSSceneSettings = {
-  sceneName: 'Main Stream',
-  showSources: 'Penalty',
-  hideSources: 'Main_events,Standings,Goal_Alert',
-  closeShowSources: 'Main_events',
-};
 
 export default function PenaltyShootoutController({ obs: parentObs, teamNameA: propTeamNameA, teamNameB: propTeamNameB, onClose: _onClose }: PenaltyShootoutControllerProps = {}) {
   // --- States ---
@@ -76,17 +62,9 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
       : { dotSize: 150, dotGap: 45, teamGap: 600, layout: 'side-by-side' };
   });
 
-  // OBS Scene Toggle Settings
-  const [obsSceneSettings, setObsSceneSettings] = useState<OBSSceneSettings>(() => {
-    const saved = localStorage.getItem('penalty_obs_scene');
-    return saved ? JSON.parse(saved) : DEFAULT_OBS_SCENE;
-  });
-
   // Modal Visibility
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
-  const [showSceneSettingsModal, setShowSceneSettingsModal] = useState<boolean>(false);
-  const [editSceneSettings, setEditSceneSettings] = useState<OBSSceneSettings>(obsSceneSettings);
 
   // Toast States
   const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
@@ -107,22 +85,14 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
   // BroadcastChannel ref
   const channelRef = useRef<BroadcastChannel | null>(null);
 
-  // Ref to track latest OBS connection state in cleanup (avoids stale closure)
-  const obsIsConnectedRef = useRef(false);
-
   const trans = translations[currentLang] || translations.en;
-  // Keep ref in sync so cleanup function can read latest connection state
-  obsIsConnectedRef.current = obs.isConnected;
 
   const obsRef = useRef(obs);
   const propsRef = useRef({ propTeamNameA, propTeamNameB });
-  const sceneSettingsRef = useRef(obsSceneSettings);
   const transRef = useRef(trans);
   const triggerToastRef = useRef(triggerToast);
-  const toggleSourcesRef = useRef<((showList: string[], hideList: string[], force?: boolean) => Promise<void>) | null>(null);
   obsRef.current = obs;
   propsRef.current = { propTeamNameA, propTeamNameB };
-  sceneSettingsRef.current = obsSceneSettings;
   transRef.current = trans;
   triggerToastRef.current = triggerToast;
 
@@ -130,10 +100,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
   useEffect(() => {
     channelRef.current = new BroadcastChannel('penalty_channel');
     let isMounted = true;
-    const runToggle = (showList: string[], hideList: string[], force = false) => (
-      toggleSourcesRef.current ? toggleSourcesRef.current(showList, hideList, force) : Promise.resolve()
-    );
-
     // Listen for team name updates from main controller (only if not using parent OBS)
     const handleStorageChange = () => {
       if (!propsRef.current.propTeamNameA && !propsRef.current.propTeamNameB) {
@@ -152,24 +118,14 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
     // Connect to OBS only if not using parent's connection
     if (!isUsingParentObs) {
-      const connectAndShowPenalty = async () => {
+      const connectToObs = async () => {
         try {
           const connected = await obsRef.current.connect('ws://localhost:4455');
           if (!connected || !isMounted) return;
 
-          console.log('[Penalty OBS] Connected, showing penalty overlay...');
+          console.log('[Penalty OBS] Connected for score synchronization');
           triggerToastRef.current(transRef.current.toastObsSuccess, 'success');
 
-          // Wait a bit for OBS connection to stabilize
-          await new Promise(resolve => setTimeout(resolve, 100));
-
-          // Auto-show penalty overlay on open
-          await runToggle(
-            sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-            sceneSettingsRef.current.hideSources.split(',').map((s) => s.trim()).filter(Boolean),
-            true // force = true to bypass connection check
-          );
-          console.log('[Penalty OBS] Penalty overlay shown');
         } catch (err) {
           console.error('[Penalty OBS] Connection error:', err);
           if (isMounted) {
@@ -178,133 +134,19 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         }
       };
 
-      connectAndShowPenalty();
+      connectToObs();
     } else {
       console.log('[Penalty Modal] Using parent OBS connection');
-    }
-
-    // Handle visibility change - when tab is hidden or closed
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'hidden' && obsIsConnectedRef.current && !isUsingParentObs) {
-        console.log('[Penalty OBS] Page hidden (visibilitychange), hiding penalty overlay...');
-        try {
-          await runToggle(
-            sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-            sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-            true
-          );
-          console.log('[Penalty OBS] Penalty overlay hidden on visibility change');
-        } catch (err) {
-          console.error('[Penalty OBS] Error hiding on visibility change:', err);
-        }
-      }
-    };
-
-    // Handle page hide - specifically for OBS dock close
-    const handlePageHide = async () => {
-      if (obsIsConnectedRef.current && !isUsingParentObs) {
-        console.log('[Penalty OBS] Page hiding (pagehide), hiding penalty overlay...');
-        try {
-          await runToggle(
-            sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-            sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-            true
-          );
-          console.log('[Penalty OBS] Penalty overlay hidden on pagehide');
-        } catch (err) {
-          console.error('[Penalty OBS] Error hiding on pagehide:', err);
-        }
-      }
-    };
-
-    // Handle beforeunload as last resort
-    const handleBeforeUnload = () => {
-      if (obsIsConnectedRef.current && !isUsingParentObs) {
-        console.log('[Penalty OBS] Page unloading (beforeunload), attempting cleanup...');
-        // Synchronous call - may not complete but worth trying
-        const hideList = sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean);
-        const showList = sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean);
-
-        // Attempt cleanup
-        runToggle(showList, hideList, true).catch(err => {
-          console.error('[Penalty OBS] Beforeunload cleanup error:', err);
-        });
-      }
-    };
-
-    if (!isUsingParentObs) {
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      window.addEventListener('pagehide', handlePageHide);
-      window.addEventListener('beforeunload', handleBeforeUnload);
     }
 
     return () => {
       isMounted = false;
       if (!isUsingParentObs) {
         window.removeEventListener('storage', handleStorageChange);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-        window.removeEventListener('pagehide', handlePageHide);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
       }
       channelRef.current?.close();
-
-      // Mark that we're cleaning up
-      const shouldCleanup = obsIsConnectedRef.current;
-
-      // Cleanup for component unmount - but keep connection alive if using parent
-      if (shouldCleanup && !isUsingParentObs) {
-        console.log('[Penalty OBS] Component unmounting, hiding penalty overlay...');
-        runToggle(
-          sceneSettingsRef.current.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-          sceneSettingsRef.current.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-          true
-        ).then(() => {
-          console.log('[Penalty OBS] Penalty overlay hidden on unmount');
-        }).catch(err => {
-          console.error('[Penalty OBS] Cleanup error:', err);
-        });
-      }
     };
   }, [isUsingParentObs]);
-
-  // --- OBS Scene Source Toggle ---
-  const toggleSources = useCallback(async (showList: string[], hideList: string[], force = false) => {
-    // Allow force bypass for timing issues after connect
-    if (!force && !obsRef.current.isConnected) {
-      console.warn('[Penalty OBS] toggleSources called but OBS not connected');
-      triggerToastRef.current('ไม่ได้เชื่อมต่อกับ OBS', 'error');
-      return;
-    }
-    const sceneName = sceneSettingsRef.current.sceneName;
-    console.log(`[Penalty OBS] toggleSources - Scene: ${sceneName}, Show: [${showList.join(', ')}], Hide: [${hideList.join(', ')}]`);
-
-    try {
-      for (const sourceName of showList) {
-        if (!sourceName) continue;
-        const id = await obsRef.current.getSceneItemId(sceneName, sourceName);
-        if (id !== null) {
-          await obsRef.current.setSceneItemEnabled(sceneName, id, true);
-          console.log(`[Penalty OBS] ✓ SHOW: ${sourceName} (id=${id})`);
-        } else {
-          console.warn(`[Penalty OBS] ⚠ Cannot find source "${sourceName}" in scene "${sceneName}"`);
-        }
-      }
-      for (const sourceName of hideList) {
-        if (!sourceName) continue;
-        const id = await obsRef.current.getSceneItemId(sceneName, sourceName);
-        if (id !== null) {
-          await obsRef.current.setSceneItemEnabled(sceneName, id, false);
-          console.log(`[Penalty OBS] ✓ HIDE: ${sourceName} (id=${id})`);
-        } else {
-          console.warn(`[Penalty OBS] ⚠ Cannot find source "${sourceName}" in scene "${sceneName}"`);
-        }
-      }
-    } catch (err) {
-      console.error('[Penalty OBS] Error in toggleSources:', err);
-      throw err; // Re-throw so caller can handle
-    }
-  }, []);
-  toggleSourcesRef.current = toggleSources;
 
   const updateOBSScore = (team: 'A' | 'B', val: number) => {
     const sourceName = team === 'A' ? 'Score_A' : 'Score_B';
@@ -328,66 +170,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
   useEffect(() => {
     broadcastUpdate();
   }, [broadcastUpdate]);
-
-  const handleHidePenalty = async () => {
-    console.log('[Penalty OBS] Hide button clicked, hiding penalty overlay...');
-
-    // Check if OBS is actually connected, if not try to reconnect
-    if (!obsIsConnectedRef.current || !obs.isConnected) {
-      console.warn('[Penalty OBS] OBS not connected, attempting to reconnect...');
-      try {
-        await obs.connect('ws://localhost:4455');
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (err) {
-        console.error('[Penalty OBS] Failed to reconnect:', err);
-        triggerToast('ไม่สามารถเชื่อมต่อกับ OBS ได้', 'error');
-        return;
-      }
-    }
-
-    try {
-      await toggleSources(
-        obsSceneSettings.closeShowSources.split(',').map((s) => s.trim()).filter(Boolean),
-        obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-        true
-      );
-      console.log('[Penalty OBS] Penalty overlay hidden successfully');
-      triggerToast('ซ่อนจุดโทษเรียบร้อย', 'success');
-    } catch (err) {
-      console.error('[Penalty OBS] Error hiding penalty:', err);
-      triggerToast('เกิดข้อผิดพลาดในการซ่อนจุดโทษ', 'error');
-    }
-  };
-
-  const handleShowPenalty = async () => {
-    console.log('[Penalty OBS] Show button clicked, showing penalty overlay...');
-
-    // Check if OBS is actually connected, if not try to reconnect
-    if (!obsIsConnectedRef.current || !obs.isConnected) {
-      console.warn('[Penalty OBS] OBS not connected, attempting to reconnect...');
-      try {
-        await obs.connect('ws://localhost:4455');
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (err) {
-        console.error('[Penalty OBS] Failed to reconnect:', err);
-        triggerToast('ไม่สามารถเชื่อมต่อกับ OBS ได้', 'error');
-        return;
-      }
-    }
-
-    try {
-      await toggleSources(
-        obsSceneSettings.showSources.split(',').map((s) => s.trim()).filter(Boolean),
-        obsSceneSettings.hideSources.split(',').map((s) => s.trim()).filter(Boolean),
-        true
-      );
-      console.log('[Penalty OBS] Penalty overlay shown successfully');
-      triggerToast('แสดงจุดโทษเรียบร้อย', 'success');
-    } catch (err) {
-      console.error('[Penalty OBS] Error showing penalty:', err);
-      triggerToast('เกิดข้อผิดพลาดในการแสดงจุดโทษ', 'error');
-    }
-  };
 
   // --- Penalty Control Actions ---
   const handleShoot = (team: 'A' | 'B', isGoal: boolean) => {
@@ -548,28 +330,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
 
         {/* Action Panel */}
         <div className="row center" style={{ gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
-          <button
-            className="btn-success"
-            onClick={handleShowPenalty}
-            style={{
-              padding: '12px 20px',
-              fontSize: '1.05rem',
-              fontWeight: 600
-            }}
-          >
-            <i className="fas fa-eye"></i> แสดงจุดโทษ
-          </button>
-          <button
-            className="btn-danger"
-            onClick={handleHidePenalty}
-            style={{
-              padding: '12px 20px',
-              fontSize: '1.05rem',
-              fontWeight: 600
-            }}
-          >
-            <i className="fas fa-eye-slash"></i> ซ่อนจุดโทษ
-          </button>
           <button className="btn-danger" onClick={handleReset}>
             <i className="fas fa-redo"></i> รีเซ็ต
           </button>
@@ -583,26 +343,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
             <i className="fas fa-circle"></i> เปิด Dots Overlay
           </button>
         </div>
-
-        {/* Status Indicator - Manual control */}
-        {obs.isConnected && (
-          <div style={{
-            textAlign: 'center',
-            marginTop: '16px',
-            padding: '10px',
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '6px',
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            color: '#3b82f6'
-          }}>
-            <i className="fas fa-info-circle"></i> จุดโทษแสดงอัตโนมัติเมื่อเปิดหน้านี้
-            <div style={{ fontSize: '0.8rem', marginTop: '4px', color: '#94a3b8' }}>
-              ใช้ปุ่ม "แสดง/ซ่อนจุดโทษ" ด้านบนเพื่อควบคุม
-            </div>
-          </div>
-        )}
 
       </div>
 
@@ -662,79 +402,6 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
         </ModalBackdrop>
       )}
 
-      {/* --- OBS Scene Source Toggle Settings Modal --- */}
-      {showSceneSettingsModal && (
-        <ModalBackdrop className="modal-overlay" onEscape={() => setShowSceneSettingsModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <ModalCloseButton onClose={() => setShowSceneSettingsModal(false)} />
-            <h3><i className="fas fa-tv"></i> ตั้งค่า OBS Scene Toggle</h3>
-            <p style={{ color: 'var(--text-muted-color)', fontSize: '0.85rem', marginBottom: '16px' }}>
-              ตั้งค่า Source ที่จะ Show/Hide เมื่อเปิดหน้าจอยิงจุดโทษ
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600 }}>
-                  Scene Name:
-                </label>
-                <input type="text" style={{ width: '100%' }}
-                  value={editSceneSettings.sceneName}
-                  onChange={(e) => setEditSceneSettings({ ...editSceneSettings, sceneName: e.target.value })}
-                  placeholder="Main Stream" />
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600 }}>
-                  <span style={{ color: '#10b981' }}>● SHOW</span> เมื่อเปิดหน้านี้ (คั่นด้วยจุลภาค):
-                </label>
-                <input type="text" style={{ width: '100%' }}
-                  value={editSceneSettings.showSources}
-                  onChange={(e) => setEditSceneSettings({ ...editSceneSettings, showSources: e.target.value })}
-                  placeholder="Penalty" />
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted-color)', margin: '4px 0 0 0' }}>
-                  ตัวอย่าง: <code>Penalty</code>
-                </p>
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600 }}>
-                  <span style={{ color: '#ef4444' }}>● HIDE</span> เมื่อเปิดหน้านี้ (คั่นด้วยจุลภาค):
-                </label>
-                <input type="text" style={{ width: '100%' }}
-                  value={editSceneSettings.hideSources}
-                  onChange={(e) => setEditSceneSettings({ ...editSceneSettings, hideSources: e.target.value })}
-                  placeholder="Main_events,Standings,Goal_Alert" />
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted-color)', margin: '4px 0 0 0' }}>
-                  ตัวอย่าง: <code>Main_events,Standings,Goal_Alert</code>
-                </p>
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600 }}>
-                  <span style={{ color: '#10b981' }}>● SHOW กลับ</span> เมื่อปิดหน้านี้ (คั่นด้วยจุลภาค):
-                </label>
-                <input type="text" style={{ width: '100%' }}
-                  value={editSceneSettings.closeShowSources}
-                  onChange={(e) => setEditSceneSettings({ ...editSceneSettings, closeShowSources: e.target.value })}
-                  placeholder="Main_events" />
-              </div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button className="btn-primary" onClick={() => {
-                setObsSceneSettings(editSceneSettings);
-                localStorage.setItem('penalty_obs_scene', JSON.stringify(editSceneSettings));
-                setShowSceneSettingsModal(false);
-                triggerToast(trans.toastSaved, 'success');
-              }}>
-                <i className="fas fa-save"></i> บันทึก
-              </button>
-              <button className="btn-secondary" onClick={() => {
-                setEditSceneSettings(DEFAULT_OBS_SCENE);
-              }}>
-                รีเซ็ต
-              </button>
-              <button className="btn-secondary" onClick={() => setShowSceneSettingsModal(false)}>ปิด</button>
-            </div>
-          </div>
-        </ModalBackdrop>
-      )}
-
       {/* --- Help Modal --- */}
       {showHelpModal && (
         <ModalBackdrop className="modal-overlay" onEscape={() => setShowHelpModal(false)}>
@@ -749,19 +416,14 @@ export default function PenaltyShootoutController({ obs: parentObs, teamNameA: p
                   <code style={{ display: 'block', background: '#111', padding: '6px', borderRadius: '4px', margin: '4px 0', wordBreak: 'break-all' }}>
                     {window.location.origin}/dots
                   </code>
-                  แล้วตั้งชื่อ source เป็น <code>Penalty</code> หรือตามที่คุณกำหนดไว้
+                   แล้วตั้งชื่อ Source ตามที่คุณกำหนดไว้
                 </li>
                 <li>
-                  <strong>การแสดง/ซ่อนจุดโทษ</strong>: คลิกปุ่ม <em>"แสดงจุดโทษ"</em> หรือ <em>"ซ่อนจุดโทษ"</em> ใหญ่ ๆ ด้านบน
-                  ระบบจะสลับสถานะอัตโนมัติให้
-                </li>
-                <li>
-                  <strong>ตั้งค่าขั้นสูง</strong>: หากต้องการปรับ source name หรือ scene name ให้เข้าไปตั้งค่าใน
-                  localStorage ด้วย key: <code>penalty_obs_scene</code>
+                  <strong>ควบคุม OBS</strong>: ตั้งค่า Action แบบแสดงหรือซ่อน Source ผ่าน Macro ตาม workflow ที่ต้องการ
                 </li>
               </ol>
               <p style={{ marginTop: '12px', padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '4px' }}>
-                <strong>💡 เคล็ดลับ:</strong> ระบบจะแสดงจุดโทษอัตโนมัติเมื่อเปิดหน้านี้ และซ่อนอัตโนมัติเมื่อปิดหน้า
+                <strong>💡 เคล็ดลับ:</strong> หน้านี้จัดการผลการยิงและคะแนน ส่วนการควบคุม Source ให้จัดการผ่าน Macro
               </p>
             </div>
             <div style={{ marginTop: '16px', textAlign: 'right' }}>
