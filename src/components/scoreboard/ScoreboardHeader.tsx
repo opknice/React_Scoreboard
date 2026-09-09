@@ -24,6 +24,7 @@ export interface ScoreboardHeaderProps {
   currentUser: User | null;
   authAccess: AccessDecision | null;
   isSuperAdminUser: boolean;
+  onNavigatePlans: () => void;
   onNavigateWhitelist: () => void;
   onLogout: () => void;
 }
@@ -36,6 +37,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
   currentUser,
   authAccess,
   isSuperAdminUser,
+  onNavigatePlans,
   onNavigateWhitelist,
   onLogout,
 }) => {
@@ -124,10 +126,12 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
               </span>
             )}
             {authAccess?.accessType === 'trial' && authAccess.trialExpiresAt && (
-              <span
+              <button
+                type="button"
                 className="trial-access-badge"
-                title={`ระยะเวลาทดลองใช้งานฟรี 7 วัน · ${trialRemainingLabel}`}
-                aria-label={`ระยะเวลาทดลองใช้งานฟรี ${trialRemainingLabel}`}
+                title={`ระยะเวลาทดลองใช้งานฟรี 7 วัน · ${trialRemainingLabel} · คลิกเพื่อดูรายละเอียด Trial และ VIP`}
+                aria-label={`ระยะเวลาทดลองใช้งานฟรี ${trialRemainingLabel} ดูรายละเอียด Trial และ VIP`}
+                onClick={onNavigatePlans}
               >
                 <span className="trial-access-badge__icon" aria-hidden="true">🎁</span>
                 <span className="trial-access-badge__content">
@@ -137,7 +141,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
                 <span className="trial-access-badge__compact">
                   ทดลองใช้ฟรี · เหลือ {trialDaysRemaining} วัน
                 </span>
-              </span>
+              </button>
             )}
             {isSuperAdminUser && (
               <button

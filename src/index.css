@@ -404,8 +404,22 @@ html[data-surface='transparent'] body:has(.container) {
   border-radius: 8px;
   color: #7dd3fc;
   background: rgba(14, 165, 233, 0.14);
+  font-family: inherit;
   line-height: 1.2;
   white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.trial-access-badge:hover {
+  border-color: rgba(56, 189, 248, 0.62);
+  background: rgba(14, 165, 233, 0.24);
+  transform: translateY(-1px);
+}
+
+.trial-access-badge:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 2px;
 }
 
 .trial-access-badge__icon { font-size: 0.95rem; }

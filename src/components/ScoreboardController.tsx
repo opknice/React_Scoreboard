@@ -1615,6 +1615,10 @@ export default function ScoreboardController() {
     navigate('/admin/whitelist');
   }, [navigate]);
 
+  const handleNavigatePlans = useCallback(() => {
+    navigate('/plans');
+  }, [navigate]);
+
   const handleLogout = useCallback(() => {
     logoutUser();
   }, []);
@@ -2009,6 +2013,7 @@ export default function ScoreboardController() {
             currentUser={currentUser}
             authAccess={authAccess}
             isSuperAdminUser={isSuperAdmin(currentUser?.email)}
+            onNavigatePlans={handleNavigatePlans}
             onNavigateWhitelist={handleNavigateWhitelist}
             onLogout={handleLogout}
           />

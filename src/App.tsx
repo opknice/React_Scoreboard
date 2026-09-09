@@ -31,6 +31,7 @@ const VarReplayV2Page = lazy(() => import('./components/var-replay-v2/VarReplayV
 const InstantReplayControl = lazy(() => import('./components/InstantReplayControl'));
 const InstantReplayScreen = lazy(() => import('./components/InstantReplayScreen'));
 const TailwindTestPage = lazy(() => import('./pages/TailwindTestPage'));
+const PlansPage = lazy(() => import('./pages/PlansPage'));
 
 function isTransparentSurfacePath(pathname: string): boolean {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/';
@@ -95,6 +96,16 @@ function AppRoutes() {
             }
           />
           <Route path="/controller" element={<Navigate to="/" replace />} />
+
+          {/* Trial and VIP feature comparison */}
+          <Route
+            path="/plans"
+            element={
+              <AuthGuard>
+                <PlansPage />
+              </AuthGuard>
+            }
+          />
 
           {/* Admin Whitelist Management (Super Admin only: thanakrit_kas@hotmail.com) */}
           <Route path="/admin/whitelist" element={<AdminWhitelist />} />

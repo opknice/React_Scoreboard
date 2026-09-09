@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
 
 export type UiIconName =
+  | 'arrowDown'
+  | 'arrowLeft'
   | 'bookOpen'
   | 'camera'
   | 'check'
@@ -44,6 +46,8 @@ const strokeProps = {
 };
 
 const iconPaths: Record<UiIconName, ReactNode> = {
+  arrowDown: <path {...strokeProps} d="M12 4v15m0 0-6-6m6 6 6-6" />,
+  arrowLeft: <path {...strokeProps} d="M20 12H5m0 0 6-6m-6 6 6 6" />,
   bookOpen: (
     <>
       <path {...strokeProps} d="M4.5 5.5c2.7-1.2 5.2-.8 7.5 1.1v12c-2.3-1.9-4.8-2.3-7.5-1.1v-12Zm15 0c-2.7-1.2-5.2-.8-7.5 1.1v12c2.3-1.9 4.8-2.3 7.5-1.1v-12Z" />
