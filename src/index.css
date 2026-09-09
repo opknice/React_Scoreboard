@@ -605,7 +605,40 @@ button:disabled {
 }
 
 .footer-settings-section {
-  padding: 20px;
+  padding: 12px 16px;
+}
+
+.footer-settings-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.footer-settings-actions__row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.footer-settings-actions__row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.footer-settings-actions__row button .ui-icon { font-size: 0.9em; }
+
+.footer-settings-actions__row--support {
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+@media (max-width: 480px) {
+  .footer-settings-actions__row { gap: 6px; }
+  .footer-settings-actions__row button { padding: 6px 8px; font-size: 0.74rem; }
 }
 
 .scoreboard-timer-panel-section {

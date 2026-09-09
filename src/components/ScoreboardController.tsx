@@ -2172,31 +2172,35 @@ export default function ScoreboardController() {
 
             {/* Footer Settings & Buttons */}
             <div className="footer-settings-section">
-              <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
-              <button className="btn-secondary" title="วิธีการใช้งาน MatchFlow Studio" onClick={() => setShowUsageGuideModal(true)}>
-                <UiIcon name="bookOpen" />
-                <span>วิธีการใช้งาน</span>
-              </button>
-              <button className="btn-secondary" title="ติดต่อ Admin" onClick={() => setShowContactAdminModal(true)}>
-                <UiIcon name="messageCircle" />
-                <span>ติดต่อ Admin</span>
-              </button>
-              <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
-                <UiIcon name="sliders" />
-                <span>Quick Setup</span>
-              </button>
-              <button className="btn-primary" title="Auto Macros" onClick={() => setShowAutoMacrosModal(true)}>
-                <UiIcon name="magic" />
-                <span>Auto Macros</span>
-              </button>
-              <button className="btn-primary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
-                <UiIcon name="settings" />
-                <span>{trans.settings}</span>
-              </button>
-              <button className="btn-danger" title="คัดลอกข้อความ" onClick={copyDetailsToClipboard}>
-                <UiIcon name="copy" />
-                <span>คัดลอกข้อความ</span>
-              </button>
+              <div className="footer-settings-actions">
+                <div className="footer-settings-actions__row">
+                  <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
+                    <UiIcon name="sliders" />
+                    <span>Quick Setup</span>
+                  </button>
+                  <button className="btn-primary" title="Auto Macros" onClick={() => setShowAutoMacrosModal(true)}>
+                    <UiIcon name="magic" />
+                    <span>Auto Macros</span>
+                  </button>
+                  <button className="btn-primary" title={trans.settings} onClick={() => setShowSettingsModal(true)}>
+                    <UiIcon name="settings" />
+                    <span>{trans.settings}</span>
+                  </button>
+                  <button className="btn-danger" title="คัดลอกข้อความ" onClick={copyDetailsToClipboard}>
+                    <UiIcon name="copy" />
+                    <span>คัดลอกข้อความ</span>
+                  </button>
+                </div>
+                <div className="footer-settings-actions__row footer-settings-actions__row--support">
+                  <button className="btn-secondary" title="วิธีการใช้งาน MatchFlow Studio" onClick={() => setShowUsageGuideModal(true)}>
+                    <UiIcon name="bookOpen" />
+                    <span>วิธีการใช้งาน</span>
+                  </button>
+                  <button className="btn-secondary" title="ติดต่อ Admin" onClick={() => setShowContactAdminModal(true)}>
+                    <UiIcon name="messageCircle" />
+                    <span>ติดต่อ Admin</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
