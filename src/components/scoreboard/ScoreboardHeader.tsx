@@ -39,6 +39,11 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
   onNavigateWhitelist,
   onLogout,
 }) => {
+  const trialDaysRemaining = Math.max(1, authAccess?.trialDaysRemaining ?? 1);
+  const trialRemainingLabel = authAccess?.trialExpiresAt
+    ? formatTrialRemaining(authAccess.trialExpiresAt)
+    : '';
+
   return (
     <div
       className={embedded ? 'scoreboard-header-row' : 'card'}
@@ -51,8 +56,12 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
         gap: '8px',
       }}
     >
-      {/* Placeholder - เว้นว่างไว้ */}
-      <div style={{ minHeight: '20px' }}></div>
+      <div className="app-brand" aria-label="MatchFlow Studio">
+        <span className="app-brand__name">
+          <span className="app-brand__matchflow">MatchFlow</span> Studio
+        </span>
+        <span className="app-brand__tagline">Football Broadcast Control</span>
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
@@ -105,20 +114,29 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
             <span style={{ fontSize: '0.78rem', color: '#cbd5e1', fontWeight: 500 }}>
               {currentUser.email}
             </span>
+            {authAccess?.accessType === 'whitelist' && (
+              <span
+                className="user-access-badge user-access-badge--vip"
+                title="บัญชี VIP: ได้รับสิทธิ์ใช้งานผ่าน Whitelist"
+                aria-label="บัญชี VIP: ได้รับสิทธิ์ใช้งานผ่าน Whitelist"
+              >
+                <UiIcon name="crown" size="0.85em" /> VIP
+              </span>
+            )}
             {authAccess?.accessType === 'trial' && authAccess.trialExpiresAt && (
               <span
-                style={{
-                  fontSize: '0.68rem',
-                  color: '#7dd3fc',
-                  background: 'rgba(14, 165, 233, 0.14)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  borderRadius: '6px',
-                  padding: '3px 6px',
-                  whiteSpace: 'nowrap',
-                }}
-                title="ระยะเวลาทดลองใช้งานฟรี 7 วัน"
+                className="trial-access-badge"
+                title={`ระยะเวลาทดลองใช้งานฟรี 7 วัน · ${trialRemainingLabel}`}
+                aria-label={`ระยะเวลาทดลองใช้งานฟรี ${trialRemainingLabel}`}
               >
-                🎁 {formatTrialRemaining(authAccess.trialExpiresAt)}
+                <span className="trial-access-badge__icon" aria-hidden="true">🎁</span>
+                <span className="trial-access-badge__content">
+                  <strong>ทดลองใช้ฟรี</strong>
+                  <span>{trialRemainingLabel}</span>
+                </span>
+                <span className="trial-access-badge__compact">
+                  ทดลองใช้ฟรี · เหลือ {trialDaysRemaining} วัน
+                </span>
               </span>
             )}
             {isSuperAdminUser && (

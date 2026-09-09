@@ -1,0 +1,142 @@
+.contact-admin-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.contact-admin-modal {
+  position: relative;
+  width: min(100%, 500px);
+  overflow: hidden;
+  border: 1px solid rgba(56, 189, 248, 0.36);
+  border-radius: 18px;
+  background: #172033;
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.48);
+}
+
+.contact-admin-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 52px 18px 24px;
+  background: linear-gradient(135deg, rgba(8, 47, 73, 0.92), rgba(30, 41, 59, 0.92));
+}
+
+.contact-admin-modal__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #7dd3fc;
+}
+
+.contact-admin-modal h2 { margin: 0; color: #f8fafc; font-size: 1.2rem; }
+.contact-admin-modal__header p { margin: 4px 0 0; color: #bae6fd; font-size: 0.78rem; line-height: 1.4; }
+
+.contact-admin-modal__content { padding: 22px 24px; }
+
+.contact-admin-modal__instruction {
+  margin: 0 0 14px;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.admin-contact-methods { display: grid; gap: 10px; }
+
+.admin-contact-line-qr {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 11px;
+  border: 1px solid rgba(6, 199, 85, 0.38);
+  border-radius: 10px;
+  background: rgba(6, 78, 59, 0.24);
+}
+
+.admin-contact-line-qr img {
+  width: 104px;
+  height: 104px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.admin-contact-line-qr > div { display: grid; gap: 5px; min-width: 0; }
+.admin-contact-line-qr strong { color: #bbf7d0; font-size: 0.88rem; }
+.admin-contact-line-qr > div > span { color: #86efac; font-size: 0.76rem; }
+
+.admin-contact-line-qr__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+
+.admin-contact-line-qr__actions a,
+.admin-contact-line-qr__actions button {
+  border: 1px solid rgba(134, 239, 172, 0.36);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: rgba(6, 78, 59, 0.55);
+  color: #dcfce7;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.admin-contact-line-qr__actions a:hover,
+.admin-contact-line-qr__actions button:hover,
+.admin-contact-line-qr__actions a:focus-visible,
+.admin-contact-line-qr__actions button:focus-visible { border-color: #4ade80; outline: none; }
+
+.admin-contact-account {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  width: 100%;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: rgba(8, 47, 73, 0.44);
+  color: #e0f2fe;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-contact-account:hover,
+.admin-contact-account:focus-visible { border-color: #38bdf8; outline: none; }
+.admin-contact-account span { color: #7dd3fc; font-size: 0.7rem; font-weight: 700; }
+.admin-contact-account strong { min-width: 0; overflow: hidden; color: #f8fafc; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.admin-contact-account small { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #94a3b8; font-size: 0.66rem; }
+
+.contact-admin-modal .admin-contact-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.contact-admin-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 24px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 520px) {
+  .contact-admin-backdrop { padding: 14px; }
+  .contact-admin-modal__header { padding: 19px 48px 16px 18px; }
+  .contact-admin-modal__content { padding: 18px; }
+  .admin-contact-line-qr { align-items: flex-start; }
+  .admin-contact-line-qr img { width: 88px; height: 88px; }
+  .contact-admin-modal .admin-contact-actions { grid-template-columns: 1fr; }
+  .contact-admin-modal__footer { padding: 12px 18px; }
+}

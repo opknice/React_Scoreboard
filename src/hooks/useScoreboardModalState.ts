@@ -2,7 +2,8 @@ import { useState } from 'react';
 
 export function useScoreboardModalState() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showUsageGuideModal, setShowUsageGuideModal] = useState(false);
+  const [showContactAdminModal, setShowContactAdminModal] = useState(false);
   const [showPenaltyModal, setShowPenaltyModal] = useState(false);
   const [showVarReplayV2Modal, setShowVarReplayV2Modal] = useState(false);
   const [showInstantReplayModal, setShowInstantReplayModal] = useState(false);
@@ -17,7 +18,8 @@ export function useScoreboardModalState() {
 
   return {
     showSettingsModal, setShowSettingsModal,
-    showHelpModal, setShowHelpModal,
+    showUsageGuideModal, setShowUsageGuideModal,
+    showContactAdminModal, setShowContactAdminModal,
     showPenaltyModal, setShowPenaltyModal,
     showVarReplayV2Modal, setShowVarReplayV2Modal,
     showInstantReplayModal, setShowInstantReplayModal,

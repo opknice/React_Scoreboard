@@ -1,15 +1,18 @@
 import type { CSSProperties, ReactNode } from 'react';
 
 export type UiIconName =
+  | 'bookOpen'
   | 'camera'
   | 'check'
   | 'clock'
   | 'copy'
+  | 'crown'
   | 'exchange'
   | 'expand'
   | 'info'
   | 'logout'
   | 'magic'
+  | 'messageCircle'
   | 'pause'
   | 'pencil'
   | 'play'
@@ -41,6 +44,12 @@ const strokeProps = {
 };
 
 const iconPaths: Record<UiIconName, ReactNode> = {
+  bookOpen: (
+    <>
+      <path {...strokeProps} d="M4.5 5.5c2.7-1.2 5.2-.8 7.5 1.1v12c-2.3-1.9-4.8-2.3-7.5-1.1v-12Zm15 0c-2.7-1.2-5.2-.8-7.5 1.1v12c2.3-1.9 4.8-2.3 7.5-1.1v-12Z" />
+      <path {...strokeProps} d="M12 6.6v12" />
+    </>
+  ),
   camera: (
     <>
       <path {...strokeProps} d="M5 8.5h3l1.2-2h5.6l1.2 2H19A1.5 1.5 0 0 1 20.5 10v8A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18v-8A1.5 1.5 0 0 1 5 8.5Z" />
@@ -60,6 +69,7 @@ const iconPaths: Record<UiIconName, ReactNode> = {
       <path {...strokeProps} d="M16 8V6.5A1.5 1.5 0 0 0 14.5 5h-8A1.5 1.5 0 0 0 5 6.5v8A1.5 1.5 0 0 0 6.5 16H8" />
     </>
   ),
+  crown: <path {...strokeProps} d="m4 7 4.2 3.2L12 4l3.8 6.2L20 7l-1.5 11H5.5L4 7Zm4 14h8" />,
   exchange: <path {...strokeProps} d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3-3m-3 3 3 3" />,
   expand: <path {...strokeProps} d="M8 4H4v4m12-4h4v4M8 20H4v-4m16 0v4h-4" />,
   info: (
@@ -70,6 +80,12 @@ const iconPaths: Record<UiIconName, ReactNode> = {
   ),
   logout: <path {...strokeProps} d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10m4-4 3-3-3-3m3 3H9" />,
   magic: <path {...strokeProps} d="m15 4 .5 2.5L18 7l-2.5.5L15 10l-.5-2.5L12 7l2.5-.5L15 4Zm-6 5 .7 3.3L13 13l-3.3.7L9 17l-.7-3.3L5 13l3.3-.7L9 9Zm8 5 .4 2.1L19.5 17l-2.1.4L17 19.5l-.4-2.1-2.1-.4 2.1-.4L17 14Z" />,
+  messageCircle: (
+    <>
+      <path {...strokeProps} d="M20 11.5a7.8 7.8 0 0 1-8 7.5 8.6 8.6 0 0 1-3.2-.6L4.5 20l1.2-3.7A7.2 7.2 0 0 1 4 11.5 7.8 7.8 0 0 1 12 4a7.8 7.8 0 0 1 8 7.5Z" />
+      <path {...strokeProps} d="M8.5 11.5h.01m3.49 0H12m3.49 0h.01" />
+    </>
+  ),
   pause: <path fill="currentColor" d="M7 5.5h3v13H7zM14 5.5h3v13h-3z" />,
   pencil: <path {...strokeProps} d="m4.5 16.8-.8 3.5 3.5-.8L18.5 8.2a2.1 2.1 0 0 0-3-3L4.5 16.8Zm9.8-9.8 3 3" />,
   play: <path fill="currentColor" d="m7 4.8 11 7.2-11 7.2V4.8Z" />,

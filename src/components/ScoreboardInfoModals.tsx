@@ -1,40 +1,24 @@
 import ModalCloseButton from './ModalCloseButton';
 import ModalBackdrop from './ModalBackdrop';
+import type { TranslationSet } from '../constants/translations';
 
 interface ScoreboardInfoModalsProps {
-  trans: any;
-  showHelp: boolean;
+  trans: Pick<TranslationSet, 'close' | 'donateThai' | 'donateTitle' | 'changelogContent' | 'changelogTitle'>;
   showDonate: boolean;
   showChangelog: boolean;
-  onCloseHelp: () => void;
   onCloseDonate: () => void;
   onCloseChangelog: () => void;
 }
 
 export default function ScoreboardInfoModals({
   trans,
-  showHelp,
   showDonate,
   showChangelog,
-  onCloseHelp,
   onCloseDonate,
   onCloseChangelog,
 }: ScoreboardInfoModalsProps) {
   return (
     <>
-      {showHelp && (
-        <ModalBackdrop className="modal-overlay" onEscape={onCloseHelp}>
-          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
-            <ModalCloseButton onClose={onCloseHelp} />
-            <h3><i className="fas fa-question-circle"></i> {trans.helpTitle}</h3>
-            <div dangerouslySetInnerHTML={{ __html: trans.helpStep1 }} />
-            <div dangerouslySetInnerHTML={{ __html: trans.helpStep2 }} />
-            <div dangerouslySetInnerHTML={{ __html: trans.helpStep3 }} />
-            <div style={{ marginTop: '16px', textAlign: 'right' }}><button className="btn-primary" onClick={onCloseHelp}>{trans.understand}</button></div>
-          </div>
-        </ModalBackdrop>
-      )}
-
       {showDonate && (
         <ModalBackdrop className="modal-overlay" onEscape={onCloseDonate}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>

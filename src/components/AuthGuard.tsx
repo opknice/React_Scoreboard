@@ -4,7 +4,6 @@ import {
   loginWithGoogle,
   logoutUser,
   getUserAccessDecision,
-  FREE_TRIAL_DAYS,
   onAuthStateChange,
   getUserDisplayName,
 } from '../services/supabaseAuthService';
@@ -12,6 +11,7 @@ import type { AccessDecision } from '../types/authAccess';
 import { AuthAccessProvider } from '../context/AuthAccessProvider';
 import UserAvatar from './UserAvatar';
 import AppLoadingShell from './AppLoadingShell';
+import TrialExpiredAccessScreen from './TrialExpiredAccessScreen';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -203,6 +203,19 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   // Access Denied Screen (Logged in but not whitelisted)
   if (!isAllowed) {
     const trialExpired = accessDecision?.accessType === 'trial-expired';
+
+    if (trialExpired) {
+      return (
+        <TrialExpiredAccessScreen
+          user={user}
+          reason={whitelistReason}
+          isCheckingAccess={loading}
+          onRecheckAccess={() => void checkUserAccess(user, true)}
+          onLogout={() => void handleLogout()}
+        />
+      );
+    }
+
     return (
       <div style={styles.container}>
         <div style={{ ...styles.card, borderColor: 'rgba(239, 68, 68, 0.4)' }}>
@@ -210,12 +223,10 @@ export default function AuthGuard({ children }: AuthGuardProps) {
             🚫
           </div>
           <h2 style={{ ...styles.title, fontSize: '22px', color: '#f8fafc' }}>
-            {trialExpired ? `หมดช่วงทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วัน` : 'ไม่มีสิทธิ์เข้าใช้งานระบบ'}
+            ไม่มีสิทธิ์เข้าใช้งานระบบ
           </h2>
           <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px' }}>
-            {trialExpired
-              ? 'กรุณาติดต่อ Super Admin เพื่อขออนุมัติสิทธิ์ใช้งานต่อ'
-              : 'บัญชีของคุณยังไม่ได้อยู่ในรายชื่อผู้ได้รับอนุญาต (Whitelist)'}
+            บัญชีของคุณยังไม่ได้อยู่ในรายชื่อผู้ได้รับอนุญาต (Whitelist)
           </p>
 
           <div style={styles.userInfoBox}>
@@ -243,29 +254,9 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Logged in & allowed: Render protected content and show trial status.
+  // Logged in & allowed: the Header owns the compact trial status badge.
   return (
     <AuthAccessProvider value={accessDecision}>
-      {accessDecision?.accessType === 'trial' && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '12px',
-            right: '12px',
-            zIndex: 9000,
-            maxWidth: 'min(360px, calc(100vw - 24px))',
-            padding: '9px 13px',
-            border: '1px solid rgba(56, 189, 248, 0.45)',
-            borderRadius: '10px',
-            color: '#bae6fd',
-            background: 'rgba(8, 47, 73, 0.94)',
-            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
-            fontSize: '12px',
-          }}
-        >
-          🎁 ทดลองใช้งานฟรี เหลือประมาณ {accessDecision.trialDaysRemaining || 1} วัน
-        </div>
-      )}
       {children}
     </AuthAccessProvider>
   );

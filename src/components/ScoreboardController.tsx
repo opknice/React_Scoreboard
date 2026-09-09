@@ -57,6 +57,8 @@ import {
 const AutoMacrosPanel = lazy(() => import('./AutoMacrosPanel'));
 const LogoUploader = lazy(() => import('./LogoUploader'));
 const ScoreboardInfoModals = lazy(() => import('./ScoreboardInfoModals'));
+const UsageGuideModal = lazy(() => import('./UsageGuideModal'));
+const ContactAdminModal = lazy(() => import('./ContactAdminModal'));
 const QuickSetupModal = lazy(() => import('./QuickSetupModal'));
 const ObsSetupModal = lazy(() => import('./ObsSetupModal'));
 const PresetTimeModal = lazy(() => import('./PresetTimeModal'));
@@ -196,7 +198,8 @@ export default function ScoreboardController() {
   // Modals Visibility
   const {
     showSettingsModal, setShowSettingsModal,
-    showHelpModal, setShowHelpModal,
+    showUsageGuideModal, setShowUsageGuideModal,
+    showContactAdminModal, setShowContactAdminModal,
     showPenaltyModal, setShowPenaltyModal,
     showVarReplayV2Modal, setShowVarReplayV2Modal,
     showInstantReplayModal, setShowInstantReplayModal,
@@ -2045,6 +2048,8 @@ export default function ScoreboardController() {
           activeLeague={supabaseLeague.activeLeague}
           teamCount={supabaseLeague.teams.length}
           matchCount={supabaseLeague.matches.length}
+          onOpenUsageGuide={() => setShowUsageGuideModal(true)}
+          onOpenContactAdmin={() => setShowContactAdminModal(true)}
           onSelectLeague={handleSelectLeagueWizard}
           onOpenLeagueManagement={handleOpenLeagueManagement}
         />
@@ -2168,6 +2173,14 @@ export default function ScoreboardController() {
             {/* Footer Settings & Buttons */}
             <div className="footer-settings-section">
               <div className="row center" style={{ gap: '12px', flexWrap: 'wrap' }}>
+              <button className="btn-secondary" title="วิธีการใช้งาน MatchFlow Studio" onClick={() => setShowUsageGuideModal(true)}>
+                <UiIcon name="bookOpen" />
+                <span>วิธีการใช้งาน</span>
+              </button>
+              <button className="btn-secondary" title="ติดต่อ Admin" onClick={() => setShowContactAdminModal(true)}>
+                <UiIcon name="messageCircle" />
+                <span>ติดต่อ Admin</span>
+              </button>
               <button className="btn-primary" title="Quick Setup" onClick={() => setShowQuickSetupModal(true)}>
                 <UiIcon name="sliders" />
                 <span>Quick Setup</span>
@@ -2197,7 +2210,8 @@ export default function ScoreboardController() {
         setShowPresetTimeModal(false);
         setShowQuickSetupModal(false);
         setShowOBSSetupModal(false);
-        setShowHelpModal(false);
+        setShowUsageGuideModal(false);
+        setShowContactAdminModal(false);
         setShowDonateModal(false);
         setShowChangelogModal(false);
         setShowTeamSelectModal(false);
@@ -2515,12 +2529,12 @@ export default function ScoreboardController() {
         />}
 
 
-        {(showHelpModal || showDonateModal || showChangelogModal) && <ScoreboardInfoModals
+        {showUsageGuideModal && <UsageGuideModal onClose={() => setShowUsageGuideModal(false)} />}
+        {showContactAdminModal && <ContactAdminModal userEmail={activeUserEmail} onClose={() => setShowContactAdminModal(false)} />}
+        {(showDonateModal || showChangelogModal) && <ScoreboardInfoModals
           trans={trans}
-          showHelp={showHelpModal}
           showDonate={showDonateModal}
           showChangelog={showChangelogModal}
-          onCloseHelp={() => setShowHelpModal(false)}
           onCloseDonate={() => setShowDonateModal(false)}
           onCloseChangelog={() => setShowChangelogModal(false)}
         />}

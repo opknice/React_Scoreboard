@@ -102,7 +102,7 @@ export default function LeagueManagementModal({
         <div className="league-modal-header">
           <h2 id="league-modal-title" className="league-modal-title">
             <i className="fas fa-trophy"></i>
-            <span>จัดการข้อมูลลีก & ตารางการแข่งขัน (Supabase)</span>
+            <span>จัดการข้อมูลลีก & ตารางการแข่งขัน</span>
             {effectiveEmail && (
               <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 500, marginLeft: '8px' }}>
                 <i className="fas fa-user" style={{ marginRight: '4px' }}></i>

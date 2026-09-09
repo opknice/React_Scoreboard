@@ -12,6 +12,8 @@ export interface ScoreboardSetupWizardProps {
   activeLeague?: League | null;
   teamCount: number;
   matchCount: number;
+  onOpenUsageGuide: () => void;
+  onOpenContactAdmin: () => void;
   onSelectLeague: (leagueId: string) => void;
   onOpenLeagueManagement: (tab: 'league' | 'teams' | 'matches') => void;
 }
@@ -26,6 +28,8 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
   activeLeague,
   teamCount,
   matchCount,
+  onOpenUsageGuide,
+  onOpenContactAdmin,
   onSelectLeague,
   onOpenLeagueManagement,
 }) => {
@@ -52,11 +56,29 @@ export const ScoreboardSetupWizard: React.FC<ScoreboardSetupWizardProps> = React
             gap: '8px',
           }}
         >
-          <UiIcon name="rocket" /> เริ่มต้นตั้งค่าใช้งาน Scoreboard Controller
+          <UiIcon name="rocket" /> เริ่มต้นตั้งค่า MatchFlow Studio
         </h2>
         <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>
           กรุณาทำตามขั้นตอน <strong>2 ข้อแรก</strong> ด้านล่างให้ครบเพื่อปลดล็อกแผงควบคุมหลัก
         </p>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onOpenUsageGuide}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem' }}
+          >
+            <UiIcon name="bookOpen" /> วิธีการใช้งาน
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={onOpenContactAdmin}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem' }}
+          >
+            <UiIcon name="messageCircle" /> ติดต่อ Admin
+          </button>
+        </div>
       </div>
 
       <div
