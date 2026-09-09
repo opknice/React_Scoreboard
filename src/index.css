@@ -1756,14 +1756,23 @@ button:disabled {
   background: rgba(255, 255, 255, 0.07);
 }
 
-.combined-team-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.combined-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.combined-table td.combined-team-cell {
   text-align: left;
   white-space: nowrap;
   font-weight: 600;
   font-size: 1.15rem;
+}
+
+.combined-team-content {
+  /* Keep flex inside the cell so table borders collapse along the same row. */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .combined-logo {
@@ -1870,7 +1879,7 @@ button:disabled {
     font-size: 0.85rem; /* Desktop: 1.15rem */
   }
 
-  .combined-team-cell {
+  .combined-table td.combined-team-cell {
     font-size: 0.9rem; /* Desktop: 1.15rem */
   }
 
@@ -1886,7 +1895,7 @@ button:disabled {
     padding: 6px 4px; /* Desktop: 10px 14px */
   }
 
-  .combined-team-cell {
+  .combined-team-content {
     gap: 6px; /* Desktop: 10px */
   }
 
@@ -1911,11 +1920,12 @@ button:disabled {
   .combined-table thead tr th:nth-child(10)::before { content: 'Pts'; }
 
   /* Team Name Truncation (Requirement 6) */
-  .combined-team-cell {
+  .combined-team-content {
     max-width: 120px;
   }
 
-  .combined-team-cell span {
+  .combined-team-content span {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
