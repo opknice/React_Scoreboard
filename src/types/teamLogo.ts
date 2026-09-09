@@ -11,6 +11,7 @@ export interface CropMetadata {
   aspectRatio: number;
   /** Snapshot of the league frame scale when this team became custom. */
   frameScalePercent?: number;
+  browserFrame?: { width: number; height: number; lockAspectRatio: boolean };
   createdAt: string;
 }
 
@@ -53,6 +54,10 @@ export function isCropMetadata(value: unknown): value is CropMetadata {
     && (value.frameScalePercent === undefined
       || (isFiniteNumber(value.frameScalePercent) && value.frameScalePercent >= 25 && value.frameScalePercent <= 300))
     && typeof value.createdAt === 'string'
+    && (value.browserFrame === undefined || (isRecord(value.browserFrame)
+      && isFiniteNumber(value.browserFrame.width) && value.browserFrame.width >= 48 && value.browserFrame.width <= 570
+      && isFiniteNumber(value.browserFrame.height) && value.browserFrame.height >= 48 && value.browserFrame.height <= 570
+      && typeof value.browserFrame.lockAspectRatio === 'boolean'))
     // Accept the old field while reading so existing Supabase rows remain usable.
     && (value.customSize === undefined || (isFiniteNumber(value.customSize) && value.customSize >= 0 && value.customSize <= 2000));
 }
@@ -80,6 +85,7 @@ export function parseCropMetadata(value: unknown): CropMetadata | null {
       ? Math.min(300, Math.max(25, Math.round(value.frameScalePercent)))
       : 100,
     createdAt: value.createdAt,
+    ...(value.browserFrame ? { browserFrame: { ...value.browserFrame } } : {}),
   };
 }
 
@@ -96,5 +102,6 @@ export function cropMetadataToJson(crop: CropMetadata): Json {
       ? Math.min(300, Math.max(25, Math.round(crop.frameScalePercent)))
       : 100,
     createdAt: crop.createdAt,
+    ...(crop.browserFrame ? { browserFrame: { ...crop.browserFrame } } : {}),
   };
 }

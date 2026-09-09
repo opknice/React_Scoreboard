@@ -18,6 +18,11 @@ const validCrop = {
 };
 
 describe('teamLogo crop metadata', () => {
+  it('round trips browser frame dimensions and checkbox state', () => {
+    const crop = { ...validCrop, browserFrame: { width: 200, height: 100, lockAspectRatio: false } };
+    expect(parseCropMetadata(cropMetadataToJson(crop))?.browserFrame).toEqual(crop.browserFrame);
+    expect(parseCropMetadata({ ...crop, browserFrame: { ...crop.browserFrame, width: 571 } })).toBeNull();
+  });
   it('calculates a contain zoom for different image aspect ratios', () => {
     expect(calculateContainZoom(1000, 500)).toBe(0.5);
     expect(calculateContainZoom(500, 1000)).toBe(0.5);

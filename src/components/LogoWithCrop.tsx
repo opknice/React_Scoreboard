@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CropMetadata } from '../types/teamLogo';
+import { getFrameCanvasSize } from '../utils/logoFrame';
 
 interface LogoWithCropProps {
   url: string;
@@ -14,6 +15,7 @@ interface LogoWithCropProps {
   style?: React.CSSProperties;
   /** Fill a fixed parent frame; disable when className defines the frame size. */
   fillFrame?: boolean;
+  frameAspectRatio?: number;
   onError?: () => void;
   onImageLoad?: (dimensions: { naturalWidth: number; naturalHeight: number }) => void;
 }
@@ -25,6 +27,7 @@ export default function LogoWithCrop({
   className,
   style,
   fillFrame = true,
+  frameAspectRatio,
   onError,
   onImageLoad,
 }: LogoWithCropProps) {
@@ -75,8 +78,11 @@ export default function LogoWithCrop({
     if (!ctx) return;
     const img = imageRef.current;
     const frameId = window.requestAnimationFrame(() => {
-      const targetWidth = crop?.width && crop.width > 0 ? crop.width : img.naturalWidth || 300;
-      const targetHeight = crop?.height && crop.height > 0 ? crop.height : img.naturalHeight || 300;
+      const { width: targetWidth, height: targetHeight } = getFrameCanvasSize(
+        crop?.width || img.naturalWidth || 300,
+        crop?.height || img.naturalHeight || 300,
+        frameAspectRatio,
+      );
 
       canvas.width = targetWidth;
       canvas.height = targetHeight;
@@ -119,7 +125,7 @@ export default function LogoWithCrop({
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [url, crop, imageVersion]);
+  }, [url, crop, imageVersion, frameAspectRatio]);
 
   return (
     <canvas

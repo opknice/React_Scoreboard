@@ -201,8 +201,8 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
         const bgMode = overrideBackgroundMode ?? (searchParams.has('background') ? presentation.backgroundMode : (liveSettings?.backgroundMode || presentation.backgroundMode));
 
         const containerStyle: React.CSSProperties = {
-          width: `${sizePx}px`,
-          height: `${sizePx}px`,
+          width: `${cropData?.browserFrame?.width ?? sizePx}px`,
+          height: `${cropData?.browserFrame?.height ?? sizePx}px`,
           maxWidth: 'none',
           maxHeight: 'none',
           backgroundColor: bgMode === 'normal' ? 'rgba(0, 0, 0, 0.75)' : 'transparent',
@@ -235,6 +235,7 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
                 <LogoWithCrop
                   url={logoSrc}
                   crop={cropData}
+                  frameAspectRatio={cropData.browserFrame ? cropData.browserFrame.width / cropData.browserFrame.height : undefined}
                   alt={`${display.name} logo`}
                   onError={() => {
                     console.error(`[LogoOnlyAnimation] Failed to render cropped logo for ${display.name}`);

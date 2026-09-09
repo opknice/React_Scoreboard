@@ -12,6 +12,8 @@ import {
 import { normalizeLogoScalePercent, scaleLogoPixels } from '../types/leagueLogoSizing';
 import { getLogoSrc } from '../utils/logoResolver';
 import LogoWithCrop from './LogoWithCrop';
+import LogoFrameSizeInput from './LogoFrameSizeInput';
+import { getFrameCanvasSize, resizeLogoFrame, type BrowserFrame } from '../utils/logoFrame';
 import {
   getLogoSyncSessionId,
   useLogoCropPreviewSync,
@@ -55,6 +57,9 @@ export default function LogoBrowserCropModal({
   const [frameScalePercent, setFrameScalePercent] = useState<number>(() => normalizeLogoScalePercent(initialFrameScalePercent));
   const [isCropEditing, setIsCropEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [browserFrame, setBrowserFrame] = useState<BrowserFrame>({ width: 190, height: 190, lockAspectRatio: true });
+  const browserRatio = cropContext === 'logo-browser' ? browserFrame.width / browserFrame.height : undefined;
+  const canvasSize = getFrameCanvasSize(baseWidth, baseHeight, browserRatio);
 
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -95,6 +100,8 @@ export default function LogoBrowserCropModal({
 
     setActiveUrl(logoUrl || getLogoSrc('', teamName));
     const existingCrop = parseCropMetadata(cropMetadata);
+    const initialSize = scaleLogoPixels(LOGO_FRAME_SIZE_PX, existingCrop?.frameScalePercent ?? initialFrameScalePercent);
+    setBrowserFrame(existingCrop?.browserFrame ?? { width: initialSize, height: initialSize, lockAspectRatio: true });
     setIsCropEditing(Boolean(existingCrop));
 
     if (existingCrop) {
@@ -127,6 +134,7 @@ export default function LogoBrowserCropModal({
     rotation,
     aspectRatio: baseWidth > 0 && baseHeight > 0 ? baseWidth / baseHeight : 1,
     frameScalePercent,
+    ...(cropContext === 'logo-browser' ? { browserFrame } : {}),
     createdAt: new Date().toISOString(),
   };
 
@@ -157,7 +165,7 @@ export default function LogoBrowserCropModal({
     publishDraft('preview', currentCrop);
     // Publish only when a crop input changes; the transport throttles cross-context delivery.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isCropEditing, isSaving, offsetX, offsetY, zoom, rotation, baseWidth, baseHeight, frameScalePercent, team.id, cropContext]);
+  }, [isOpen, isCropEditing, isSaving, offsetX, offsetY, zoom, rotation, baseWidth, baseHeight, frameScalePercent, browserFrame, team.id, cropContext]);
 
   const beginCropEditing = () => {
     setIsCropEditing(true);
@@ -176,8 +184,8 @@ export default function LogoBrowserCropModal({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDragging) return;
-    const scaleX = baseWidth / Math.max(1, e.currentTarget.clientWidth);
-    const scaleY = baseHeight / Math.max(1, e.currentTarget.clientHeight);
+    const scaleX = canvasSize.width / Math.max(1, e.currentTarget.clientWidth);
+    const scaleY = canvasSize.height / Math.max(1, e.currentTarget.clientHeight);
     const deltaX = (e.clientX - dragStart.x) * scaleX;
     const deltaY = (e.clientY - dragStart.y) * scaleY;
     setOffsetX(Math.max(-1000, Math.min(1000, Math.round(initialOffset.x + deltaX))));
@@ -300,7 +308,9 @@ export default function LogoBrowserCropModal({
                 ครอบตัดโลโก้สำหรับ {cropContext === 'overlay' ? 'Overlay/OBS' : 'Logo Browser Source'}: {teamName}
               </h3>
               <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginTop: '2px' }}>
-                กรอบ Custom {frameScalePercent}% — ปรับเฉพาะตำแหน่ง ซูม และการหมุนของรูปด้านใน
+                {cropContext === 'logo-browser'
+                  ? 'ปรับขนาดกรอบ ตำแหน่ง ซูม และการหมุน โดยภาพคงสัดส่วนเดิม'
+                  : `กรอบ Custom ${frameScalePercent}% — ปรับเฉพาะตำแหน่ง ซูม และการหมุนของรูปด้านใน`}
               </span>
             </div>
           </div>
@@ -352,8 +362,8 @@ export default function LogoBrowserCropModal({
             onPointerCancel={handlePointerEnd}
             onWheel={handleWheel}
             style={{
-              width: 'min(280px, 100%)',
-              aspectRatio: '1 / 1',
+              width: `min(${280 * Math.min(1, browserRatio ?? 1)}px, 100%)`,
+              aspectRatio: browserRatio ?? 1,
               backgroundColor: '#020617',
               backgroundImage: 'linear-gradient(45deg, #0f172a 25%, transparent 25%), linear-gradient(-45deg, #0f172a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #0f172a 75%), linear-gradient(-45deg, transparent 75%, #0f172a 75%)',
               backgroundSize: '20px 20px',
@@ -373,14 +383,15 @@ export default function LogoBrowserCropModal({
             }}
           >
             <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, padding: '4px 8px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.88)', border: '1px solid rgba(56, 189, 248, 0.35)', color: '#7dd3fc', fontSize: '10px', fontWeight: 700, pointerEvents: 'none' }}>
-              FRAME {frameScalePercent}%{cropContext === 'logo-browser'
-                ? ` · ${scaleLogoPixels(LOGO_FRAME_SIZE_PX, frameScalePercent)}px`
-                : ' · ตาม Layout'}
+              {cropContext === 'logo-browser'
+                ? `${browserFrame.width} × ${browserFrame.height} px`
+                : `FRAME ${frameScalePercent}% · ตาม Layout`}
             </div>
             {activeUrl ? (
               <LogoWithCrop
                 url={activeUrl}
                 crop={previewCrop}
+                frameAspectRatio={browserRatio}
                 alt={teamName}
                 onImageLoad={handleImageLoad}
               />
@@ -389,7 +400,7 @@ export default function LogoBrowserCropModal({
             )}
 
             {/* Interaction Overlay Hint */}
-            <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', color: '#cbd5e1', whiteSpace: 'nowrap', border: '1px solid rgba(255, 255, 255, 0.1)', pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', bottom: '8px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', color: '#cbd5e1', maxWidth: '100%', boxSizing: 'border-box', border: '1px solid rgba(255, 255, 255, 0.1)', pointerEvents: 'none' }}>
               {isDragging ? '✊ กำลังขยับตำแหน่ง...' : 'ลากรูปเพื่อขยับ · ใช้ Slider หรือลูกกลิ้งเพื่อซูม'}
             </div>
           </div>
@@ -415,6 +426,32 @@ export default function LogoBrowserCropModal({
 
         {/* Compact Controls Toolbar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', backgroundColor: '#1e293b', padding: '14px 16px', borderRadius: '12px', border: '1px solid #334155' }}>
+          {cropContext === 'logo-browser' && (
+            <fieldset disabled={isSaving} style={{ margin: 0, padding: '10px', border: '1px solid #475569', borderRadius: '8px', minWidth: 0 }}>
+              <legend>ขนาดกรอบโลโก้ใน OBS</legend>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <input type="checkbox" checked={browserFrame.lockAspectRatio} onChange={(event) => {
+                  beginCropEditing();
+                  setBrowserFrame((previous) => ({ ...previous, lockAspectRatio: event.target.checked }));
+                }} />
+                รักษาสัดส่วนกรอบ
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '10px' }}>
+                {(['width', 'height'] as const).map((axis) => (
+                  <label key={axis} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                    {axis === 'width' ? 'ความกว้าง' : 'ความสูง'}
+                    <LogoFrameSizeInput value={browserFrame[axis]}
+                      onChange={(value) => {
+                        beginCropEditing();
+                        setBrowserFrame((previous) => resizeLogoFrame(previous, axis, value));
+                      }} />
+                    px
+                  </label>
+                ))}
+              </div>
+              <p style={{ margin: '10px 0 0', color: '#94a3b8', fontSize: '12px' }}>48–570 px · ภาพคงสัดส่วนเดิม อาจมีพื้นที่ว่างเมื่อกรอบต่างสัดส่วน</p>
+            </fieldset>
+          )}
           {/* Zoom Control */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '12px', color: '#cbd5e1', minWidth: '130px', flexShrink: 0, whiteSpace: 'nowrap' }}>
