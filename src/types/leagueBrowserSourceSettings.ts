@@ -1,4 +1,15 @@
 import type { Json } from './supabase';
+import { normalizeBrowserPositions } from './browserPositions';
+import {
+  mergeLogoBrowserSettings,
+  normalizeLogoBrowserSettings,
+  type LogoBrowserSettings,
+} from './logoBrowserSettings';
+import {
+  mergePlayerBrowserSettings,
+  normalizePlayerBrowserSettings,
+  type PlayerBrowserSettings,
+} from './playerBrowserSettings';
 import {
   normalizeTeamNameBrowserSettings,
   type TeamNameBrowserSettings,
@@ -17,6 +28,8 @@ export interface LeagueBrowserSourceSettings {
   teamName: TeamNameBrowserSettings;
   score: ScoreBrowserSettings;
   teamColor: TeamColorBrowserSettings;
+  logo: LogoBrowserSettings;
+  player: PlayerBrowserSettings;
 }
 
 export type BrowserSourceSettingsScope = 'global' | 'league' | 'mixed';
@@ -50,28 +63,40 @@ export function resolveLeagueBrowserSourceSettings(
   const teamColorCandidate = browserSources && isRecord(browserSources.teamColor)
     ? browserSources.teamColor
     : null;
+  const logoCandidate = browserSources && isRecord(browserSources.logo)
+    ? browserSources.logo
+    : null;
+  const playerCandidate = browserSources && isRecord(browserSources.player)
+    ? browserSources.player
+    : null;
 
   const hasTeamName = teamNameCandidate !== null;
   const hasScore = scoreCandidate !== null;
   const hasTeamColor = teamColorCandidate !== null;
+  const hasLogo = logoCandidate !== null;
+  const hasPlayer = playerCandidate !== null;
 
   return {
     settings: {
       teamName: normalizeTeamNameBrowserSettings({
         ...globalSettings.teamName,
         ...(teamNameCandidate ?? {}),
+        positions: normalizeBrowserPositions(teamNameCandidate?.positions, globalSettings.teamName.positions),
       }),
       score: normalizeScoreBrowserSettings({
         ...globalSettings.score,
         ...(scoreCandidate ?? {}),
+        positions: normalizeBrowserPositions(scoreCandidate?.positions, globalSettings.score.positions),
       }),
       // Team-color settings contain nested appearance/position objects, so
       // merge them deeply before normalizing to preserve partial overrides.
       teamColor: mergeTeamColorBrowserSettings(globalSettings.teamColor, teamColorCandidate),
+      logo: mergeLogoBrowserSettings(globalSettings.logo, logoCandidate),
+      player: mergePlayerBrowserSettings(globalSettings.player, playerCandidate),
     },
-    scope: hasTeamName && hasScore && hasTeamColor
+    scope: hasTeamName && hasScore && hasTeamColor && hasLogo && hasPlayer
       ? 'league'
-      : hasTeamName || hasScore || hasTeamColor
+      : hasTeamName || hasScore || hasTeamColor || hasLogo || hasPlayer
         ? 'mixed'
         : 'global',
   };
@@ -92,6 +117,8 @@ export function mergeLeagueBrowserSourceSettings(
       teamName: normalizeTeamNameBrowserSettings(browserSourceSettings.teamName),
       score: normalizeScoreBrowserSettings(browserSourceSettings.score),
       teamColor: normalizeTeamColorBrowserSettings(browserSourceSettings.teamColor),
+      logo: normalizeLogoBrowserSettings(browserSourceSettings.logo),
+      player: normalizePlayerBrowserSettings(browserSourceSettings.player),
     },
   } as unknown as Json;
 }

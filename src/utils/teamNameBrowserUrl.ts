@@ -1,3 +1,4 @@
+import { browserPositionParams, normalizeBrowserPositions, readBrowserPosition, TEAM_NAME_POSITIONS, type BrowserPosition } from '../types/browserPositions';
 import {
   DEFAULT_TEAM_NAME_BROWSER_SETTINGS,
   normalizeFontWeight,
@@ -12,6 +13,7 @@ import {
 } from '../types/teamNameBrowserSettings';
 
 export interface TeamNamePresentation {
+  position: BrowserPosition;
   fontFamily: TeamNameFontFamily;
   textColor: string;
   fontWeight: FontWeight;
@@ -28,6 +30,7 @@ export function getTeamNamePresentation(
   side: 'A' | 'B',
 ): TeamNamePresentation {
   return {
+    position: readBrowserPosition(search, side, TEAM_NAME_POSITIONS),
     fontFamily: normalizeTeamNameFontFamily(getParamValue(search, 'font')),
     textColor: normalizeTeamNameTextColor(getParamValue(search, 'color')),
     fontWeight: normalizeFontWeight(getParamValue(search, 'fontWeight')),
@@ -46,6 +49,7 @@ export function buildTeamNameBrowserUrl(
 ): string {
   const params = new URLSearchParams({
     template: 'team-names',
+    ...browserPositionParams(normalizeBrowserPositions(settings.positions, TEAM_NAME_POSITIONS)),
     side,
     font: settings.fontFamily,
     color: side === 'A' ? settings.textColorA : settings.textColorB,

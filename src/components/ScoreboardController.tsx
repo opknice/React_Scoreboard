@@ -30,12 +30,6 @@ import { buildTeamNameBrowserUrl } from '../utils/teamNameBrowserUrl';
 import { OBSSetupService } from '../services/obsSetupService';
 import { buildScoreBrowserUrl } from '../utils/scoreBrowserUrl';
 import { buildTeamColorBrowserUrl } from '../utils/teamColorBrowserUrl';
-import {
-  DEFAULT_LOGO_BROWSER_SETTINGS,
-  LOGO_SETTINGS_STORAGE_KEY,
-  normalizeLogoBrowserSettings,
-  type LogoBrowserSettings,
-} from '../types/logoBrowserSettings';
 import { buildLogoBrowserUrl } from '../utils/logoBrowserUrl';
 import { buildPlayerBrowserUrl } from '../utils/playerBrowserUrl';
 import { getLogoSyncSessionId } from '../hooks/useLogoCropPreviewSync';
@@ -48,9 +42,7 @@ import { useLeagueBrowserSourceSettings } from '../hooks/useLeagueBrowserSourceS
 import { getThaiDateString, renderDetailsTemplate } from '../utils/detailsTemplate';
 import type { PlayerDisplayPayload } from '../types/playerDisplayEvent';
 import {
-  DEFAULT_PLAYER_BROWSER_SETTINGS,
   normalizePlayerBrowserSettings,
-  PLAYER_BROWSER_SETTINGS_STORAGE_KEY,
   type PlayerBrowserSettings,
 } from '../types/playerBrowserSettings';
 
@@ -231,9 +223,14 @@ export default function ScoreboardController() {
     teamNameSettings,
     scoreSettings,
     teamColorSettings,
+    logoSettings,
+    playerSettings: playerBrowserSettings,
+    saveStatus: browserSourceSaveStatus,
     updateTeamNameSettings,
     updateScoreSettings,
     updateTeamColorSettings,
+    updateLogoSettings,
+    updatePlayerSettings,
   } = useLeagueBrowserSourceSettings({
     activeLeague: supabaseLeague.activeLeague,
     updateLeague: supabaseLeague.updateLeague,
@@ -242,14 +239,6 @@ export default function ScoreboardController() {
 
   const [teamNameObsBusy, setTeamNameObsBusy] = useState(false);
   const [teamNameObsMessage, setTeamNameObsMessage] = useState('');
-  const [logoSettings, setLogoSettings] = useState<LogoBrowserSettings>(() => {
-    try {
-      const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
-      return saved ? normalizeLogoBrowserSettings(JSON.parse(saved)) : DEFAULT_LOGO_BROWSER_SETTINGS;
-    } catch {
-      return DEFAULT_LOGO_BROWSER_SETTINGS;
-    }
-  });
   const [logoObsBusy, setLogoObsBusy] = useState(false);
   const [logoObsMessage, setLogoObsMessage] = useState('');
   const [scoreObsBusy, setScoreObsBusy] = useState(false);
@@ -267,14 +256,6 @@ export default function ScoreboardController() {
   const [selectedPlayerA, setSelectedPlayerA] = useState<Player | null>(null);
   const [selectedPlayerB, setSelectedPlayerB] = useState<Player | null>(null);
   const [playerDisplay, setPlayerDisplay] = useState<PlayerDisplayPayload | null>(null);
-  const [playerBrowserSettings, setPlayerBrowserSettings] = useState<PlayerBrowserSettings>(() => {
-    try {
-      const saved = localStorage.getItem(PLAYER_BROWSER_SETTINGS_STORAGE_KEY);
-      return saved ? normalizePlayerBrowserSettings(JSON.parse(saved)) : DEFAULT_PLAYER_BROWSER_SETTINGS;
-    } catch {
-      return DEFAULT_PLAYER_BROWSER_SETTINGS;
-    }
-  });
   const [recordingPlayerId, setRecordingPlayerId] = useState<string | null>(null);
   const [playerAutoHideEnabled, setPlayerAutoHideEnabled] = useState<boolean>(() => localStorage.getItem('player_auto_hide_enabled') === 'true');
   const [playerAutoHideSeconds, setPlayerAutoHideSeconds] = useState<number>(() => {
@@ -315,14 +296,6 @@ export default function ScoreboardController() {
 
   // Database Viewer States
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LOGO_SETTINGS_STORAGE_KEY, JSON.stringify(logoSettings));
-    } catch {
-      console.warn('[Scoreboard] Unable to persist Logo settings (storage may be full)');
-    }
-  }, [logoSettings]);
-
   const trans = translations[currentLang] || translations.en;
 
   const teamNameUrls = useMemo(() => ({
@@ -358,10 +331,6 @@ export default function ScoreboardController() {
       triggerToast('ไม่สามารถคัดลอก URL ได้', 'error');
     }
   }, [teamColorUrls, triggerToast]);
-
-  const updateLogoSettings = useCallback((patch: Partial<LogoBrowserSettings>) => {
-    setLogoSettings((current) => normalizeLogoBrowserSettings({ ...current, ...patch }));
-  }, []);
 
   const copyScoreUrl = useCallback(async (side: 'A' | 'B' | 'both') => {
     try {
@@ -1882,9 +1851,9 @@ export default function ScoreboardController() {
 
   const handlePlayerBrowserSettingsChange = useCallback((settings: PlayerBrowserSettings) => {
     const normalized = normalizePlayerBrowserSettings(settings);
-    setPlayerBrowserSettings(normalized);
-    broadcastPlayerBrowserSettings(normalized);
-  }, []);
+    updatePlayerSettings(normalized);
+    broadcastPlayerBrowserSettings(normalized, activeSupabaseLeagueId || null);
+  }, [activeSupabaseLeagueId, updatePlayerSettings]);
 
   const handleObsConnected = useCallback(() => {
     triggerToast(trans.toastObsSuccess, 'success');
@@ -2476,6 +2445,8 @@ export default function ScoreboardController() {
             localStorage.setItem('tickerSpeed', String(speed));
           }}
           teamNameSettings={teamNameSettings}
+          browserSourceSaveStatus={browserSourceSaveStatus}
+          browserSourceLeagueId={supabaseLeague.activeLeagueId}
           teamNameUrls={teamNameUrls}
           teamNameObsBusy={teamNameObsBusy}
           teamNameObsConnected={obs.isConnected}

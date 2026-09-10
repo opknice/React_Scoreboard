@@ -18,6 +18,8 @@ import {
 } from '../types/leagueLogoSizing';
 import {
   LOGO_DEFAULT_SIZE,
+  DEFAULT_LOGO_BROWSER_SETTINGS,
+  mergeLogoBrowserSettings,
   LOGO_SETTINGS_STORAGE_KEY,
   normalizeLogoBrowserSettings,
   type LogoBrowserSettings,
@@ -26,6 +28,7 @@ import { requestScoreboardState } from '../hooks/useScoreboardChannels';
 import { getLogoSrc } from '../utils/logoResolver';
 import { getLogoPresentation } from '../utils/logoBrowserUrl';
 import { useDisableZoom } from '../hooks/useDisableZoom';
+import { LeagueService } from '../services/leagueService';
 import LogoWithCrop from './LogoWithCrop';
 import type { GoalAnimationSide } from './goalAnimationTemplates';
 import './LogoOnlyAnimation.css';
@@ -106,6 +109,21 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
     }
   });
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!sourceLeagueId) return () => { cancelled = true; };
+    void LeagueService.getLeagueById(sourceLeagueId).then(league => {
+      if (cancelled) return;
+      const root = league?.settings;
+      const sources = root && typeof root === 'object' && !Array.isArray(root)
+        ? (root as Record<string, unknown>).browserSources : null;
+      const logo = sources && typeof sources === 'object' && !Array.isArray(sources)
+        ? (sources as Record<string, unknown>).logo : null;
+      if (logo) setLiveSettings(current => mergeLogoBrowserSettings(current ?? DEFAULT_LOGO_BROWSER_SETTINGS, logo));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [sourceLeagueId]);
+
   // Listen to live settings updates
   useEffect(() => {
     const updateSettings = () => {
@@ -142,12 +160,9 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
       } else if (isScoreboardStateEvent(event.data)) {
         setLogoState(logoStateFromEvent(event.data));
       } else if (isLogoSettingsUpdatedEvent(event.data)) {
-        try {
-          const saved = localStorage.getItem(LOGO_SETTINGS_STORAGE_KEY);
-          if (saved) {
-            setLiveSettings(normalizeLogoBrowserSettings(JSON.parse(saved)));
-          }
-        } catch { }
+        if ((sourceLeagueId ? event.data.leagueId === sourceLeagueId : event.data.leagueId == null) && event.data.settings) {
+          setLiveSettings(normalizeLogoBrowserSettings(event.data.settings));
+        }
       }
     };
 
@@ -167,7 +182,7 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
         goalTimerRef.current = null;
       }
     };
-  }, [side]);
+  }, [side, sourceLeagueId]);
 
   const displays = side === 'both'
     ? [
@@ -201,6 +216,10 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
         const bgMode = overrideBackgroundMode ?? (searchParams.has('background') ? presentation.backgroundMode : (liveSettings?.backgroundMode || presentation.backgroundMode));
 
         const containerStyle: React.CSSProperties = {
+          left: `${presentation.position.x / 1920 * 100}%`,
+          right: 'auto',
+          top: `${presentation.position.y / 1080 * 100}%`,
+          transform: 'translate(-50%, -50%)',
           width: `${cropData?.browserFrame?.width ?? sizePx}px`,
           height: `${cropData?.browserFrame?.height ?? sizePx}px`,
           maxWidth: 'none',

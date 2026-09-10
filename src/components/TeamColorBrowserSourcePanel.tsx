@@ -16,6 +16,7 @@ import {
 import './TeamColorBrowserSourcePanel.css';
 
 interface TeamColorBrowserSourcePanelProps {
+  settingsOnly?: boolean;
   settings: TeamColorBrowserSettings;
   urls: { A: string; B: string };
   onSettingsChange: (patch: TeamColorBrowserSettingsPatch) => void;
@@ -95,6 +96,7 @@ function RangeField({
 }
 
 export default function TeamColorBrowserSourcePanel({
+  settingsOnly = false,
   settings,
   urls,
   onSettingsChange,
@@ -198,7 +200,7 @@ export default function TeamColorBrowserSourcePanel({
         </div>
       </div>
 
-      <details>
+      {!settingsOnly && <><details>
         <summary style={{ color: '#94a3b8', cursor: 'pointer', fontSize: '11px' }}>URL สำหรับ Browser Source</summary>
         <div className="team-color-url-list" style={{ marginTop: '7px' }}>
           {(['A', 'B'] as const).map((side) => (
@@ -219,6 +221,7 @@ export default function TeamColorBrowserSourcePanel({
           {obsMessage ? ` — ${obsMessage}` : ''}
         </div>
       </div>
+      </>}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
 describe('logoBrowserSettings', () => {
   it('ignores legacy sizes and normalizes the remaining presentation setting', () => {
     expect(normalizeLogoBrowserSettings({ sizeA: 420, sizeB: -5, backgroundMode: 'normal' })).toEqual({
+      positions: DEFAULT_LOGO_BROWSER_SETTINGS.positions,
       backgroundMode: 'normal',
     });
     expect(normalizeLogoBrowserSettings(null)).toEqual(DEFAULT_LOGO_BROWSER_SETTINGS);

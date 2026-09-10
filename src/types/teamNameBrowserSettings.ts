@@ -1,8 +1,10 @@
+import { normalizeBrowserPositions, TEAM_NAME_POSITIONS, type BrowserPositions } from './browserPositions';
 export type TeamNameFontMode = 'auto' | 'manual';
 export type TeamNameFontFamily = string;
 export type FontWeight = 300 | 400 | 500 | 600 | 700 | 800 | 900;
 
 export interface TeamNameBrowserSettings {
+  positions: BrowserPositions;
   fontFamily: TeamNameFontFamily;
   textColorA: string;
   textColorB: string;
@@ -41,6 +43,7 @@ export const TEAM_NAME_FONT_OPTIONS: { value: TeamNameFontFamily; label: string 
 ];
 
 export const DEFAULT_TEAM_NAME_BROWSER_SETTINGS: TeamNameBrowserSettings = {
+  positions: TEAM_NAME_POSITIONS,
   fontFamily: 'Inter',
   textColorA: DEFAULT_TEAM_NAME_TEXT_COLOR,
   textColorB: DEFAULT_TEAM_NAME_TEXT_COLOR,
@@ -89,6 +92,7 @@ export function normalizeFontWeight(value: unknown): FontWeight {
 export function normalizeTeamNameBrowserSettings(value: unknown): TeamNameBrowserSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<TeamNameBrowserSettings> : {};
   return {
+    positions: normalizeBrowserPositions(candidate.positions, TEAM_NAME_POSITIONS),
     fontFamily: normalizeTeamNameFontFamily(candidate.fontFamily),
     textColorA: normalizeTeamNameTextColor(candidate.textColorA),
     textColorB: normalizeTeamNameTextColor(candidate.textColorB),

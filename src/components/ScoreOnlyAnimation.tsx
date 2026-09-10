@@ -59,7 +59,8 @@ export default function ScoreOnlyAnimation({
       {displays.map((display) => {
         const presentation = getScorePresentation(window.location.search, display.team);
         const style = {
-          '--score-only-x': display.team === 'A' ? '41.6667%' : '57.2917%',
+          '--score-only-x': `${presentation.position.x / 1920 * 100}%`,
+          '--score-only-y': `${presentation.position.y / 1080 * 100}%`,
           '--score-only-font-family': presentation.fontFamily,
           '--score-only-font-weight': presentation.fontWeight,
           '--score-only-font-size': presentation.fontMode === 'manual'

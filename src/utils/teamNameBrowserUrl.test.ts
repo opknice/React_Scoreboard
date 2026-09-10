@@ -5,6 +5,7 @@ import { buildTeamNameBrowserUrl, getTeamNamePresentation } from './teamNameBrow
 describe('teamNameBrowserUrl', () => {
   it('keeps legacy URLs in auto mode with safe defaults', () => {
     expect(getTeamNamePresentation('', 'A')).toEqual({
+      position: DEFAULT_TEAM_NAME_BROWSER_SETTINGS.positions.A,
       fontFamily: 'Inter',
       textColor: '#ffffff',
       fontWeight: 700,
@@ -15,11 +16,12 @@ describe('teamNameBrowserUrl', () => {
 
   it('reads manual font settings from the URL', () => {
     const presentation = getTeamNamePresentation('?font=Kanit&fontMode=manual&fontSize=72', 'B');
-    expect(presentation).toEqual({ fontFamily: 'Kanit', textColor: '#ffffff', fontWeight: 700, fontMode: 'manual', fontSize: 72 });
+    expect(presentation).toEqual({ position: DEFAULT_TEAM_NAME_BROWSER_SETTINGS.positions.B, fontFamily: 'Kanit', textColor: '#ffffff', fontWeight: 700, fontMode: 'manual', fontSize: 72 });
   });
 
   it('clamps unsafe manual sizes and accepts a local font family', () => {
     expect(getTeamNamePresentation('?font=My%20Local%20Font&fontMode=manual&fontSize=999', 'A')).toEqual({
+      position: DEFAULT_TEAM_NAME_BROWSER_SETTINGS.positions.A,
       fontFamily: 'My Local Font',
       textColor: '#ffffff',
       fontWeight: 700,
@@ -30,6 +32,7 @@ describe('teamNameBrowserUrl', () => {
 
   it('falls back when a font family contains unsafe CSS characters', () => {
     expect(getTeamNamePresentation('?font=Bad%3Bfont&fontMode=manual&fontSize=48', 'A')).toEqual({
+      position: DEFAULT_TEAM_NAME_BROWSER_SETTINGS.positions.A,
       fontFamily: 'Inter',
       textColor: '#ffffff',
       fontWeight: 700,

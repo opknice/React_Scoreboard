@@ -151,7 +151,8 @@ export default function TeamNamesAnimation({ side }: TeamNamesAnimationProps) {
         const isGoal = goalTeam === display.team;
         const presentation = getTeamNamePresentation(window.location.search, display.team);
         const style = {
-          '--team-name-x': display.team === 'A' ? '20.8333%' : '78.125%',
+          '--team-name-x': `${presentation.position.x / 1920 * 100}%`,
+          top: `${presentation.position.y / 1080 * 100}%`,
           '--team-name-font-family': presentation.fontFamily,
           '--team-name-color': presentation.textColor,
           '--team-name-font-weight': presentation.fontWeight,

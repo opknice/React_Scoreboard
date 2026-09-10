@@ -1,6 +1,7 @@
 import { isCropMetadata, type CropMetadata } from './teamLogo';
 import { isLeagueLogoSizingSettings, type LeagueLogoSizingSettings } from './leagueLogoSizing';
 import { normalizeTeamColorBrowserSettings, type TeamColorBrowserSettings } from './teamColorBrowserSettings';
+import type { LogoBrowserSettings } from './logoBrowserSettings';
 
 export const SCOREBOARD_EVENT_CHANNEL = 'scoreboard-events';
 export const SCOREBOARD_STATE_STORAGE_KEY = 'scoreboard_live_state_v1';
@@ -54,6 +55,8 @@ export interface TeamNameAnimationCompletedEvent {
 
 export interface LogoSettingsUpdatedEvent {
   type: 'LogoSettingsUpdated';
+  leagueId?: string | null;
+  settings?: LogoBrowserSettings;
   backgroundMode?: 'transparent' | 'normal';
   timestamp: number;
 }

@@ -1,5 +1,10 @@
 import ModalCloseButton from './ModalCloseButton';
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import BrowserSourceWorkspace, { type BrowserSourceKind } from './BrowserSourceWorkspace';
+import BrowserSourcePreview from './BrowserSourcePreview';
+import BrowserPositionEditor from './BrowserPositionEditor';
+import { TEAM_NAME_POSITIONS, LOGO_POSITIONS, SCORE_POSITIONS, type BrowserPosition } from '../types/browserPositions';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useBrowserSourcePreviewState } from '../hooks/useBrowserSourcePreviewState';
 import { useLocalFontOptions } from '../hooks/useLocalFontOptions';
 import type { Team } from '../config/supabaseClient';
 import {
@@ -14,8 +19,7 @@ import {
   type ScoreBrowserSettings,
 } from '../types/scoreBrowserSettings';
 import type { LogoBrowserSettings } from '../types/logoBrowserSettings';
-import { SCOREBOARD_EVENT_CHANNEL, SCOREBOARD_STATE_STORAGE_KEY } from '../types/scoreboardEvent';
-import { getLogoSrc } from '../utils/logoResolver';
+import { SCOREBOARD_EVENT_CHANNEL } from '../types/scoreboardEvent';
 import { LOGO_FRAME_SIZE_PX, cropMetadataToJson, parseCropMetadata } from '../types/teamLogo';
 import { getEffectiveLogoScalePercent, scaleLogoPixels } from '../types/leagueLogoSizing';
 import type {
@@ -29,7 +33,6 @@ import {
   type PlayerBrowserElementSettings,
   type PlayerBrowserSettings,
 } from '../types/playerBrowserSettings';
-import LogoWithCrop from './LogoWithCrop';
 const LogoBrowserCropModal = lazy(() => import('./LogoBrowserCropModal'));
 import TeamColorBrowserSourcePanel from './TeamColorBrowserSourcePanel';
 import ModalBackdrop from './ModalBackdrop';
@@ -37,6 +40,8 @@ import './QuickSetupModal.css';
 
 interface QuickSetupModalProps {
   isOpen: boolean;
+  browserSourceSaveStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  browserSourceLeagueId?: string | null;
   teams: Team[];
   onUpdateTeam: (teamId: string, updates: Partial<Team>) => Promise<Team | null>;
   logoBrowserScalePercent?: number;
@@ -94,6 +99,8 @@ interface QuickSetupModalProps {
 
 export default function QuickSetupModal({
   isOpen,
+  browserSourceSaveStatus,
+  browserSourceLeagueId,
   teams,
   onUpdateTeam,
   logoBrowserScalePercent = 100,
@@ -148,12 +155,18 @@ export default function QuickSetupModal({
   onOpenLeagueManager,
   onClose,
 }: QuickSetupModalProps) {
-  const [openPanel, setOpenPanel] = useState<'team-name' | 'team-color' | 'score' | 'logo' | null>(null);
+  const [openPanel, setOpenPanel] = useState<BrowserSourceKind>('player');
   const [isCustomBrowserSourceOpen, setIsCustomBrowserSourceOpen] = useState(false);
-  const [isPlayerBroadcastOpen, setIsPlayerBroadcastOpen] = useState(false);
+  const launcher = useRef<HTMLButtonElement>(null);
+  const wasEditorOpen = useRef(false);
+  useEffect(() => {
+    if (wasEditorOpen.current && !isCustomBrowserSourceOpen) launcher.current?.focus();
+    wasEditorOpen.current = isCustomBrowserSourceOpen;
+    if (!isCustomBrowserSourceOpen) setCropModalTeam(null);
+  }, [isCustomBrowserSourceOpen]);
   const [isFootballLeagueTableOpen, setIsFootballLeagueTableOpen] = useState(false);
   const { fontOptions, localFontMessage, loading: fontsLoading, refresh: loadLocalFonts } = useLocalFontOptions(
-    isOpen && (openPanel === 'team-name' || openPanel === 'score'),
+    isOpen && isCustomBrowserSourceOpen && (openPanel === 'team-name' || openPanel === 'score'),
   );
   const displayedFontOptions = useMemo(() => {
     const options = new Map(fontOptions.map(option => [option.value, option]));
@@ -162,23 +175,9 @@ export default function QuickSetupModal({
     }
     return [...options.values()];
   }, [fontOptions, teamNameSettings.fontFamily, scoreSettings.fontFamily]);
-  const [logoPreviewSide, setLogoPreviewSide] = useState<'A' | 'B' | 'both'>('both');
   const [cropModalTeam, setCropModalTeam] = useState<Team | null>(null);
-  const [matchState] = useState(() => {
-    try {
-      const saved = localStorage.getItem(SCOREBOARD_STATE_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          nameA: parsed.nameA || 'Team A',
-          nameB: parsed.nameB || 'Team B',
-          logoA: parsed.logoA || '',
-          logoB: parsed.logoB || '',
-        };
-      }
-    } catch {}
-    return { nameA: 'Team A', nameB: 'Team B', logoA: '', logoB: '' };
-  });
+  const { match } = useBrowserSourcePreviewState();
+  const matchState = match ?? { nameA: 'Team A', nameB: 'Team B' };
 
   const handleLogoSettingsUpdate = (patch: Partial<LogoBrowserSettings>) => {
     onLogoSettingsChange(patch);
@@ -187,6 +186,8 @@ export default function QuickSetupModal({
       const bc = new BroadcastChannel(SCOREBOARD_EVENT_CHANNEL);
       bc.postMessage({
         type: 'LogoSettingsUpdated',
+        leagueId: browserSourceLeagueId ?? null,
+        settings: logoSettings,
         backgroundMode: patch.backgroundMode,
         timestamp: Date.now(),
       });
@@ -215,51 +216,43 @@ export default function QuickSetupModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setOpenPanel(null);
+      setOpenPanel('player');
       setIsCustomBrowserSourceOpen(false);
-      setIsPlayerBroadcastOpen(false);
       setIsFootballLeagueTableOpen(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  return (
-    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
-      <div className="modal-content" onClick={(event) => event.stopPropagation()}>
-        <ModalCloseButton onClose={onClose} />
-        <h3><i className="fas fa-sliders"></i> Quick Setup</h3>
-        <div style={{ display: 'flex', marginBottom: '10px' }}>
-          <button type="button" className="btn-primary" style={{ width: '100%', background: '#3b82f6', borderColor: '#3b82f6', fontWeight: 'bold' }} onClick={onOpenObsSetup}>
-            <i className="fas fa-download"></i> 📦 ดาวน์โหลด OBS Scene Collection
-          </button>
-        </div>
-        <div className="quick-setup-panel quick-setup-panel--custom-browser-source">
-          <button
-            type="button"
-            className="quick-setup-panel-toggle"
-            aria-expanded={isCustomBrowserSourceOpen}
-            aria-controls="custom-browser-source-content"
-            onClick={() => setIsCustomBrowserSourceOpen((current) => !current)}
-          >
-            <span><i className="fas fa-code"></i> Custom Browser Source</span>
-            <i className={`fas fa-chevron-${isCustomBrowserSourceOpen ? 'up' : 'down'}`} aria-hidden="true"></i>
-          </button>
-          {isCustomBrowserSourceOpen ? <div id="custom-browser-source-content" className="quick-setup-panel-content">
+  const moveCanvasObject = (id: string, position: BrowserPosition) => {
+    if (openPanel === 'player' && (id === 'image' || id === 'jersey' || id === 'name')) {
+      onPlayerBrowserSettingsChange({ ...playerBrowserSettings, [id]: { ...playerBrowserSettings[id], ...position } });
+    } else if (openPanel === 'team-color' && (id === 'A1' || id === 'A2' || id === 'B1' || id === 'B2')) {
+      onTeamColorSettingsChange({ positions: { [id]: position } });
+    } else if (id === 'A' || id === 'B') {
+      if (openPanel === 'team-name') onTeamNameSettingsChange({ positions: { ...teamNameSettings.positions, [id]: position } });
+      if (openPanel === 'logo') handleLogoSettingsUpdate({ positions: { ...logoSettings.positions, [id]: position } });
+      if (openPanel === 'score') onScoreSettingsChange({ positions: { ...scoreSettings.positions, [id]: position } });
+    }
+  };
 
+  const obsOptions = {
+    player: { connected: playerObsConnected, busy: playerObsBusy, message: playerObsMessage, add: onQuickAddPlayer, urls: [{ label: 'Player', url: playerBrowserUrl, copy: onCopyPlayerBrowserUrl }] },
+    'team-name': { connected: teamNameObsConnected, busy: teamNameObsBusy, message: teamNameObsMessage, add: onQuickAddTeamNames, urls: (['A', 'B'] as const).map(side => ({ label: side, url: teamNameUrls[side], copy: () => onCopyTeamNameUrl(side) })) },
+    'team-color': { connected: teamColorObsConnected, busy: teamColorObsBusy, message: teamColorObsMessage, add: onQuickAddTeamColor, urls: (['A', 'B'] as const).map(side => ({ label: side, url: teamColorUrls[side], copy: () => onCopyTeamColorUrl(side) })) },
+    logo: { connected: logoObsConnected, busy: logoObsBusy, message: logoObsMessage, add: onQuickAddLogo, urls: (['A', 'B'] as const).map(side => ({ label: side, url: logoUrls[side], copy: () => onCopyLogoUrl(side) })) },
+    score: { connected: teamNameObsConnected, busy: scoreObsBusy, message: scoreObsMessage, add: onQuickAddScore, urls: (['A', 'B', 'both'] as const).map(side => ({ label: side, url: scoreUrls[side], copy: () => onCopyScoreUrl(side) })) },
+  };
+  if (isCustomBrowserSourceOpen) return (
+    <BrowserSourceWorkspace
+      selected={openPanel} onSelect={setOpenPanel}
+      onBack={() => setIsCustomBrowserSourceOpen(false)} onClose={onClose}
+      obs={obsOptions[openPanel]}
+      saveStatus={openPanel === 'player' || openPanel === 'logo' ? undefined : browserSourceSaveStatus}
+      preview={<BrowserSourcePreview key={openPanel} kind={openPanel} player={playerBrowserSettings} teamName={teamNameSettings} teamColor={teamColorSettings} logo={logoSettings} score={scoreSettings} teams={teams} logoScale={logoBrowserScalePercent} onMove={moveCanvasObject} />}
+    >
           <div className="quick-setup-panel quick-setup-panel--player" aria-label="ตั้งค่าการแสดงนักเตะ">
-            <button
-              type="button"
-              className="quick-setup-panel-toggle"
-              aria-expanded={isPlayerBroadcastOpen}
-              aria-controls="player-browser-source-content"
-              onClick={() => setIsPlayerBroadcastOpen((current) => !current)}
-            >
-              <span><i className="fas fa-user-shield" /> Player Browser Source</span>
-              <i className={`fas fa-chevron-${isPlayerBroadcastOpen ? 'up' : 'down'}`} aria-hidden="true" />
-            </button>
-
-            {isPlayerBroadcastOpen ? <div id="player-browser-source-content" className="quick-setup-panel-content">
+            {openPanel === 'player' ? <div id="player-browser-source-content" className="quick-setup-panel-content">
               <section className="scoreboard-player-control-group" aria-labelledby="player-auto-hide-title">
                 <div className="scoreboard-player-section-heading scoreboard-player-auto-hide-heading" id="player-auto-hide-title">
                   <span><strong><i className="fas fa-clock" /> ซ่อนอัตโนมัติ</strong><span>กำหนดเวลาซ่อนนักเตะหลังจากแสดงผล</span></span>
@@ -325,42 +318,11 @@ export default function QuickSetupModal({
                 </div>
               </section>
 
-              <section className="scoreboard-player-control-group scoreboard-player-obs-group" aria-labelledby="player-obs-title">
-                <div className="scoreboard-player-section-heading" id="player-obs-title">
-                  <span><strong><i className="fas fa-plug" /> เชื่อมต่อ OBS Browser Source</strong><span>เพิ่มหรืออัปเดต Player Browser Source ในฉากหลักของ OBS</span></span>
-                </div>
-                <button type="button" className="btn-success" disabled={playerObsBusy || !playerObsConnected} onClick={onQuickAddPlayer}>
-                  <i className="fas fa-plug" /> Quick Add to OBS
-                </button>
-                <div className="scoreboard-player-obs-status" role="status">
-                  <span className={playerObsConnected ? 'is-connected' : 'is-disconnected'}>
-                    OBS WebSocket: {playerObsConnected ? 'Connected' : 'ยังไม่เชื่อมต่อ'}
-                  </span>
-                  {playerObsMessage ? <span> — {playerObsMessage}</span> : null}
-                </div>
-                <details className="scoreboard-player-url-details">
-                  <summary>URL สำหรับ Browser Source</summary>
-                  <div className="scoreboard-player-url-list">
-                    <div className="scoreboard-player-url-row">
-                      <span>{playerBrowserUrl}</span>
-                      <button type="button" className="btn-secondary" onClick={onCopyPlayerBrowserUrl}>Copy</button>
-                    </div>
-                  </div>
-                </details>
-              </section>
             </div> : null}
           </div>
         <div className="quick-setup-panel quick-setup-panel--team-name">
-          <button
-            type="button"
-            className="quick-setup-panel-toggle"
-            aria-expanded={openPanel === 'team-name'}
-            onClick={() => setOpenPanel((current) => current === 'team-name' ? null : 'team-name')}
-          >
-            <span><i className="fas fa-font"></i> Team Name Browser Source</span>
-            <i className={`fas fa-chevron-${openPanel === 'team-name' ? 'up' : 'down'}`} aria-hidden="true"></i>
-          </button>
           {openPanel === 'team-name' ? <div className="quick-setup-panel-content">
+          <BrowserPositionEditor showPreview={false} label="Team Name" positions={teamNameSettings.positions} defaults={TEAM_NAME_POSITIONS} onChange={positions => onTeamNameSettingsChange({ positions })} />
           <div style={{ display: 'grid', gap: '8px' }}>
             <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
               Font
@@ -433,58 +395,14 @@ export default function QuickSetupModal({
               );
             })}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
-              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: teamNameSettings.fontFamily, color: teamNameSettings.textColorA }}>
-                <small style={{ display: 'block', color: '#94a3b8' }}>Preview A</small>
-                <span style={{ fontSize: teamNameSettings.fontModeA === 'manual' ? `${teamNameSettings.fontSizeA}px` : 'clamp(1.5rem, 2vw, 2.5rem)', fontWeight: teamNameSettings.fontWeightA }}>Team A</span>
-              </div>
-              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: teamNameSettings.fontFamily, color: teamNameSettings.textColorB }}>
-                <small style={{ display: 'block', color: '#94a3b8' }}>Preview B</small>
-                <span style={{ fontSize: teamNameSettings.fontModeB === 'manual' ? `${teamNameSettings.fontSizeB}px` : 'clamp(1.5rem, 2vw, 2.5rem)', fontWeight: teamNameSettings.fontWeightB }}>Team B</span>
-              </div>
-            </div>
 
-            <div style={{ display: 'grid', gap: '6px', marginTop: '4px' }}>
-              <button className="btn-success" disabled={teamNameObsBusy || !teamNameObsConnected} onClick={onQuickAddTeamNames}>
-                <i className="fas fa-plug"></i> Quick Add to OBS
-              </button>
-            </div>
-            <div style={{ fontSize: '11px', color: teamNameObsConnected ? '#86efac' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <span>{teamNameObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}</span>
-              {teamNameObsConnected && (
-                <span style={{ backgroundColor: '#065f46', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, fontSize: '10px' }}>
-                  ⚡ Auto Sync OBS: Active
-                </span>
-              )}
-              {teamNameObsMessage ? ` — ${teamNameObsMessage}` : ''}
-            </div>
-            <details style={{ fontSize: '11px', color: '#94a3b8' }}>
-              <summary>URL สำหรับ Browser Source แยกทีม</summary>
-              <div style={{ display: 'grid', gap: '6px', marginTop: '6px' }}>
-                {(['A', 'B'] as const).map((side) => (
-                  <div key={side} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'center' }}>
-                    <span style={{ overflowWrap: 'anywhere' }}>{side}: {teamNameUrls[side]}</span>
-                    <button className="btn-secondary" style={{ padding: '4px 7px', fontSize: '11px' }} onClick={() => onCopyTeamNameUrl(side)}>Copy</button>
-                  </div>
-                ))}
-              </div>
-            </details>
           </div>
           </div> : null}
         </div>
 
         <div className="quick-setup-panel quick-setup-panel--team-color">
-          <button
-            type="button"
-            className="quick-setup-panel-toggle"
-            aria-expanded={openPanel === 'team-color'}
-            onClick={() => setOpenPanel((current) => current === 'team-color' ? null : 'team-color')}
-          >
-            <span><i className="fas fa-palette"></i> Team Color Browser Source</span>
-            <i className={`fas fa-chevron-${openPanel === 'team-color' ? 'up' : 'down'}`} aria-hidden="true"></i>
-          </button>
           {openPanel === 'team-color' ? <div className="quick-setup-panel-content">
-            <TeamColorBrowserSourcePanel
+            <TeamColorBrowserSourcePanel settingsOnly
               settings={teamColorSettings}
               urls={teamColorUrls}
               onSettingsChange={onTeamColorSettingsChange}
@@ -498,154 +416,11 @@ export default function QuickSetupModal({
         </div>
 
         <div className="quick-setup-panel quick-setup-panel--logo">
-          <button
-            type="button"
-            className="quick-setup-panel-toggle"
-            aria-expanded={openPanel === 'logo'}
-            onClick={() => setOpenPanel((current) => current === 'logo' ? null : 'logo')}
-          >
-            <span><i className="fas fa-shield-halved"></i> Logo Browser Source</span>
-            <i className={`fas fa-chevron-${openPanel === 'logo' ? 'up' : 'down'}`} aria-hidden="true"></i>
-          </button>
           {openPanel === 'logo' ? <div className="quick-setup-panel-content">
+            <BrowserPositionEditor showPreview={false} label="Logo" positions={logoSettings.positions} defaults={LOGO_POSITIONS} onChange={positions => handleLogoSettingsUpdate({ positions })} />
             <p style={{ margin: '0 0 8px', color: '#cbd5e1', fontSize: '12px' }}>
               ขนาดลีก {logoBrowserScalePercent}% ({LOGO_FRAME_SIZE_PX}px → {scaleLogoPixels(LOGO_FRAME_SIZE_PX, logoBrowserScalePercent)}px) — ทีมที่ Crop แล้วจะใช้ขนาด Custom ของตัวเอง
             </p>
-
-            {/* Live Preview Box */}
-            <div style={{
-              backgroundColor: '#090d16',
-              border: '1px solid #1e293b',
-              borderRadius: '10px',
-              padding: '12px',
-              marginBottom: '12px',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <i className="fas fa-eye"></i> Live Preview Canvas (Logo Browser Source)
-                </span>
-                <div style={{ display: 'flex', gap: '4px', backgroundColor: '#1e293b', padding: '2px', borderRadius: '6px' }}>
-                  {(['both', 'A', 'B'] as const).map((side) => (
-                    <button
-                      key={side}
-                      type="button"
-                      style={{
-                        padding: '3px 8px',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        borderRadius: '4px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        backgroundColor: logoPreviewSide === side ? '#0284c7' : 'transparent',
-                        color: logoPreviewSide === side ? '#ffffff' : '#94a3b8',
-                      }}
-                      onClick={() => setLogoPreviewSide(side)}
-                    >
-                      {side === 'both' ? 'Both Sides' : `Side ${side}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Simulated OBS Canvas Frame */}
-              <div
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  height: '150px',
-                  borderRadius: '8px',
-                  backgroundColor: '#040711',
-                  backgroundImage: logoSettings.backgroundMode === 'normal'
-                    ? 'none'
-                    : 'linear-gradient(45deg, #0f172a 25%, transparent 25%), linear-gradient(-45deg, #0f172a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #0f172a 75%), linear-gradient(-45deg, transparent 75%, #0f172a 75%)',
-                  backgroundSize: '16px 16px',
-                  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-                  border: '1px solid #334155',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <div style={{ position: 'relative', width: '100%', height: '100%', pointerEvents: 'none' }}>
-                  {(logoPreviewSide === 'both' || logoPreviewSide === 'A') && (() => {
-                    const teamName = matchState.nameA;
-                    const logoSrc = getLogoSrc(matchState.logoA, teamName);
-                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.logo_browser_crop_metadata);
-                    const effectiveScale = getEffectiveLogoScalePercent(cropData, logoBrowserScalePercent);
-                    const previewDisplaySize = scaleLogoPixels(55, effectiveScale);
-
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: '10%',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          width: `${previewDisplaySize}px`,
-                          height: `${previewDisplaySize}px`,
-                          backgroundColor: logoSettings.backgroundMode === 'normal' ? 'rgba(0,0,0,0.8)' : 'transparent',
-                          borderRadius: logoSettings.backgroundMode === 'normal' ? '8px' : '0',
-                          padding: logoSettings.backgroundMode === 'normal' ? '6px' : '0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxSizing: 'border-box',
-                          border: '1px dashed #0284c7',
-                        }}
-                      >
-                        {cropData ? (
-                          <LogoWithCrop url={logoSrc} crop={cropData} alt={teamName} />
-                        ) : (
-                          <img src={logoSrc} alt={teamName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                        )}
-                        <span style={{ position: 'absolute', bottom: '-16px', fontSize: '9px', color: '#38bdf8', whiteSpace: 'nowrap' }}>
-                          A: {teamName} ({effectiveScale}% · {scaleLogoPixels(LOGO_FRAME_SIZE_PX, effectiveScale)}px)
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  {(logoPreviewSide === 'both' || logoPreviewSide === 'B') && (() => {
-                    const teamName = matchState.nameB;
-                    const logoSrc = getLogoSrc(matchState.logoB, teamName);
-                    const cropData = parseCropMetadata(getSupabaseTeam(teamName)?.logo_browser_crop_metadata);
-                    const effectiveScale = getEffectiveLogoScalePercent(cropData, logoBrowserScalePercent);
-                    const previewDisplaySize = scaleLogoPixels(55, effectiveScale);
-
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          right: '10%',
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          width: `${previewDisplaySize}px`,
-                          height: `${previewDisplaySize}px`,
-                          backgroundColor: logoSettings.backgroundMode === 'normal' ? 'rgba(0,0,0,0.8)' : 'transparent',
-                          borderRadius: logoSettings.backgroundMode === 'normal' ? '8px' : '0',
-                          padding: logoSettings.backgroundMode === 'normal' ? '6px' : '0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          boxSizing: 'border-box',
-                          border: '1px dashed #f43f5e',
-                        }}
-                      >
-                        {cropData ? (
-                          <LogoWithCrop url={logoSrc} crop={cropData} alt={teamName} />
-                        ) : (
-                          <img src={logoSrc} alt={teamName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                        )}
-                        <span style={{ position: 'absolute', bottom: '-16px', fontSize: '9px', color: '#fb7185', whiteSpace: 'nowrap' }}>
-                          B: {teamName} ({effectiveScale}% · {scaleLogoPixels(LOGO_FRAME_SIZE_PX, effectiveScale)}px)
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
 
             {/* Effective frame summaries and per-team Crop buttons */}
             <div style={{ display: 'grid', gap: '10px' }}>
@@ -690,29 +465,6 @@ export default function QuickSetupModal({
                 </select>
               </label>
 
-              <div style={{ display: 'grid', gap: '6px', marginTop: '4px' }}>
-                {(['A', 'B'] as const).map((side) => (
-                  <div key={side} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'center' }}>
-                    <span style={{ overflowWrap: 'anywhere', fontSize: '11px', color: '#94a3b8' }}>{side}: {logoUrls[side]}</span>
-                    <button className="btn-secondary" style={{ padding: '4px 7px', fontSize: '11px' }} onClick={() => onCopyLogoUrl(side)}>Copy</button>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ display: 'grid', gap: '6px', marginTop: '6px' }}>
-                <button className="btn-success" disabled={logoObsBusy || !logoObsConnected} onClick={onQuickAddLogo}>
-                  <i className="fas fa-plug"></i> Quick Add Logo A/B to OBS
-                </button>
-              </div>
-              <div style={{ marginTop: '4px', fontSize: '11px', color: logoObsConnected ? '#86efac' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <span>{logoObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}</span>
-                {logoObsConnected && (
-                  <span style={{ backgroundColor: '#065f46', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, fontSize: '10px' }}>
-                    ⚡ Auto Sync OBS: Active
-                  </span>
-                )}
-                {logoObsMessage ? ` — ${logoObsMessage}` : ''}
-              </div>
             </div>
 
             {/* Logo Browser Crop Modal */}
@@ -745,16 +497,8 @@ export default function QuickSetupModal({
         </div>
 
         <div className="quick-setup-panel quick-setup-panel--score">
-          <button
-            type="button"
-            className="quick-setup-panel-toggle"
-            aria-expanded={openPanel === 'score'}
-            onClick={() => setOpenPanel((current) => current === 'score' ? null : 'score')}
-          >
-            <span><i className="fas fa-hashtag"></i> Score Browser Source</span>
-            <i className={`fas fa-chevron-${openPanel === 'score' ? 'up' : 'down'}`} aria-hidden="true"></i>
-          </button>
           {openPanel === 'score' ? <div className="quick-setup-panel-content">
+          <BrowserPositionEditor showPreview={false} label="Score" positions={scoreSettings.positions} defaults={SCORE_POSITIONS} anchor="top" onChange={positions => onScoreSettingsChange({ positions })} />
           <div style={{ display: 'grid', gap: '8px' }}>
             <label style={{ fontSize: '12px', color: '#cbd5e1' }}>
               Font ของ Score
@@ -815,47 +559,31 @@ export default function QuickSetupModal({
               );
             })}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: scoreSettings.fontFamily }}>
-                <small style={{ display: 'block', color: '#94a3b8' }}>Score A</small>
-                <span style={{ fontSize: scoreSettings.fontModeA === 'manual' ? `${scoreSettings.fontSizeA}px` : 'clamp(2.4rem, 3vw, 4rem)', fontWeight: scoreSettings.fontWeightA }}>0</span>
-              </div>
-              <div style={{ padding: '8px', background: '#111827', borderRadius: '6px', textAlign: 'center', fontFamily: scoreSettings.fontFamily }}>
-                <small style={{ display: 'block', color: '#94a3b8' }}>Score B</small>
-                <span style={{ fontSize: scoreSettings.fontModeB === 'manual' ? `${scoreSettings.fontSizeB}px` : 'clamp(2.4rem, 3vw, 4rem)', fontWeight: scoreSettings.fontWeightB }}>0</span>
-              </div>
-            </div>
 
-            <div style={{ display: 'grid', gap: '6px' }}>
-              <button className="btn-success" disabled={scoreObsBusy || !teamNameObsConnected} onClick={onQuickAddScore}>
-                <i className="fas fa-plug"></i> Quick Add Score A/B to OBS
-              </button>
-            </div>
-            <div style={{ fontSize: '11px', color: teamNameObsConnected ? '#86efac' : '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <span>{teamNameObsConnected ? 'OBS WebSocket: Connected' : 'OBS WebSocket: ยังไม่เชื่อมต่อ'}</span>
-              {teamNameObsConnected && (
-                <span style={{ backgroundColor: '#065f46', color: '#6ee7b7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600, fontSize: '10px' }}>
-                  ⚡ Auto Sync OBS: Active
-                </span>
-              )}
-              {scoreObsMessage ? ` — ${scoreObsMessage}` : ''}
-            </div>
-            <details style={{ fontSize: '11px', color: '#94a3b8' }}>
-              <summary>URL สำหรับ Score</summary>
-              <div style={{ display: 'grid', gap: '6px', marginTop: '6px' }}>
-                {(['A', 'B', 'both'] as const).map((side) => (
-                  <div key={side} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px', alignItems: 'center' }}>
-                    <span style={{ overflowWrap: 'anywhere' }}>{side}: {scoreUrls[side]}</span>
-                    <button className="btn-secondary" style={{ padding: '4px 7px', fontSize: '11px' }} onClick={() => onCopyScoreUrl(side)}>Copy</button>
-                  </div>
-                ))}
-              </div>
-            </details>
+
           </div>
           </div> : null}
         </div>
-        </div> : null}
+
+    </BrowserSourceWorkspace>
+  );
+
+
+  return (
+    <ModalBackdrop className="modal-overlay" onEscape={onClose}>
+      <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton onClose={onClose} />
+        <h3><i className="fas fa-sliders"></i> Quick Setup</h3>
+        <div style={{ display: 'flex', marginBottom: '10px' }}>
+          <button type="button" className="btn-primary" style={{ width: '100%', background: '#3b82f6', borderColor: '#3b82f6', fontWeight: 'bold' }} onClick={onOpenObsSetup}>
+            <i className="fas fa-download"></i> 📦 ดาวน์โหลด OBS Scene Collection
+          </button>
         </div>
+        <button ref={launcher} type="button" className="browser-source-launcher" onClick={() => setIsCustomBrowserSourceOpen(true)}>
+          <i className="fas fa-sliders" aria-hidden="true" />
+          <span><strong>Custom Browser Source</strong><small>เปิดตัวแก้ไข Browser Source · ทั้ง 5 ประเภท</small></span>
+          <i className="fas fa-arrow-right" aria-hidden="true" />
+        </button>
 
         <div className="quick-setup-panel quick-setup-panel--football-league-table">
           <button

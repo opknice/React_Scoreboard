@@ -5,6 +5,7 @@ import { buildScoreBrowserUrl, getScorePresentation } from './scoreBrowserUrl';
 describe('scoreBrowserUrl', () => {
   it('keeps legacy score URLs in auto mode', () => {
     expect(getScorePresentation('?template=score-only&mode=number&side=A', 'A')).toEqual({
+      position: DEFAULT_SCORE_BROWSER_SETTINGS.positions.A,
       fontFamily: 'Inter',
       fontWeight: 700,
       fontMode: 'auto',
@@ -14,6 +15,7 @@ describe('scoreBrowserUrl', () => {
 
   it('reads manual settings for a side URL', () => {
     expect(getScorePresentation('?font=Kanit&fontMode=manual&fontSize=84&fontWeight=300', 'B')).toEqual({
+      position: DEFAULT_SCORE_BROWSER_SETTINGS.positions.B,
       fontFamily: 'Kanit',
       fontWeight: 300,
       fontMode: 'manual',

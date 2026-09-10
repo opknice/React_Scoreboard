@@ -95,6 +95,37 @@ describe('useLeagueBrowserSourceSettings', () => {
     expect(result.current.saveStatus).toBe('saved');
   });
 
+  it('persists Logo and Player canvas positions under the active league', async () => {
+    const league = createLeague('layout-league');
+    const updateLeague = vi.fn(async (id: string, updates: Partial<League>) => ({ ...league, id, ...updates }));
+    const { result } = renderHook(() => useLeagueBrowserSourceSettings({
+      activeLeague: league,
+      updateLeague,
+      debounceMs: 500,
+    }));
+
+    act(() => result.current.updateLogoSettings({ positions: { ...result.current.logoSettings.positions, A: { x: 321, y: 222 } } }));
+    act(() => result.current.updatePlayerSettings({
+      ...result.current.playerSettings,
+      image: { ...result.current.playerSettings.image, x: 700, y: 444 },
+    }));
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(updateLeague).toHaveBeenCalledWith('layout-league', expect.objectContaining({
+      settings: expect.objectContaining({
+        browserSources: expect.objectContaining({
+          logo: expect.objectContaining({ positions: expect.objectContaining({ A: { x: 321, y: 222 } }) }),
+          player: expect.objectContaining({ image: expect.objectContaining({ x: 700, y: 444 }) }),
+        }),
+      }),
+    }), { silent: true });
+    expect(window.localStorage.getItem('logoBrowserSettings')).toBeNull();
+    expect(window.localStorage.getItem('player_browser_settings_v1')).toBeNull();
+  });
+
   it('flushes the old league before switching and hydrates the new league', async () => {
     const leagueA = createLeague('a');
     const leagueB = createLeague('b', {

@@ -16,6 +16,7 @@ export interface PlayerBrowserSettings {
 
 export interface PlayerBrowserSettingsUpdatedEvent {
   type: 'PlayerBrowserSettingsUpdated';
+  leagueId?: string | null;
   settings: PlayerBrowserSettings;
   timestamp: number;
 }
@@ -54,10 +55,26 @@ export function normalizePlayerBrowserSettings(value: unknown): PlayerBrowserSet
   };
 }
 
+export function mergePlayerBrowserSettings(
+  base: PlayerBrowserSettings,
+  override: unknown,
+): PlayerBrowserSettings {
+  if (!override || typeof override !== 'object' || Array.isArray(override)) {
+    return normalizePlayerBrowserSettings(base);
+  }
+  const source = override as Partial<PlayerBrowserSettings>;
+  return normalizePlayerBrowserSettings({
+    image: { ...base.image, ...(source.image ?? {}) },
+    jersey: { ...base.jersey, ...(source.jersey ?? {}) },
+    name: { ...base.name, ...(source.name ?? {}) },
+  });
+}
+
 export function isPlayerBrowserSettingsUpdatedEvent(value: unknown): value is PlayerBrowserSettingsUpdatedEvent {
   if (!value || typeof value !== 'object') return false;
   const event = value as Partial<PlayerBrowserSettingsUpdatedEvent>;
   return event.type === 'PlayerBrowserSettingsUpdated'
+    && (event.leagueId === undefined || event.leagueId === null || typeof event.leagueId === 'string')
     && typeof event.timestamp === 'number'
     && JSON.stringify(normalizePlayerBrowserSettings(event.settings)) === JSON.stringify(event.settings);
 }

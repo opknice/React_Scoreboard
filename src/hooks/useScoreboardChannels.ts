@@ -91,15 +91,18 @@ export function broadcastPlayerDisplayState(payload: PlayerDisplayPayload): void
   postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, { ...state });
 }
 
-export function broadcastPlayerBrowserSettings(settings: PlayerBrowserSettings): void {
-  try {
-    localStorage.setItem(PLAYER_BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Continue with BroadcastChannel when storage is unavailable.
+export function broadcastPlayerBrowserSettings(settings: PlayerBrowserSettings, leagueId?: string | null): void {
+  if (!leagueId) {
+    try {
+      localStorage.setItem(PLAYER_BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Continue with BroadcastChannel when storage is unavailable.
+    }
   }
 
   postMacroChannelMessage(SCOREBOARD_EVENT_CHANNEL, {
     type: 'PlayerBrowserSettingsUpdated',
+    leagueId: leagueId ?? null,
     settings,
     timestamp: Date.now(),
   });

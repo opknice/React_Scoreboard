@@ -1,0 +1,10 @@
+.browser-position-editor { display: grid; gap: 10px; margin: 12px 0; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; }
+.browser-position-editor p, .browser-position-editor small { margin: 0; color: #cbd5e1; font-size: 12px; }
+.browser-position-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.browser-position-fields fieldset { min-width: 0; border: 1px solid #475569; border-radius: 6px; display: grid; gap: 8px; }
+.browser-position-fields label { display: grid; gap: 4px; font-size: 12px; }
+.browser-position-fields input { width: 100%; min-width: 0; box-sizing: border-box; }
+.browser-position-preview { position: relative; aspect-ratio: 16 / 9; margin: 12px; border: 1px solid #64748b; background: #020617; background-image: linear-gradient(#33415555 1px, transparent 1px), linear-gradient(90deg, #33415555 1px, transparent 1px); background-size: 10% 10%; }
+.browser-position-marker { position: absolute; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); background: #38bdf8; color: #38bdf8; }
+.browser-position-marker--B { background: #fda4af; color: #fda4af; }
+.browser-position-marker span { position: absolute; left: 10px; top: 0; font-size: 12px; font-weight: 700; }

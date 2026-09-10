@@ -1,3 +1,4 @@
+import { browserPositionParams, normalizeBrowserPositions, readBrowserPosition, LOGO_POSITIONS, type BrowserPosition } from '../types/browserPositions';
 import {
   DEFAULT_LOGO_BROWSER_SETTINGS,
   LOGO_DEFAULT_SIZE,
@@ -9,6 +10,7 @@ import {
 export type LogoBrowserSide = 'A' | 'B' | 'both';
 
 export interface LogoPresentation {
+  position: BrowserPosition;
   size: number;
   backgroundMode: LogoBackgroundMode;
 }
@@ -23,6 +25,7 @@ export function getLogoPresentation(
 ): LogoPresentation {
   void side;
   return {
+    position: readBrowserPosition(search, side, LOGO_POSITIONS),
     // Ignore legacy size query parameters so every Browser Source keeps the
     // same predictable layout footprint.
     size: LOGO_DEFAULT_SIZE,
@@ -40,6 +43,7 @@ export function buildLogoBrowserUrl(
 ): string {
   const params: Record<string, string> = {
     template: 'team-logos',
+    ...browserPositionParams(normalizeBrowserPositions(settings?.positions, LOGO_POSITIONS)),
     side,
   };
 

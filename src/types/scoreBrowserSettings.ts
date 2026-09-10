@@ -1,3 +1,4 @@
+import { normalizeBrowserPositions, SCORE_POSITIONS, type BrowserPositions } from './browserPositions';
 import {
   DEFAULT_FONT_WEIGHT,
   normalizeFontWeight,
@@ -11,6 +12,7 @@ export type ScoreFontFamily = TeamNameFontFamily;
 export type ScoreFontWeight = FontWeight;
 
 export interface ScoreBrowserSettings {
+  positions: BrowserPositions;
   fontFamily: ScoreFontFamily;
   fontWeightA: ScoreFontWeight;
   fontWeightB: ScoreFontWeight;
@@ -27,6 +29,7 @@ export const SCORE_DEFAULT_FONT_SIZE = 72;
 export const SCORE_FONT_OPTIONS = TEAM_NAME_FONT_OPTIONS;
 
 export const DEFAULT_SCORE_BROWSER_SETTINGS: ScoreBrowserSettings = {
+  positions: SCORE_POSITIONS,
   fontFamily: 'Inter',
   fontWeightA: DEFAULT_FONT_WEIGHT,
   fontWeightB: DEFAULT_FONT_WEIGHT,
@@ -56,6 +59,7 @@ export function normalizeScoreFontFamily(value: unknown): ScoreFontFamily {
 export function normalizeScoreBrowserSettings(value: unknown): ScoreBrowserSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<ScoreBrowserSettings> : {};
   return {
+    positions: normalizeBrowserPositions(candidate.positions, SCORE_POSITIONS),
     fontFamily: normalizeScoreFontFamily(candidate.fontFamily),
     fontWeightA: normalizeFontWeight(candidate.fontWeightA),
     fontWeightB: normalizeFontWeight(candidate.fontWeightB),

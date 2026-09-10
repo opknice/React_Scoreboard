@@ -86,7 +86,7 @@
    ============================================================ */
 .score-only-score-wrap {
   position: absolute;
-  top: 4.63%;
+  top: var(--score-only-y, 4.63%);
   left: var(--score-only-x);
   transform: translateX(-50%);
   overflow: hidden;

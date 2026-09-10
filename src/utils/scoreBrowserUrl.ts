@@ -1,3 +1,4 @@
+import { browserPositionParams, normalizeBrowserPositions, readBrowserPosition, SCORE_POSITIONS, type BrowserPosition } from '../types/browserPositions';
 import {
   DEFAULT_SCORE_BROWSER_SETTINGS,
   normalizeScoreFontFamily,
@@ -10,6 +11,7 @@ import {
 import { normalizeFontWeight, type FontWeight } from '../types/teamNameBrowserSettings';
 
 export interface ScorePresentation {
+  position: BrowserPosition;
   fontFamily: ScoreFontFamily;
   fontWeight: FontWeight;
   fontMode: ScoreFontMode;
@@ -26,6 +28,7 @@ export function getScorePresentation(
 ): ScorePresentation {
   const sideKey = side === 'A' ? 'A' : 'B';
   return {
+    position: readBrowserPosition(search, side, SCORE_POSITIONS),
     fontFamily: normalizeScoreFontFamily(getParam(search, 'font')),
     fontWeight: normalizeFontWeight(
       getParam(search, 'fontWeight') ?? getParam(search, `fontWeight${sideKey}`),
@@ -47,6 +50,7 @@ export function buildScoreBrowserUrl(
 ): string {
   const params: Record<string, string> = {
     template: 'score-only',
+    ...browserPositionParams(normalizeBrowserPositions(settings.positions, SCORE_POSITIONS)),
     mode: 'number',
     side,
     font: settings.fontFamily,

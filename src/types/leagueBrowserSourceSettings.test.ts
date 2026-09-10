@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SCORE_BROWSER_SETTINGS } from './scoreBrowserSettings';
 import { DEFAULT_TEAM_NAME_BROWSER_SETTINGS } from './teamNameBrowserSettings';
 import { DEFAULT_TEAM_COLOR_BROWSER_SETTINGS } from './teamColorBrowserSettings';
+import { DEFAULT_LOGO_BROWSER_SETTINGS } from './logoBrowserSettings';
+import { DEFAULT_PLAYER_BROWSER_SETTINGS } from './playerBrowserSettings';
 import {
   mergeLeagueBrowserSourceSettings,
   resolveLeagueBrowserSourceSettings,
@@ -12,6 +14,8 @@ const globalSettings: LeagueBrowserSourceSettings = {
   teamName: { ...DEFAULT_TEAM_NAME_BROWSER_SETTINGS, fontFamily: 'Kanit', fontSizeA: 54 },
   score: { ...DEFAULT_SCORE_BROWSER_SETTINGS, fontFamily: 'Kanit', fontSizeA: 80 },
   teamColor: DEFAULT_TEAM_COLOR_BROWSER_SETTINGS,
+  logo: DEFAULT_LOGO_BROWSER_SETTINGS,
+  player: DEFAULT_PLAYER_BROWSER_SETTINGS,
 };
 
 describe('leagueBrowserSourceSettings', () => {
@@ -65,6 +69,8 @@ describe('leagueBrowserSourceSettings', () => {
         teamName: globalSettings.teamName,
         score: globalSettings.score,
         teamColor: globalSettings.teamColor,
+        logo: globalSettings.logo,
+        player: globalSettings.player,
       },
     });
   });

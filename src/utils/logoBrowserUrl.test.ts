@@ -22,6 +22,6 @@ describe('logoBrowserUrl', () => {
 
     expect(url).toContain('size=190');
     expect(url).toContain('background=normal');
-    expect(getLogoPresentation(`${url}&size=360&sizeA=420`, 'A')).toEqual({ size: 190, backgroundMode: 'normal' });
+    expect(getLogoPresentation(`${url}&size=360&sizeA=420`, 'A')).toEqual({ position: DEFAULT_LOGO_BROWSER_SETTINGS.positions.A, size: 190, backgroundMode: 'normal' });
   });
 });

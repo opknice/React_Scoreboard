@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDisableZoom } from '../hooks/useDisableZoom';
+import { LeagueService } from '../services/leagueService';
 import { SCOREBOARD_EVENT_CHANNEL } from '../types/scoreboardEvent';
 import {
   createPlayerDisplayState,
@@ -10,6 +11,7 @@ import {
 } from '../types/playerDisplayEvent';
 import {
   DEFAULT_PLAYER_BROWSER_SETTINGS,
+  mergePlayerBrowserSettings,
   isPlayerBrowserSettingsUpdatedEvent,
   normalizePlayerBrowserSettings,
   PLAYER_BROWSER_CANVAS_HEIGHT,
@@ -41,6 +43,18 @@ function readStoredSettings(): PlayerBrowserSettings {
   }
 }
 
+async function readLeagueSettings(leagueId: string): Promise<PlayerBrowserSettings | null> {
+  try {
+    const league = await LeagueService.getLeagueById(leagueId);
+    const root = league?.settings;
+    const sources = root && typeof root === 'object' && !Array.isArray(root)
+      ? (root as Record<string, unknown>).browserSources : null;
+    const player = sources && typeof sources === 'object' && !Array.isArray(sources)
+      ? (sources as Record<string, unknown>).player : null;
+    return player ? mergePlayerBrowserSettings(readStoredSettings(), player) : null;
+  } catch { return null; }
+}
+
 function createHiddenState(state: PlayerDisplayState): PlayerDisplayState {
   return createPlayerDisplayState({
     visible: false,
@@ -68,6 +82,18 @@ export default function PlayerBrowserSource() {
   const [settings, setSettings] = useState<PlayerBrowserSettings>(readStoredSettings);
   const [imageFailed, setImageFailed] = useState(false);
   const hideTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!leagueId) {
+      setSettings(readStoredSettings());
+      return () => { cancelled = true; };
+    }
+    void readLeagueSettings(leagueId).then(next => {
+      if (!cancelled) setSettings(next ?? readStoredSettings());
+    });
+    return () => { cancelled = true; };
+  }, [leagueId]);
 
   const applyState = useCallback((nextState: PlayerDisplayState) => {
     if (leagueId && nextState.leagueId !== leagueId) return;
@@ -102,13 +128,14 @@ export default function PlayerBrowserSource() {
 
     const handleMessage = (event: MessageEvent<unknown>) => {
       if (isPlayerDisplayState(event.data)) applyState(event.data);
-      if (isPlayerBrowserSettingsUpdatedEvent(event.data)) setSettings(event.data.settings);
+      if (isPlayerBrowserSettingsUpdatedEvent(event.data)
+        && (leagueId ? event.data.leagueId === leagueId : event.data.leagueId == null)) setSettings(event.data.settings);
     };
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key === PLAYER_BROWSER_SETTINGS_STORAGE_KEY && event.newValue) {
         try {
-          setSettings(normalizePlayerBrowserSettings(JSON.parse(event.newValue)));
+          if (!leagueId) setSettings(normalizePlayerBrowserSettings(JSON.parse(event.newValue)));
         } catch {
           // Ignore malformed settings updates.
         }
@@ -136,7 +163,7 @@ export default function PlayerBrowserSource() {
       channel?.close();
       window.removeEventListener('storage', handleStorage);
     };
-  }, [applyState]);
+  }, [applyState, leagueId]);
 
   useEffect(() => {
     if (hideTimerRef.current !== null) {
