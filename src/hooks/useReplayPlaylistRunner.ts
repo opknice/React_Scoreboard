@@ -290,7 +290,8 @@ export function useReplayPlaylistRunner({
       if (!file) {
         recordFailure(item, 'load_error', 0, 0);
         callbacksRef.current.onError(`ข้ามไฟล์ "${item.fileName}" เนื่องจากไม่พบไฟล์ในโฟลเดอร์`);
-        continue;
+        await playIndexRef.current(nextIndex + 1, 1, 0);
+        return;
       }
 
       const playbackId = createId();
@@ -366,6 +367,8 @@ export function useReplayPlaylistRunner({
         }
         recordFailure(item, 'load_error', 2, active.lastConfirmedTime);
         callbacksRef.current.onError(`ไม่สามารถโหลดไฟล์ "${item.fileName}" ได้ ระบบจะข้ามไปไฟล์ถัดไป`);
+        await playIndexRef.current(nextIndex + 1, 1, 0);
+        return;
       }
     }
 

@@ -23,7 +23,10 @@ class MockBroadcastChannel {
 
 function makeFile(name: string, lastModified: number): File {
   const file = new File(['video'], name, { type: 'video/x-matroska', lastModified });
-  Object.defineProperty(file, 'arrayBuffer', { value: vi.fn(async () => new ArrayBuffer(5)) });
+  Object.defineProperty(file, 'arrayBuffer', {
+    configurable: true,
+    value: vi.fn(async () => new ArrayBuffer(5)),
+  });
   return file;
 }
 
@@ -182,7 +185,7 @@ describe('useReplayPlaylistRunner', () => {
   it('advances only once when multiple screens report the same item ended', async () => {
     const firstFile = makeFile('first.mkv', 1);
     const secondFile = makeFile('second.mkv', 2);
-    const { result, channel, send } = setup([firstFile, secondFile]);
+    const { result, channel, send, onCompleted } = setup([firstFile, secondFile]);
     act(() => {
       channel.emit(ready('screen-a'));
       channel.emit(ready('screen-b'));
@@ -212,6 +215,20 @@ describe('useReplayPlaylistRunner', () => {
 
     expect(send.mock.calls.filter(([message]) => message.type === 'file')).toHaveLength(2);
     expect(result.current.currentIndex).toBe(1);
+
+    const secondMessage = send.mock.calls.filter(([message]) => message.type === 'file')[1][0];
+    const secondEnded = (screenId: string) => ({
+      ...ended(screenId),
+      playlistItemId: secondMessage.playlistItemId,
+      playbackId: secondMessage.playbackId,
+      fileName: secondMessage.name,
+    });
+    await act(async () => {
+      channel.emit(secondEnded('screen-a'));
+      channel.emit(secondEnded('screen-b'));
+      await Promise.resolve();
+    });
+    expect(onCompleted).toHaveBeenCalledOnce();
   });
 
   it('invalidates a pending file read when stop is requested', async () => {
@@ -234,5 +251,63 @@ describe('useReplayPlaylistRunner', () => {
 
     expect(send.mock.calls.some(([message]) => message.type === 'file')).toBe(false);
     expect(result.current.status).toBe('stopped');
+  });
+
+  it('skips a missing item and starts the next item at its first attempt', async () => {
+    const missing = makeFile('missing.mkv', 1);
+    const available = makeFile('available.mkv', 2);
+    const { result, channel, send } = setup([missing, available]);
+    act(() => channel.emit(ready('screen-a')));
+    await act(async () => result.current.start([available]));
+
+    const fileMessage = send.mock.calls.find(([message]) => message.type === 'file')?.[0];
+    expect(fileMessage).toMatchObject({ name: 'available.mkv', attempt: 1, resumeTime: 0 });
+    expect(result.current.failures).toMatchObject([{ fileName: 'missing.mkv', attempts: 0 }]);
+  });
+
+  it('synchronizes a replay screen that becomes ready during playback', async () => {
+    const file = makeFile('active.mkv', 1);
+    const { result, channel, send } = setup([file]);
+    act(() => channel.emit(ready('screen-a')));
+    await act(async () => result.current.start([file]));
+    const firstMessage = send.mock.calls.find(([message]) => message.type === 'file')?.[0];
+    act(() => channel.emit({
+      type: 'ReplayPlaybackProgress',
+      protocolVersion: REPLAY_PROTOCOL_VERSION,
+      screenId: 'screen-a',
+      playlistSessionId: firstMessage.playlistSessionId,
+      playlistItemId: firstMessage.playlistItemId,
+      playbackId: firstMessage.playbackId,
+      attempt: 1,
+      currentTime: 4.25,
+      duration: 20,
+      timestamp: Date.now(),
+    }));
+
+    await act(async () => {
+      channel.emit(ready('screen-b'));
+      await Promise.resolve();
+    });
+
+    const fileMessages = send.mock.calls.filter(([message]) => message.type === 'file').map(([message]) => message);
+    expect(fileMessages).toHaveLength(2);
+    expect(fileMessages[1]).toMatchObject({
+      playbackId: firstMessage.playbackId,
+      targetScreenId: 'screen-b',
+      resumeTime: 4.25,
+    });
+  });
+
+  it('reports screen unavailable instead of waiting forever', async () => {
+    const file = makeFile('highlight.mkv', 1);
+    const { result } = setup([file]);
+    let startPromise: Promise<void>;
+    act(() => { startPromise = result.current.start([file]); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_100);
+      await startPromise!;
+    });
+
+    expect(result.current.status).toBe('screen_unavailable');
   });
 });
