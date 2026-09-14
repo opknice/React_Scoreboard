@@ -31,3 +31,8 @@ supabase/.env.cloudinary
 
 # Template files with secrets
 template/Untitled/basic.ini
+
+# Local environment variables
+.env
+.env.*
+!.env.example
