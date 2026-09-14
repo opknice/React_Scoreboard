@@ -6,6 +6,7 @@ import {
   isReplayVideoEndedEvent,
   isReplayPlaylistItemEndedEvent,
   isReplayPlaylistCompletedEvent,
+  REPLAY_PROTOCOL_VERSION,
   type ChannelMessage,
 } from './instantReplay';
 
@@ -215,6 +216,9 @@ describe('Type Guard Functions', () => {
         playbackId: 'playback-1',
         playlistItemId: 'item-1',
         playlistSessionId: 'session-1',
+        protocolVersion: REPLAY_PROTOCOL_VERSION,
+        screenId: 'screen-1',
+        attempt: 1,
         timestamp: Date.now(),
         duration: 12,
         currentTime: 12,

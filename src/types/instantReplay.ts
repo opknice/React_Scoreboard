@@ -11,6 +11,7 @@
  * the public automation channel so Auto Macros do not run for every item.
  */
 export const REPLAY_PLAYLIST_CONTROL_CHANNEL = 'replay-playlist-control';
+export const REPLAY_PROTOCOL_VERSION = 2 as const;
 
 /**
  * Message type for sending video file data from Control Panel to Screen Mode
@@ -26,6 +27,11 @@ export interface FileMessage {
   /** Present when the file is being played by the playlist runner. */
   playlistItemId?: string;
   playlistSessionId?: string;
+  /** Protocol v2 fields used by the resilient playlist runner. */
+  protocolVersion?: typeof REPLAY_PROTOCOL_VERSION;
+  attempt?: 1 | 2;
+  resumeTime?: number;
+  targetScreenId?: string;
 }
 
 /**
@@ -36,6 +42,9 @@ export interface CommandMessage {
   type: 'cmd';
   action: 'play' | 'pause' | 'seek' | 'setA' | 'setB' | 'clearLoop' | 'setSpeed';
   value?: number;
+  playbackId?: string;
+  playlistSessionId?: string;
+  targetScreenId?: string;
 }
 
 /**
@@ -77,9 +86,93 @@ export interface ReplayPlaylistItemEndedEvent {
   playlistItemId: string;
   playlistSessionId: string;
   timestamp: number;
-  duration: number;
+  duration: number | null;
+  currentTime: number;
+  protocolVersion: typeof REPLAY_PROTOCOL_VERSION;
+  screenId: string;
+  attempt: 1 | 2;
+}
+
+export type ReplayPlaybackFailureReason =
+  | 'stalled'
+  | 'decode_error'
+  | 'load_error'
+  | 'play_error';
+
+export interface ReplayPlaylistFailure {
+  itemId: string;
+  fileName: string;
+  reason: ReplayPlaybackFailureReason;
+  failedAt: number;
+  lastConfirmedTime: number;
+  attempts: number;
+}
+
+interface ReplayScreenEventBase {
+  protocolVersion: typeof REPLAY_PROTOCOL_VERSION;
+  screenId: string;
+  timestamp: number;
+}
+
+interface ReplayPlaybackEventBase extends ReplayScreenEventBase {
+  playlistSessionId: string;
+  playlistItemId: string;
+  playbackId: string;
+  attempt: 1 | 2;
+}
+
+export interface ReplayScreenReadyEvent extends ReplayScreenEventBase {
+  type: 'ReplayScreenReady';
+}
+
+export interface ReplayScreenHeartbeatEvent extends ReplayScreenEventBase {
+  type: 'ReplayScreenHeartbeat';
+  playbackId?: string;
+}
+
+export interface ReplayMediaReceivedEvent extends ReplayPlaybackEventBase {
+  type: 'ReplayMediaReceived';
+}
+
+export interface ReplayMediaReadyEvent extends ReplayPlaybackEventBase {
+  type: 'ReplayMediaReady';
+  duration: number | null;
+}
+
+export interface ReplayPlaybackStartedEvent extends ReplayPlaybackEventBase {
+  type: 'ReplayPlaybackStarted';
+  currentTime: number;
+  duration: number | null;
+}
+
+export interface ReplayPlaybackProgressEvent extends ReplayPlaybackEventBase {
+  type: 'ReplayPlaybackProgress';
+  currentTime: number;
+  duration: number | null;
+}
+
+export interface ReplayPlaybackWaitingEvent extends ReplayPlaybackEventBase {
+  type: 'ReplayPlaybackWaiting' | 'ReplayPlaybackStalled';
   currentTime: number;
 }
+
+export interface ReplayPlaybackFailedEvent extends ReplayPlaybackEventBase {
+  type: 'ReplayPlaybackFailed';
+  reason: Exclude<ReplayPlaybackFailureReason, 'stalled'>;
+  currentTime: number;
+  mediaErrorCode?: number;
+}
+
+export type ReplayPlaylistControlEvent =
+  | ReplayScreenReadyEvent
+  | ReplayScreenHeartbeatEvent
+  | ReplayMediaReceivedEvent
+  | ReplayMediaReadyEvent
+  | ReplayPlaybackStartedEvent
+  | ReplayPlaybackProgressEvent
+  | ReplayPlaybackWaitingEvent
+  | ReplayPlaybackFailedEvent
+  | ReplayPlaylistItemEndedEvent;
 
 /** Public automation event: the active playlist finished all its items. */
 export interface ReplayPlaylistCompletedEvent {
@@ -89,6 +182,10 @@ export interface ReplayPlaylistCompletedEvent {
   completedItemCount: number;
   lastPlaylistItemId?: string;
   timestamp: number;
+  outcome?: 'completed' | 'completed_with_errors';
+  playedItemCount?: number;
+  failedItemCount?: number;
+  failedItems?: ReplayPlaylistFailure[];
 }
 
 export interface ReplayPlaylistItem {
@@ -100,7 +197,18 @@ export interface ReplayPlaylistItem {
   addedAt: number;
 }
 
-export type ReplayPlaylistStatus = 'idle' | 'playing' | 'completed' | 'stopped';
+export type ReplayPlaylistStatus =
+  | 'idle'
+  | 'loading'
+  | 'waiting_for_screen'
+  | 'playing'
+  | 'stalled'
+  | 'retrying'
+  | 'advancing'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'stopped'
+  | 'screen_unavailable';
 
 export function createReplayFileId(file: Pick<File, 'name' | 'size' | 'lastModified'>): string {
   return `${file.name}\u0000${file.size}\u0000${file.lastModified}`;
@@ -144,12 +252,63 @@ export function isReplayPlaylistItemEndedEvent(value: unknown): value is ReplayP
     && typeof event.playbackId === 'string'
     && typeof event.playlistItemId === 'string'
     && typeof event.playlistSessionId === 'string'
+    && event.protocolVersion === REPLAY_PROTOCOL_VERSION
+    && typeof event.screenId === 'string'
+    && (event.attempt === 1 || event.attempt === 2)
     && typeof event.timestamp === 'number'
     && Number.isFinite(event.timestamp)
-    && typeof event.duration === 'number'
-    && Number.isFinite(event.duration)
+    && (event.duration === null || (typeof event.duration === 'number' && Number.isFinite(event.duration)))
     && typeof event.currentTime === 'number'
     && Number.isFinite(event.currentTime);
+}
+
+export function isReplayPlaylistControlEvent(value: unknown): value is ReplayPlaylistControlEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<ReplayPlaylistControlEvent>;
+  if (event.protocolVersion !== REPLAY_PROTOCOL_VERSION
+    || typeof event.screenId !== 'string'
+    || typeof event.timestamp !== 'number'
+    || !Number.isFinite(event.timestamp)
+    || typeof event.type !== 'string') return false;
+
+  if (event.type === 'ReplayScreenReady') return true;
+  if (event.type === 'ReplayScreenHeartbeat') {
+    const heartbeat = event as Partial<ReplayScreenHeartbeatEvent>;
+    return heartbeat.playbackId === undefined || typeof heartbeat.playbackId === 'string';
+  }
+  if (event.type === 'ReplayPlaylistItemEnded') return isReplayPlaylistItemEndedEvent(event);
+
+  const playbackEvent = event as Partial<ReplayPlaybackEventBase>;
+  const hasPlaybackIdentity = typeof playbackEvent.playlistSessionId === 'string'
+    && typeof playbackEvent.playlistItemId === 'string'
+    && typeof playbackEvent.playbackId === 'string'
+    && (playbackEvent.attempt === 1 || playbackEvent.attempt === 2);
+  if (!hasPlaybackIdentity) return false;
+
+  if (event.type === 'ReplayMediaReceived') return true;
+  if (event.type === 'ReplayMediaReady') {
+    const ready = event as Partial<ReplayMediaReadyEvent>;
+    return ready.duration === null || (typeof ready.duration === 'number' && Number.isFinite(ready.duration));
+  }
+  if (event.type === 'ReplayPlaybackStarted' || event.type === 'ReplayPlaybackProgress') {
+    const progress = event as Partial<ReplayPlaybackStartedEvent | ReplayPlaybackProgressEvent>;
+    return typeof progress.currentTime === 'number'
+      && Number.isFinite(progress.currentTime)
+      && (progress.duration === null || (typeof progress.duration === 'number' && Number.isFinite(progress.duration)));
+  }
+  if (event.type === 'ReplayPlaybackWaiting' || event.type === 'ReplayPlaybackStalled') {
+    const waiting = event as Partial<ReplayPlaybackWaitingEvent>;
+    return typeof waiting.currentTime === 'number' && Number.isFinite(waiting.currentTime);
+  }
+  if (event.type === 'ReplayPlaybackFailed') {
+    const failed = event as Partial<ReplayPlaybackFailedEvent>;
+    return (failed.reason === 'decode_error' || failed.reason === 'load_error' || failed.reason === 'play_error')
+      && typeof failed.currentTime === 'number'
+      && Number.isFinite(failed.currentTime)
+      && (failed.mediaErrorCode === undefined
+        || (typeof failed.mediaErrorCode === 'number' && Number.isFinite(failed.mediaErrorCode)));
+  }
+  return false;
 }
 
 export function isReplayPlaylistCompletedEvent(value: unknown): value is ReplayPlaylistCompletedEvent {
@@ -163,7 +322,13 @@ export function isReplayPlaylistCompletedEvent(value: unknown): value is ReplayP
     && Number.isInteger(event.completedItemCount)
     && event.completedItemCount >= 0
     && typeof event.timestamp === 'number'
-    && Number.isFinite(event.timestamp);
+    && Number.isFinite(event.timestamp)
+    && (event.outcome === undefined || event.outcome === 'completed' || event.outcome === 'completed_with_errors')
+    && (event.playedItemCount === undefined
+      || (Number.isInteger(event.playedItemCount) && (event.playedItemCount ?? -1) >= 0))
+    && (event.failedItemCount === undefined
+      || (Number.isInteger(event.failedItemCount) && (event.failedItemCount ?? -1) >= 0))
+    && (event.failedItems === undefined || Array.isArray(event.failedItems));
 }
 
 // ============================================================================

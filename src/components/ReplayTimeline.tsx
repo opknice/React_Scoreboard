@@ -7,12 +7,13 @@ interface Props {
   duration: number;
   trimStart: number | null;
   onSeek: (seconds: number) => void;
+  disabled?: boolean;
 }
 
-function ReplayTimeline({ clock, duration, trimStart, onSeek }: Props) {
+function ReplayTimeline({ clock, duration, trimStart, onSeek, disabled = false }: Props) {
   const currentTime = useSyncExternalStore(clock.subscribe, clock.getSnapshot, clock.getSnapshot);
   const handleTimelineClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (duration <= 0) return;
+    if (disabled || duration <= 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
     onSeek(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * duration);
@@ -24,7 +25,7 @@ function ReplayTimeline({ clock, duration, trimStart, onSeek }: Props) {
         <span className="current-time-label">{formatTime(currentTime)}</span>
         <span>{formatTime(duration)}</span>
       </div>
-      <div className="timeline-track" onClick={handleTimelineClick}>
+      <div className="timeline-track" aria-disabled={disabled} onClick={handleTimelineClick}>
         <div className="timeline-progress" style={{ width: `${(currentTime / duration) * 100}%` }} />
         {trimStart !== null && (
           <div

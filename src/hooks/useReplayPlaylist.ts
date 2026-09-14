@@ -74,7 +74,9 @@ export function useReplayPlaylist(availableFiles: File[]): ReplayPlaylistControl
   const addFile = useCallback((file: File): boolean => {
     const item = createReplayPlaylistItem(file);
     if (items.some((existing) => existing.id === item.id)) return false;
-    setItems([...items, item]);
+    setItems((current) => current.some((existing) => existing.id === item.id)
+      ? current
+      : [...current, item]);
     return true;
   }, [items]);
 

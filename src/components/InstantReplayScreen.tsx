@@ -13,6 +13,7 @@ import {
   isFileMessage as checkIsFileMessage,
   isCommandMessage as checkIsCommandMessage,
   REPLAY_PLAYLIST_CONTROL_CHANNEL,
+  REPLAY_PROTOCOL_VERSION,
 } from '../types/instantReplay';
 import './InstantReplayScreen.css';
 
@@ -32,11 +33,19 @@ export default function InstantReplayScreen() {
   // Blob URL reference for cleanup
   const objectUrlRef = useRef<string | null>(null);
   const canPlayHandlerRef = useRef<(() => void) | null>(null);
-  const videoErrorHandlerRef = useRef<(() => void) | null>(null);
   const activeFileNameRef = useRef<string | null>(null);
   const activePlaybackIdRef = useRef<string | null>(null);
   const activePlaylistItemIdRef = useRef<string | null>(null);
   const activePlaylistSessionIdRef = useRef<string | null>(null);
+  const activeAttemptRef = useRef<1 | 2>(1);
+  const requestedResumeTimeRef = useRef(0);
+  const playbackPhaseRef = useRef<'idle' | 'loading' | 'playing'>('idle');
+  const lastPlaylistProgressAtRef = useRef(0);
+  const screenIdRef = useRef(
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `replay-screen-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   
   // BroadcastChannel hook integration (Requirement 10.4)
   const { channelRef, send } = useReplayChannel();
@@ -56,11 +65,23 @@ export default function InstantReplayScreen() {
       replayEventChannelRef.current = replayEventsChannel;
       playlistControlChannel = new BroadcastChannel(REPLAY_PLAYLIST_CONTROL_CHANNEL);
       playlistControlChannelRef.current = playlistControlChannel;
+      const postScreenPresence = (type: 'ReplayScreenReady' | 'ReplayScreenHeartbeat') => {
+        playlistControlChannel?.postMessage({
+          type,
+          protocolVersion: REPLAY_PROTOCOL_VERSION,
+          screenId: screenIdRef.current,
+          playbackId: activePlaybackIdRef.current || undefined,
+          timestamp: Date.now(),
+        });
+      };
+      postScreenPresence('ReplayScreenReady');
+      const heartbeatId = window.setInterval(() => postScreenPresence('ReplayScreenHeartbeat'), 1_000);
       console.log('[InstantReplayScreen] Replay events channel initialized');
       
       return () => {
         replayEventsChannel?.close();
         playlistControlChannel?.close();
+        window.clearInterval(heartbeatId);
         replayEventChannelRef.current = null;
         playlistControlChannelRef.current = null;
         console.log('[InstantReplayScreen] Replay events channel closed');
@@ -124,10 +145,6 @@ export default function InstantReplayScreen() {
         video.removeEventListener('loadeddata', canPlayHandlerRef.current);
         canPlayHandlerRef.current = null;
       }
-      if (videoErrorHandlerRef.current) {
-        video.removeEventListener('error', videoErrorHandlerRef.current);
-        videoErrorHandlerRef.current = null;
-      }
     };
 
     channel.onmessage = (event: MessageEvent<ChannelMessage>) => {
@@ -137,23 +154,58 @@ export default function InstantReplayScreen() {
 
       // Handle file message (Requirement 2.5)
       if (checkIsFileMessage(message)) {
+        if (message.targetScreenId && message.targetScreenId !== screenIdRef.current) return;
         cleanupPendingPlaybackHandlers();
         activeFileNameRef.current = message.name;
         activePlaybackIdRef.current = message.playbackId || null;
         activePlaylistItemIdRef.current = message.playlistItemId || null;
         activePlaylistSessionIdRef.current = message.playlistSessionId || null;
+        activeAttemptRef.current = message.attempt === 2 ? 2 : 1;
+        requestedResumeTimeRef.current = Number.isFinite(message.resumeTime)
+          ? Math.max(0, message.resumeTime || 0)
+          : 0;
+        playbackPhaseRef.current = 'loading';
+        lastPlaylistProgressAtRef.current = 0;
         // Revoke previous Blob URL to free memory (Requirement 10.9)
         if (objectUrlRef.current) {
           URL.revokeObjectURL(objectUrlRef.current);
         }
 
+        // Matroska MIME support varies between CEF versions. Probe both the
+        // current standard and the legacy alias, but do not block playback
+        // when CEF can only answer "maybe"/unknown for the container.
+        const isMatroska = /matroska/i.test(message.mime) || /\.mkv$/i.test(message.name);
+        const mimeCandidates = isMatroska
+          ? [message.mime, 'video/matroska', 'video/x-matroska']
+          : [message.mime];
+        const selectedMime = mimeCandidates.find((mime) => video.canPlayType(mime) !== '') || message.mime;
+        if (isMatroska && mimeCandidates.every((mime) => video.canPlayType(mime) === '')) {
+          console.warn('[InstantReplayScreen] CEF could not confirm Matroska support; guarded playback will still be attempted');
+        }
+
         // Create new Blob URL and assign to video element
-        const blob = new Blob([message.data], { type: message.mime });
+        const blob = new Blob([message.data], { type: selectedMime });
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
         // objectUrlRef is the source of truth — no redundant state needed (Bug #1 fix)
         video.src = url;
         setHasVideo(true);
+
+        if (message.protocolVersion === REPLAY_PROTOCOL_VERSION
+          && message.playlistSessionId
+          && message.playlistItemId
+          && message.playbackId) {
+          playlistControlChannelRef.current?.postMessage({
+            type: 'ReplayMediaReceived',
+            protocolVersion: REPLAY_PROTOCOL_VERSION,
+            screenId: screenIdRef.current,
+            playlistSessionId: message.playlistSessionId,
+            playlistItemId: message.playlistItemId,
+            playbackId: message.playbackId,
+            attempt: activeAttemptRef.current,
+            timestamp: Date.now(),
+          });
+        }
 
         // Reset playback state (Requirement 10.5, 7.6)
         video.playbackRate = 0.85;
@@ -167,20 +219,41 @@ export default function InstantReplayScreen() {
         // is actually ready — avoids NotAllowedError / silent failure in OBS/browsers
         const onCanPlay = () => {
           cleanupPendingPlaybackHandlers();
+          const resumeTime = requestedResumeTimeRef.current;
+          if (resumeTime > 0) {
+            const targetTime = Number.isFinite(video.duration)
+              ? Math.min(resumeTime, Math.max(0, video.duration - 0.05))
+              : resumeTime;
+            try {
+              video.currentTime = targetTime;
+            } catch (error) {
+              console.warn('[InstantReplayScreen] Unable to seek to retry position:', error);
+            }
+          }
           void video.play().catch((error) => {
             console.warn('[InstantReplayScreen] Video play was blocked or failed:', error);
+            const playlistSessionId = activePlaylistSessionIdRef.current;
+            const playlistItemId = activePlaylistItemIdRef.current;
+            const playbackId = activePlaybackIdRef.current;
+            if (playlistSessionId && playlistItemId && playbackId) {
+              playlistControlChannelRef.current?.postMessage({
+                type: 'ReplayPlaybackFailed',
+                protocolVersion: REPLAY_PROTOCOL_VERSION,
+                screenId: screenIdRef.current,
+                playlistSessionId,
+                playlistItemId,
+                playbackId,
+                attempt: activeAttemptRef.current,
+                reason: 'play_error',
+                currentTime: video.currentTime,
+                timestamp: Date.now(),
+              });
+            }
           });
         };
-        const onVideoError = () => {
-          const detail = video.error ? `code ${video.error.code}` : 'unknown media error';
-          console.error(`[InstantReplayScreen] Failed to load replay video "${message.name}" (${message.mime}): ${detail}`);
-          cleanupPendingPlaybackHandlers();
-        };
         canPlayHandlerRef.current = onCanPlay;
-        videoErrorHandlerRef.current = onVideoError;
         video.addEventListener('canplay', onCanPlay, { once: true });
         video.addEventListener('loadeddata', onCanPlay, { once: true });
-        video.addEventListener('error', onVideoError, { once: true });
         video.load();
 
         if (video.readyState >= 2) {
@@ -191,6 +264,9 @@ export default function InstantReplayScreen() {
 
       // Handle command messages (Requirement 6.2)
       if (checkIsCommandMessage(message)) {
+        if (message.targetScreenId && message.targetScreenId !== screenIdRef.current) return;
+        if (message.playbackId && message.playbackId !== activePlaybackIdRef.current) return;
+        if (message.playlistSessionId && message.playlistSessionId !== activePlaylistSessionIdRef.current) return;
         const { action, value } = message;
 
         // Play command (Requirement 10.7)
@@ -259,6 +335,24 @@ export default function InstantReplayScreen() {
     const video = videoRef.current;
     if (!video) return;
 
+    const getPlaylistIdentity = () => {
+      const playlistSessionId = activePlaylistSessionIdRef.current;
+      const playlistItemId = activePlaylistItemIdRef.current;
+      const playbackId = activePlaybackIdRef.current;
+      if (!playlistSessionId || !playlistItemId || !playbackId) return null;
+      return {
+        protocolVersion: REPLAY_PROTOCOL_VERSION,
+        screenId: screenIdRef.current,
+        playlistSessionId,
+        playlistItemId,
+        playbackId,
+        attempt: activeAttemptRef.current,
+        timestamp: Date.now(),
+      } as const;
+    };
+
+    const getSafeDuration = () => Number.isFinite(video.duration) ? video.duration : null;
+
     const handleTimeUpdate = () => {
       // Bug #2 fix: read from refs (not state) so we always have the latest marker
       // values even when React hasn't flushed the state update yet
@@ -283,11 +377,83 @@ export default function InstantReplayScreen() {
 
       // Send status update on time change (Requirement 6.7)
       sendStatusMessage();
+
+      const identity = getPlaylistIdentity();
+      const now = performance.now();
+      if (identity && now - lastPlaylistProgressAtRef.current >= 200) {
+        lastPlaylistProgressAtRef.current = now;
+        playlistControlChannelRef.current?.postMessage({
+          type: 'ReplayPlaybackProgress',
+          ...identity,
+          currentTime: video.currentTime,
+          duration: getSafeDuration(),
+        });
+      }
     };
 
     const handleLoadedMetadata = () => {
       // Send initial status with duration (Requirement 6.6)
       sendStatusMessage(true);
+      const identity = getPlaylistIdentity();
+      if (identity) {
+        playlistControlChannelRef.current?.postMessage({
+          type: 'ReplayMediaReady',
+          ...identity,
+          duration: getSafeDuration(),
+        });
+      }
+    };
+
+    const handlePlaying = () => {
+      playbackPhaseRef.current = 'playing';
+      const identity = getPlaylistIdentity();
+      if (!identity) return;
+      playlistControlChannelRef.current?.postMessage({
+        type: 'ReplayPlaybackStarted',
+        ...identity,
+        currentTime: video.currentTime,
+        duration: getSafeDuration(),
+      });
+    };
+
+    const reportPlaybackWait = (type: 'ReplayPlaybackWaiting' | 'ReplayPlaybackStalled') => {
+      if (playbackPhaseRef.current !== 'playing') return;
+      const identity = getPlaylistIdentity();
+      if (!identity) return;
+      playlistControlChannelRef.current?.postMessage({
+        type,
+        ...identity,
+        currentTime: video.currentTime,
+      });
+    };
+
+    const handleWaiting = () => reportPlaybackWait('ReplayPlaybackWaiting');
+    const handleStalled = () => reportPlaybackWait('ReplayPlaybackStalled');
+
+    const handleMediaError = () => {
+      const detail = video.error ? `code ${video.error.code}` : 'unknown media error';
+      console.error(`[InstantReplayScreen] Replay video failed (${detail})`);
+      const identity = getPlaylistIdentity();
+      if (!identity) return;
+      playlistControlChannelRef.current?.postMessage({
+        type: 'ReplayPlaybackFailed',
+        ...identity,
+        reason: playbackPhaseRef.current === 'loading' ? 'load_error' : 'decode_error',
+        currentTime: video.currentTime,
+        mediaErrorCode: video.error?.code,
+      });
+    };
+
+    const handlePlaybackAborted = () => {
+      if (playbackPhaseRef.current !== 'playing') return;
+      const identity = getPlaylistIdentity();
+      if (!identity) return;
+      playlistControlChannelRef.current?.postMessage({
+        type: 'ReplayPlaybackFailed',
+        ...identity,
+        reason: 'decode_error',
+        currentTime: video.currentTime,
+      });
     };
 
     const handleVideoEnded = () => {
@@ -311,8 +477,11 @@ export default function InstantReplayScreen() {
           playlistItemId,
           playlistSessionId,
           timestamp: Date.now(),
-          duration: video.duration,
+          duration: getSafeDuration(),
           currentTime: video.currentTime,
+          protocolVersion: REPLAY_PROTOCOL_VERSION,
+          screenId: screenIdRef.current,
+          attempt: activeAttemptRef.current,
         };
 
         console.log('[InstantReplay] Playlist item ended - handing off to Replay Controller', eventData);
@@ -321,6 +490,7 @@ export default function InstantReplayScreen() {
         } catch (error) {
           console.error('[InstantReplay] Failed to broadcast playlist item end:', error);
         }
+        playbackPhaseRef.current = 'idle';
         return;
       }
 
@@ -337,7 +507,7 @@ export default function InstantReplayScreen() {
         fileName: fileName || undefined,
         playbackId: playbackId || undefined,
         timestamp: Date.now(),
-        duration: video.duration,
+        duration: getSafeDuration() ?? video.currentTime,
         currentTime: video.currentTime,
       };
 
@@ -352,12 +522,22 @@ export default function InstantReplayScreen() {
     // Attach event listeners (Requirement 7.4)
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('playing', handlePlaying);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('stalled', handleStalled);
+    video.addEventListener('error', handleMediaError);
+    video.addEventListener('abort', handlePlaybackAborted);
     video.addEventListener('ended', handleVideoEnded);
 
     // Cleanup event listeners
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('stalled', handleStalled);
+      video.removeEventListener('error', handleMediaError);
+      video.removeEventListener('abort', handlePlaybackAborted);
       video.removeEventListener('ended', handleVideoEnded);
     };
   // loopA/loopB removed from deps: loop enforcement now reads loopARef/loopBRef

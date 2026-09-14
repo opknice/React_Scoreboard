@@ -2,18 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useObsVideoFolderContext } from '../context/useObsVideoFolderContext';
 import { useReplayChannel } from '../hooks/useReplayChannel';
 import { useReplayPlaylist } from '../hooks/useReplayPlaylist';
+import {
+  createReplayPlaylistCompletedEvent,
+  useReplayPlaylistRunner,
+} from '../hooks/useReplayPlaylistRunner';
 import { formatSize, findLatestFile, getVideoMimeType } from '../utils/replayFormatters';
 import ReplayPlaylistPanel from './ReplayPlaylistPanel';
 import ReplayTimeline from './ReplayTimeline';
 import { createReplayClock } from '../utils/replayClock';
 import { MACRO_CHANNELS, postMacroChannelMessage } from '../macros/macroChannels';
 import {
-  isReplayPlaylistItemEndedEvent,
-  REPLAY_PLAYLIST_CONTROL_CHANNEL,
   createReplayFileId,
   type CommandMessage,
-  type ReplayPlaylistCompletedEvent,
-  type ReplayPlaylistStatus,
 } from '../types/instantReplay';
 import './InstantReplayControl.css';
 import { getAppBaseUrl } from '../utils/appBaseUrl';
@@ -81,15 +81,9 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
   const playlist = useReplayPlaylist(videoFolder.videoFiles);
   const playlistItems = playlist.items;
   const resolvePlaylistItem = playlist.resolveItem;
-  const [playlistStatus, setPlaylistStatus] = useState<ReplayPlaylistStatus>('idle');
-  const [playlistCurrentItemId, setPlaylistCurrentItemId] = useState<string | null>(null);
-  const [playlistCurrentIndex, setPlaylistCurrentIndex] = useState(-1);
-
-  const playlistSessionRef = useRef<string | null>(null);
-  const playlistIndexRef = useRef(-1);
   const playbackModeRef = useRef<ReplayPlaybackMode>('single');
   const currentPlaybackIdRef = useRef<string | null>(null);
-  const lastHandledEndedPlaybackIdRef = useRef<string | null>(null);
+  const playlistStopRef = useRef<(pause?: boolean) => void>(() => undefined);
 
   // Fix #2: keep ref in sync with state
   useEffect(() => {
@@ -126,22 +120,45 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
     send({ type: 'cmd', action, value });
   }, [send]);
 
-  const cancelPlaylist = useCallback(() => {
-    playlistSessionRef.current = null;
-    playlistIndexRef.current = -1;
-    playbackModeRef.current = 'single';
-    currentPlaybackIdRef.current = null;
-    lastHandledEndedPlaybackIdRef.current = null;
-    setPlaylistCurrentItemId(null);
-    setPlaylistCurrentIndex(-1);
-    setPlaylistStatus((current) => current === 'playing' ? 'stopped' : current);
-  }, []);
-
   const createPlaybackId = useCallback(() => (
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `replay_${Date.now()}_${Math.random().toString(36).slice(2)}`
   ), []);
+
+  const handlePlaylistFileLoaded = useCallback((fileName: string, playbackId: string) => {
+    playbackModeRef.current = 'playlist';
+    currentPlaybackIdRef.current = playbackId;
+    setLoadedFileName(fileName);
+    durationRef.current = 0;
+    setDuration(0);
+    replayClock.setTime(0);
+    setPlaybackSpeed(1);
+  }, [replayClock]);
+
+  const handlePlaylistCompleted = useCallback((summary: Parameters<typeof createReplayPlaylistCompletedEvent>[0]) => {
+    const completedEvent = createReplayPlaylistCompletedEvent(summary);
+    postMacroChannelMessage(MACRO_CHANNELS.replayEvents, { ...completedEvent });
+    playbackModeRef.current = 'single';
+    currentPlaybackIdRef.current = null;
+  }, []);
+
+  const playlistRunner = useReplayPlaylistRunner({
+    items: playlistItems,
+    resolveItem: resolvePlaylistItem,
+    send,
+    createId: createPlaybackId,
+    onFileLoaded: handlePlaylistFileLoaded,
+    onError: setErrorMsg,
+    onCompleted: handlePlaylistCompleted,
+  });
+  playlistStopRef.current = playlistRunner.stop;
+
+  const cancelPlaylist = useCallback(() => {
+    playlistStopRef.current(false);
+    playbackModeRef.current = 'single';
+    currentPlaybackIdRef.current = null;
+  }, []);
 
   const loadAndPlayFile = useCallback(async (
     targetFile: File,
@@ -196,70 +213,6 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
     }
   }, [cancelPlaylist, createPlaybackId, send, sendCommand, replayClock]);
 
-  const finishPlaylist = useCallback((status: ReplayPlaylistStatus) => {
-    const completedSessionId = playlistSessionRef.current;
-    const completedItemIndex = playlistIndexRef.current;
-    const lastPlaylistItemId = completedItemIndex >= 0
-      ? playlistItems[completedItemIndex]?.id
-      : undefined;
-
-    if (status === 'completed' && completedSessionId) {
-      const completedEvent: ReplayPlaylistCompletedEvent = {
-        type: 'ReplayPlaylistCompleted',
-        videoElement: 'InstantReplayScreen',
-        playlistSessionId: completedSessionId,
-        completedItemCount: Math.max(0, completedItemIndex + 1),
-        lastPlaylistItemId,
-        timestamp: Date.now(),
-      };
-
-      postMacroChannelMessage(MACRO_CHANNELS.replayEvents, { ...completedEvent });
-    }
-
-    playlistSessionRef.current = null;
-    playlistIndexRef.current = -1;
-    playbackModeRef.current = 'single';
-    currentPlaybackIdRef.current = null;
-    lastHandledEndedPlaybackIdRef.current = null;
-    setPlaylistCurrentItemId(null);
-    setPlaylistCurrentIndex(-1);
-    setPlaylistStatus(status);
-  }, [playlistItems]);
-
-  const playPlaylistFromIndex = useCallback(async (
-    sessionId: string,
-    startIndex: number,
-    availableFiles: File[],
-  ): Promise<void> => {
-    for (let index = startIndex; index < playlistItems.length; index += 1) {
-      if (playlistSessionRef.current !== sessionId) return;
-
-      const item = playlistItems[index];
-      const file = resolvePlaylistItem(item, availableFiles);
-      if (!file) {
-        setErrorMsg(`ข้ามไฟล์ใน Playlist เนื่องจากไม่พบไฟล์ "${item.fileName}"`);
-        continue;
-      }
-
-      playlistIndexRef.current = index;
-      setPlaylistCurrentIndex(index);
-      setPlaylistCurrentItemId(item.id);
-
-      const loaded = await loadAndPlayFile(file, {
-        mode: 'playlist',
-        playlistItemId: item.id,
-        playlistSessionId: sessionId,
-      });
-
-      if (loaded) return;
-      setErrorMsg(`ไม่สามารถโหลดไฟล์ "${item.fileName}" ได้ ระบบจะข้ามไปไฟล์ถัดไป`);
-    }
-
-    if (playlistSessionRef.current === sessionId) {
-      finishPlaylist('completed');
-    }
-  }, [finishPlaylist, loadAndPlayFile, playlistItems, resolvePlaylistItem]);
-
   const startPlaylist = useCallback(async () => {
     if (!videoFolder.isConnected) {
       setErrorMsg('กรุณาเชื่อมต่อโฟลเดอร์วิดีโอก่อนเล่น Playlist');
@@ -270,27 +223,23 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
       return;
     }
 
-    const availableFiles = videoFolder.folderHandle
-      ? await videoFolder.rescan()
-      : videoFolder.videoFiles;
-    const sessionId = createPlaybackId();
-
-    playlistSessionRef.current = sessionId;
-    playlistIndexRef.current = -1;
+    let availableFiles = videoFolder.videoFiles;
+    if (videoFolder.folderHandle) {
+      try {
+        availableFiles = await videoFolder.rescan();
+      } catch (error) {
+        console.warn('[InstantReplayControl] Playlist rescan failed:', error);
+      }
+    }
     playbackModeRef.current = 'playlist';
-    currentPlaybackIdRef.current = null;
-    lastHandledEndedPlaybackIdRef.current = null;
-    setPlaylistCurrentItemId(null);
-    setPlaylistCurrentIndex(-1);
-    setPlaylistStatus('playing');
-
-    await playPlaylistFromIndex(sessionId, 0, availableFiles);
-  }, [createPlaybackId, playPlaylistFromIndex, playlistItems.length, videoFolder]);
+    await playlistRunner.start(availableFiles);
+  }, [playlistItems.length, playlistRunner, videoFolder]);
 
   const stopPlaylist = useCallback(() => {
-    if (playlistStatus === 'playing') sendCommand('pause');
-    cancelPlaylist();
-  }, [cancelPlaylist, playlistStatus, sendCommand]);
+    playlistRunner.stop(true);
+    playbackModeRef.current = 'single';
+    currentPlaybackIdRef.current = null;
+  }, [playlistRunner]);
 
   const loadAndPlayLatestFile = useCallback(async () => {
     if (!videoFolder.isConnected) {
@@ -396,45 +345,6 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
   // duration removed from deps — durationRef handles it without causing re-registration
   }, [channelRef, applyAutoTrim, replayClock]);
 
-  // The screen notifies the control panel when a playlist item ends. This is
-  // intentionally a private channel so Auto Macros only see the final
-  // ReplayPlaylistCompleted event, not every highlight clip.
-  useEffect(() => {
-    let replayEventChannel: BroadcastChannel | null = null;
-
-    try {
-      replayEventChannel = new BroadcastChannel(REPLAY_PLAYLIST_CONTROL_CHANNEL);
-      replayEventChannel.onmessage = (event: MessageEvent<unknown>) => {
-        if (!isReplayPlaylistItemEndedEvent(event.data)) return;
-        if (playbackModeRef.current !== 'playlist') return;
-
-        const endedEvent = event.data;
-        const activeSessionId = playlistSessionRef.current;
-        const activePlaybackId = currentPlaybackIdRef.current;
-        if (!activeSessionId) return;
-        if (endedEvent.playlistSessionId !== activeSessionId) return;
-        if (endedEvent.playbackId !== activePlaybackId) return;
-        if (endedEvent.playbackId === lastHandledEndedPlaybackIdRef.current) return;
-
-        const activeItem = playlistItems[playlistIndexRef.current];
-        if (activeItem && endedEvent.playlistItemId !== activeItem.id) return;
-
-        lastHandledEndedPlaybackIdRef.current = endedEvent.playbackId;
-        void playPlaylistFromIndex(
-          activeSessionId,
-          playlistIndexRef.current + 1,
-          videoFolder.videoFiles,
-        );
-      };
-    } catch (error) {
-      console.error('[InstantReplayControl] Failed to create replay events channel:', error);
-    }
-
-    return () => {
-      replayEventChannel?.close();
-    };
-  }, [playPlaylistFromIndex, playlistItems, videoFolder.videoFiles]);
-
   // Listen for BroadcastChannel commands from Macros
   useEffect(() => {
     let replayControlChannel: BroadcastChannel | null = null;
@@ -469,9 +379,17 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
   const clearPlaylist = playlist.clear;
   const handleClearPlaylist = useCallback(() => {
     clearPlaylist();
-    setPlaylistCurrentItemId(null);
-    setPlaylistCurrentIndex(-1);
   }, [clearPlaylist]);
+
+  const isPlaylistActive = [
+    'loading',
+    'waiting_for_screen',
+    'playing',
+    'stalled',
+    'retrying',
+    'advancing',
+  ].includes(playlistRunner.status);
+  const isReplayLoading = isLoadingFile || playlistRunner.isLoading;
 
   const trimStart = duration > 0
     ? calculateTrimStartTime(duration, replayDuration)
@@ -534,13 +452,13 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
         {/* ── 1-Click action ── */}
         <div className="one-click-action-bar">
           <button
-            className={`one-click-btn ${isLoadingFile ? 'loading' : ''}`}
+            className={`one-click-btn ${isReplayLoading ? 'loading' : ''}`}
             onClick={() => void loadAndPlayLatestFile()}
-            disabled={isLoadingFile || !videoFolder.isConnected}
+            disabled={isReplayLoading || !videoFolder.isConnected}
             title="คลิกเดียวเพื่อสแกน โหลด ตัด และเล่นไฟล์รีเพลย์ล่าสุดทันที"
           >
-            <i className={`fas ${isLoadingFile ? 'fa-spinner fa-spin' : 'fa-bolt'}`}></i>
-            <span>{isLoadingFile ? 'กำลังโหลดรีเพลย์...' : '⚡ คลิกเดียว โหลดและเล่นรีเพลย์ล่าสุด'}</span>
+            <i className={`fas ${isReplayLoading ? 'fa-spinner fa-spin' : 'fa-bolt'}`}></i>
+            <span>{isReplayLoading ? 'กำลังโหลดรีเพลย์...' : '⚡ คลิกเดียว โหลดและเล่นรีเพลย์ล่าสุด'}</span>
           </button>
         </div>
 
@@ -581,7 +499,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
                         type="button"
                         className={`replay-button ${isCurrent ? 'replay-button-small' : 'replay-button-primary replay-button-small'}`}
                         onClick={() => void loadAndPlayFile(file)}
-                        disabled={isLoadingFile}
+                        disabled={isReplayLoading}
                       >
                         <i className={`fas ${isCurrent ? 'fa-redo' : 'fa-play'}`}></i>
                         <span>{isCurrent ? 'เล่นซ้ำ' : 'เล่น'}</span>
@@ -593,7 +511,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
                           const added = playlist.addFile(file);
                           if (!added) setErrorMsg(`วิดีโอ "${file.name}" มีอยู่ใน Playlist แล้ว`);
                         }}
-                        disabled={playlist.items.some((item) => item.id === createReplayFileId(file))}
+                        disabled={isPlaylistActive || playlist.items.some((item) => item.id === createReplayFileId(file))}
                         title="เพิ่มวิดีโอนี้เข้า Playlist"
                       >
                         <i className="fas fa-plus"></i>
@@ -623,6 +541,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
                     type="button"
                     className={`replay-button replay-button-preset speed-preset-btn ${playbackSpeed === speed ? 'active' : ''}`}
                     onClick={() => handleSpeedChange(speed)}
+                    disabled={isPlaylistActive}
                   >
                     {speed}×
                   </button>
@@ -638,6 +557,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
                   step={0.05}
                   value={playbackSpeed}
                   onChange={(e) => handleSpeedChange(Number(e.target.value))}
+                  disabled={isPlaylistActive}
                 />
                 <span className="speed-label-max">2×</span>
               </div>
@@ -653,7 +573,13 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
               <span>ไทม์ไลน์ · จุดตัด</span>
               
             </div>
-            <ReplayTimeline clock={replayClock} duration={duration} trimStart={trimStart} onSeek={handleSeek} />
+            <ReplayTimeline
+              clock={replayClock}
+              duration={duration}
+              trimStart={playbackModeRef.current === 'single' ? trimStart : null}
+              onSeek={handleSeek}
+              disabled={isPlaylistActive}
+            />
           </div>
         )}
 
@@ -674,6 +600,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
                   // a preset and "Full" from lighting up when duration === preset value
                   className={`replay-button replay-button-preset ${!isFullMode && replayDuration === preset ? 'active' : ''}`}
                   onClick={() => handleReplayDurationChange(preset)}
+                  disabled={isPlaylistActive}
                 >
                   {preset}s
                 </button>
@@ -687,7 +614,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
                     setIsFullMode(true); // Fix #4: explicitly mark full mode active
                   }
                 }}
-                disabled={duration === 0}
+                disabled={duration === 0 || isPlaylistActive}
               >
                 เต็ม
               </button>
@@ -699,6 +626,7 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
               step="0.5"
               value={replayDuration}
               onChange={(e) => handleReplayDurationChange(Number(e.target.value))}
+              disabled={isPlaylistActive}
               className="replay-slider"
             />
           </div>
@@ -708,10 +636,13 @@ export default function InstantReplayControl({ obsSetup }: { obsSetup?: ReplayOb
         <ReplayPlaylistPanel
           items={playlist.items}
           missingItems={playlist.missingItems}
-          status={playlistStatus}
-          currentItemId={playlistCurrentItemId}
-          currentIndex={playlistCurrentIndex}
-          isLoading={isLoadingFile}
+          status={playlistRunner.status}
+          currentItemId={playlistRunner.currentItemId}
+          currentIndex={playlistRunner.currentIndex}
+          attempt={playlistRunner.attempt}
+          failures={playlistRunner.failures}
+          activeScreenCount={playlistRunner.activeScreenCount}
+          isLoading={isReplayLoading}
           isFolderConnected={videoFolder.isConnected}
           onPlayAll={handlePlayAll}
           onStop={stopPlaylist}
