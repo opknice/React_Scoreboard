@@ -150,6 +150,49 @@ describe('useReplayPlaylistRunner', () => {
     }));
   });
 
+  it('ignores a stale failure from the first attempt after retry has started', async () => {
+    const file = makeFile('stale-event.mkv', 1);
+    const { result, channel, send, onCompleted } = setup([file]);
+    act(() => channel.emit(ready('screen-a')));
+    await act(async () => result.current.start([file]));
+
+    const first = send.mock.calls.find(([message]) => message.type === 'file')?.[0];
+    act(() => channel.emit({
+      type: 'ReplayPlaybackStarted',
+      protocolVersion: REPLAY_PROTOCOL_VERSION,
+      screenId: 'screen-a',
+      playlistSessionId: first.playlistSessionId,
+      playlistItemId: first.playlistItemId,
+      playbackId: first.playbackId,
+      attempt: 1,
+      currentTime: 5,
+      duration: 20,
+      timestamp: Date.now(),
+    }));
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+
+    const fileMessages = send.mock.calls.filter(([message]) => message.type === 'file').map(([message]) => message);
+    expect(fileMessages).toHaveLength(2);
+    expect(fileMessages[1]).toMatchObject({ attempt: 2, resumeTime: 5 });
+
+    act(() => channel.emit({
+      type: 'ReplayPlaybackFailed',
+      protocolVersion: REPLAY_PROTOCOL_VERSION,
+      screenId: 'screen-a',
+      playlistSessionId: first.playlistSessionId,
+      playlistItemId: first.playlistItemId,
+      playbackId: first.playbackId,
+      attempt: 1,
+      reason: 'decode_error',
+      currentTime: 5,
+      timestamp: Date.now(),
+    }));
+
+    expect(result.current.status).toBe('retrying');
+    expect(result.current.failures).toHaveLength(0);
+    expect(onCompleted).not.toHaveBeenCalled();
+  });
+
   it('does not retry while at least one replay screen continues to make progress', async () => {
     const file = makeFile('healthy.mkv', 1);
     const { result, channel, send } = setup([file]);
