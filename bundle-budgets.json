@@ -1,6 +1,6 @@
 {
-  "entry": { "jsBytes": 273000, "cssBytes": 44000, "gzipBytes": 97000 },
-  "controller": { "jsBytes": 800000, "cssBytes": 46000, "gzipBytes": 241000 },
-  "replayScreen": { "jsBytes": 280000, "cssBytes": 45000, "gzipBytes": 100000 },
-  "quickSetup": { "jsBytes": 844000, "cssBytes": 54000, "gzipBytes": 254000 }
+  "entry": { "jsBytes": 273000, "cssBytes": 52000, "gzipBytes": 97000 },
+  "controller": { "jsBytes": 800000, "cssBytes": 55000, "gzipBytes": 241000 },
+  "replayScreen": { "jsBytes": 280000, "cssBytes": 53000, "gzipBytes": 100000 },
+  "quickSetup": { "jsBytes": 844000, "cssBytes": 76000, "gzipBytes": 254000 }
 }
