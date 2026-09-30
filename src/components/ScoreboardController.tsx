@@ -73,6 +73,7 @@ import LazyLeagueManagementModal from './scoreboard/LazyLeagueManagementModal';
 import ScoreboardLazyFallback from './scoreboard/ScoreboardLazyFallback';
 import SaveMatchConfirmDialog from './SaveMatchConfirmDialog';
 import UiIcon from './UiIcon';
+import { resolveCanonicalMatchResult } from '../utils/matchResultMapping';
 
 const controllerProfilerEnabled = import.meta.env.DEV
   && typeof window !== 'undefined'
@@ -134,6 +135,7 @@ export default function ScoreboardController() {
   const [currentLang] = useState<string>(() => localStorage.getItem('scoreboardLang') || 'th');
   const [logoFolderPath, setLogoFolderPath] = useState<string>(() => localStorage.getItem('logoFolderPath') || 'D:\\OBS_football\\logos');
   const [matchIdInput, setMatchIdInput] = useState<number>(1);
+  const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
   const [teamColorsMemory, setTeamColorsMemory] = useState<Record<string, { color1: string; color2: string }>>(() => {
     const saved = localStorage.getItem('teamColors');
     return saved ? JSON.parse(saved) : {};
@@ -609,7 +611,10 @@ export default function ScoreboardController() {
     getPlayerMatchStats,
     upsertPlayerMatchStat,
   } = supabaseLeague;
-  const matchSelection = useMemo(() => ({ matchIdInput, teamIdA, teamIdB }), [matchIdInput, teamIdA, teamIdB]);
+  const matchSelection = useMemo(
+    () => ({ activeMatchId, matchIdInput, teamIdA, teamIdB }),
+    [activeMatchId, matchIdInput, teamIdA, teamIdB],
+  );
   const matchSelectionRef = useRef(matchSelection);
   matchSelectionRef.current = matchSelection;
   const captureMatchContext = useCallback(() => {
@@ -941,6 +946,7 @@ export default function ScoreboardController() {
       setNameB('');
       setTeamIdA(null);
       setTeamIdB(null);
+      setActiveMatchId(null);
       setScoreA(0);
       setScoreB(0);
       setLogoA('');
@@ -978,9 +984,9 @@ export default function ScoreboardController() {
   const currentPlayerMatch = useMemo(
     () => supabaseLeague.matches.find((match) => (
       match.league_id === supabaseLeague.activeLeagueId
-      && match.match_number === matchIdInput
+      && match.id === activeMatchId
     )) ?? null,
-    [matchIdInput, supabaseLeague.activeLeagueId, supabaseLeague.matches],
+    [activeMatchId, supabaseLeague.activeLeagueId, supabaseLeague.matches],
   );
 
   const canRecordPlayerGoal = Boolean(
@@ -1015,6 +1021,11 @@ export default function ScoreboardController() {
       return;
     }
 
+    if (clearTeamDataTimerRef.current !== null) {
+      window.clearTimeout(clearTeamDataTimerRef.current);
+      clearTeamDataTimerRef.current = null;
+    }
+
     // 🔥 Track if match was loaded from modal (user action)
     if (fromModal) {
       matchLoadedFromModalRef.current = true;
@@ -1041,6 +1052,7 @@ export default function ScoreboardController() {
     setScoreA(initialScoreA);
     setScoreB(initialScoreB);
     timerResetToZero();
+    setActiveMatchId(match.id);
     setMatchIdInput(match.match_number);
 
     // Resolve logos from Supabase teams > saved logos > team name
@@ -1272,46 +1284,39 @@ export default function ScoreboardController() {
       return false;
     }
 
-    // 1. Try to find a match only inside the currently selected league.
-    const currentMatch =
-      supabaseLeague.matches.find((m) => m.league_id === activeLeagueId && m.match_number === matchIdInput) ||
-      supabaseLeague.matches.find((m) => (
-        m.league_id === activeLeagueId
-        && m.team_a_name === nameA
-        && m.team_b_name === nameB
-      ));
-
-    if (currentMatch) {
-      try {
-        await supabaseLeague.updateMatch(currentMatch.id, {
-          score_a: scoreA,
-          score_b: scoreB,
-          status: 'finished',
-        });
-        triggerToast(`✓ บันทึกผลแมตช์ #${currentMatch.match_number} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
-        return true;
-      } catch (err: any) {
-        triggerToast(`บันทึกผลไม่สำเร็จ: ${err.message}`, 'error');
-        return false;
-      }
+    // Save only the exact match row loaded into the scoreboard. Match numbers
+    // are display/navigation values and must not be used as write identity.
+    const currentMatch = supabaseLeague.matches.find((match) => (
+      match.league_id === activeLeagueId && match.id === activeMatchId
+    ));
+    if (!currentMatch) {
+      triggerToast('ไม่พบคู่แข่งขันที่เลือก กรุณาเลือกคู่แข่งขันใหม่แล้วลองอีกครั้ง', 'error');
+      return false;
     }
 
-    // 2. If the active league has no matching row, create a new finished match
+    const canonicalResult = resolveCanonicalMatchResult(currentMatch, {
+      teamIdA,
+      teamIdB,
+      teamNameA: nameA,
+      teamNameB: nameB,
+      scoreA,
+      scoreB,
+    });
+    if (!canonicalResult.ok) {
+      const message = canonicalResult.reason === 'missing-team-identity'
+        ? 'ข้อมูลทีมบนสกอร์บอร์ดไม่ครบ กรุณาโหลดคู่แข่งขันใหม่ก่อนบันทึกผล'
+        : 'ทีมบนสกอร์บอร์ดไม่ตรงกับคู่แข่งขันที่เลือก กรุณาโหลดคู่แข่งขันใหม่ก่อนบันทึกผล';
+      triggerToast(message, 'error');
+      return false;
+    }
+
     try {
-      await supabaseLeague.createMatch({
-        league_id: activeLeagueId,
-        match_number: matchIdInput,
-        team_a_name: nameA,
-        team_b_name: nameB,
-        score_a: scoreA,
-        score_b: scoreB,
+      await supabaseLeague.updateMatch(currentMatch.id, {
+        score_a: canonicalResult.score_a,
+        score_b: canonicalResult.score_b,
         status: 'finished',
-        label1: label1 || 'บันทึกผลการแข่งขัน',
-        label2: label2 || '',
-        label3: label3 || '',
-        match_date: new Date().toISOString(),
       });
-      triggerToast(`✓ สร้างและบันทึกผลแมตช์ #${matchIdInput} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
+      triggerToast(`✓ บันทึกผลแมตช์ #${currentMatch.match_number} (${nameA} ${scoreA} - ${scoreB} ${nameB}) ลง Supabase สำเร็จ!`, 'success');
       return true;
     } catch (err: unknown) {
       triggerToast(`บันทึกผลไม่สำเร็จ: ${err instanceof Error ? err.message : 'เกิดข้อผิดพลาด'}`, 'error');
@@ -1794,7 +1799,7 @@ export default function ScoreboardController() {
     const leagueId = activeSupabaseLeagueId;
     const selectedTeamId = team === 'A' ? teamIdA : teamIdB;
     const currentMatch = supabaseMatches.find((match) => (
-      match.league_id === leagueId && match.match_number === matchIdInput
+      match.league_id === leagueId && match.id === activeMatchId
     ));
     const operationKey = `${currentMatch?.id ?? 'no-match'}:${player.id}`;
 
@@ -1833,7 +1838,7 @@ export default function ScoreboardController() {
       recordingPlayerRef.current = null;
       setRecordingPlayerId(null);
     }
-  }, [captureMatchContext, activeSupabaseLeagueId, getPlayerMatchStats, handleShowPlayer, matchIdInput, supabaseMatches, teamIdA, teamIdB, triggerToast, upsertPlayerMatchStat]);
+  }, [captureMatchContext, activeMatchId, activeSupabaseLeagueId, getPlayerMatchStats, handleShowPlayer, supabaseMatches, teamIdA, teamIdB, triggerToast, upsertPlayerMatchStat]);
 
   const playerBrowserUrl = useMemo(
     () => buildPlayerBrowserUrl(getOrigin(), activeSupabaseLeagueId),
