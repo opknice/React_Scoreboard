@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CropMetadata } from '../types/teamLogo';
-import { getFrameCanvasSize } from '../utils/logoFrame';
+import { getFrameCanvasSize, getLogoCanvasBackingSize } from '../utils/logoFrame';
 
 interface LogoWithCropProps {
   url: string;
@@ -36,8 +36,41 @@ export default function LogoWithCrop({
   const onErrorRef = useRef(onError);
   const onImageLoadRef = useRef(onImageLoad);
   const [imageVersion, setImageVersion] = useState(0);
+  const [renderedSize, setRenderedSize] = useState({ width: 0, height: 0, devicePixelRatio: 1 });
   onErrorRef.current = onError;
   onImageLoadRef.current = onImageLoad;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const updateRenderedSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const next = {
+        width: Math.max(0, rect.width),
+        height: Math.max(0, rect.height),
+        devicePixelRatio: Math.max(1, window.devicePixelRatio || 1),
+      };
+      setRenderedSize((current) => (
+        Math.abs(current.width - next.width) < 0.5
+        && Math.abs(current.height - next.height) < 0.5
+        && current.devicePixelRatio === next.devicePixelRatio
+          ? current
+          : next
+      ));
+    };
+
+    updateRenderedSize();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(updateRenderedSize);
+    observer.observe(canvas);
+    window.addEventListener('resize', updateRenderedSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateRenderedSize);
+    };
+  }, []);
 
   useEffect(() => {
     if (!url) return;
@@ -83,11 +116,31 @@ export default function LogoWithCrop({
         crop?.height || img.naturalHeight || 300,
         frameAspectRatio,
       );
+      const backingSize = getLogoCanvasBackingSize({
+        logicalWidth: targetWidth,
+        logicalHeight: targetHeight,
+        naturalWidth: img.naturalWidth || targetWidth,
+        naturalHeight: img.naturalHeight || targetHeight,
+        renderedWidth: renderedSize.width,
+        renderedHeight: renderedSize.height,
+        devicePixelRatio: renderedSize.devicePixelRatio,
+      });
 
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
+      if (canvas.width !== backingSize.width) canvas.width = backingSize.width;
+      if (canvas.height !== backingSize.height) canvas.height = backingSize.height;
 
-      ctx.clearRect(0, 0, targetWidth, targetHeight);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, backingSize.width, backingSize.height);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.setTransform(
+        backingSize.width / targetWidth,
+        0,
+        0,
+        backingSize.height / targetHeight,
+        0,
+        0,
+      );
 
       if (!crop) {
         const naturalWidth = img.naturalWidth || targetWidth;
@@ -125,7 +178,7 @@ export default function LogoWithCrop({
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [url, crop, imageVersion, frameAspectRatio]);
+  }, [url, crop, imageVersion, frameAspectRatio, renderedSize]);
 
   return (
     <canvas
