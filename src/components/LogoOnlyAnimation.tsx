@@ -80,6 +80,7 @@ function readInitialLogoState(): LogoState {
 }
 
 const LOGO_GOAL_ANIMATION_DURATION_MS = 4000;
+const LOGO_GOAL_MAX_RENDER_SCALE = 3;
 
 export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: LogoOnlyAnimationProps) {
   useDisableZoom();
@@ -254,6 +255,7 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
                 <LogoWithCrop
                   url={logoSrc}
                   crop={cropData}
+                  renderScale={LOGO_GOAL_MAX_RENDER_SCALE}
                   frameAspectRatio={cropData.browserFrame ? cropData.browserFrame.width / cropData.browserFrame.height : undefined}
                   alt={`${display.name} logo`}
                   onError={() => {

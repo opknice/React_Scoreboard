@@ -13,6 +13,8 @@ interface LogoCanvasBackingSizeOptions {
   renderedWidth?: number;
   renderedHeight?: number;
   devicePixelRatio?: number;
+  /** Largest CSS transform scale that the rendered canvas must remain sharp at. */
+  displayScale?: number;
 }
 
 export function resizeLogoFrame(frame: BrowserFrame, axis: 'width' | 'height', value: number): BrowserFrame {
@@ -43,16 +45,20 @@ export function getLogoCanvasBackingSize({
   renderedWidth = 0,
   renderedHeight = 0,
   devicePixelRatio = 1,
+  displayScale = 1,
 }: LogoCanvasBackingSizeOptions) {
   const safeLogicalWidth = Math.max(1, logicalWidth);
   const safeLogicalHeight = Math.max(1, logicalHeight);
   const safeDpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const safeDisplayScale = Number.isFinite(displayScale)
+    ? Math.min(8, Math.max(1, displayScale))
+    : 1;
   const requestedScale = Math.max(
     1,
     naturalWidth / safeLogicalWidth,
     naturalHeight / safeLogicalHeight,
-    (renderedWidth * safeDpr) / safeLogicalWidth,
-    (renderedHeight * safeDpr) / safeLogicalHeight,
+    (renderedWidth * safeDpr * safeDisplayScale) / safeLogicalWidth,
+    (renderedHeight * safeDpr * safeDisplayScale) / safeLogicalHeight,
   );
   const requestedWidth = safeLogicalWidth * requestedScale;
   const requestedHeight = safeLogicalHeight * requestedScale;
