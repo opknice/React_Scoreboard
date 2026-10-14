@@ -16,8 +16,6 @@ interface LogoWithCropProps {
   /** Fill a fixed parent frame; disable when className defines the frame size. */
   fillFrame?: boolean;
   frameAspectRatio?: number;
-  /** Pre-renders enough pixels for an ancestor CSS scale animation. */
-  renderScale?: number;
   onError?: () => void;
   onImageLoad?: (dimensions: { naturalWidth: number; naturalHeight: number }) => void;
 }
@@ -30,7 +28,6 @@ export default function LogoWithCrop({
   style,
   fillFrame = true,
   frameAspectRatio,
-  renderScale = 1,
   onError,
   onImageLoad,
 }: LogoWithCropProps) {
@@ -127,7 +124,6 @@ export default function LogoWithCrop({
         renderedWidth: renderedSize.width,
         renderedHeight: renderedSize.height,
         devicePixelRatio: renderedSize.devicePixelRatio,
-        displayScale: renderScale,
       });
 
       if (canvas.width !== backingSize.width) canvas.width = backingSize.width;
@@ -182,7 +178,7 @@ export default function LogoWithCrop({
     });
 
     return () => window.cancelAnimationFrame(frameId);
-  }, [url, crop, imageVersion, frameAspectRatio, renderScale, renderedSize]);
+  }, [url, crop, imageVersion, frameAspectRatio, renderedSize]);
 
   return (
     <canvas

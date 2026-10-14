@@ -29,7 +29,7 @@ import { getLogoSrc } from '../utils/logoResolver';
 import { getLogoPresentation } from '../utils/logoBrowserUrl';
 import { useDisableZoom } from '../hooks/useDisableZoom';
 import { LeagueService } from '../services/leagueService';
-import LogoWithCrop from './LogoWithCrop';
+import CroppedLogoImage from './CroppedLogoImage';
 import type { GoalAnimationSide } from './goalAnimationTemplates';
 import './LogoOnlyAnimation.css';
 
@@ -80,7 +80,6 @@ function readInitialLogoState(): LogoState {
 }
 
 const LOGO_GOAL_ANIMATION_DURATION_MS = 4000;
-const LOGO_GOAL_MAX_RENDER_SCALE = 3;
 
 export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: LogoOnlyAnimationProps) {
   useDisableZoom();
@@ -252,10 +251,9 @@ export default function LogoOnlyAnimation({ side, overrideBackgroundMode }: Logo
               className={`logo-only-inner-anim${animationClass}`}
             >
               {cropData ? (
-                <LogoWithCrop
+                <CroppedLogoImage
                   url={logoSrc}
                   crop={cropData}
-                  renderScale={LOGO_GOAL_MAX_RENDER_SCALE}
                   frameAspectRatio={cropData.browserFrame ? cropData.browserFrame.width / cropData.browserFrame.height : undefined}
                   alt={`${display.name} logo`}
                   onError={() => {

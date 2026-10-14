@@ -13,7 +13,7 @@ import { useBrowserSourcePreviewState } from '../hooks/useBrowserSourcePreviewSt
 import { useCanvasObjectEditor, type CanvasObject } from '../hooks/useCanvasObjectEditor';
 import type { BrowserPosition } from '../types/browserPositions';
 import TeamColorPreview from './TeamColorPreview';
-import LogoWithCrop from './LogoWithCrop';
+import CroppedLogoImage from './CroppedLogoImage';
 import './PlayerBrowserSource.css';
 import './TeamNamesAnimation.css';
 
@@ -38,7 +38,7 @@ function PreviewLogo({ src, crop, name, side }: { src: string; crop: CropMetadat
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   if (!src || failedUrl === src) return <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', border: '2px dashed #64748b', fontSize: 32 }}>Logo {side}</div>;
   return crop
-    ? <LogoWithCrop url={src} crop={crop} frameAspectRatio={crop.browserFrame ? crop.browserFrame.width / crop.browserFrame.height : undefined} alt={name} onError={() => setFailedUrl(src)} />
+    ? <CroppedLogoImage url={src} crop={crop} frameAspectRatio={crop.browserFrame ? crop.browserFrame.width / crop.browserFrame.height : undefined} alt={name} onError={() => setFailedUrl(src)} />
     : <img src={src} alt={name} onError={() => setFailedUrl(src)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
 }
 

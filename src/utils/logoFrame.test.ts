@@ -52,27 +52,4 @@ describe('browser logo frame', () => {
     })).toEqual({ width: 4096, height: 4096 });
   });
 
-  it('pre-renders enough pixels for the largest OBS logo animation scale', () => {
-    expect(getLogoCanvasBackingSize({
-      logicalWidth: 500,
-      logicalHeight: 500,
-      naturalWidth: 300,
-      naturalHeight: 300,
-      renderedWidth: 190,
-      renderedHeight: 190,
-      devicePixelRatio: 1,
-      displayScale: 3,
-    })).toEqual({ width: 570, height: 570 });
-
-    expect(getLogoCanvasBackingSize({
-      logicalWidth: 500,
-      logicalHeight: 500,
-      naturalWidth: 300,
-      naturalHeight: 300,
-      renderedWidth: 190,
-      renderedHeight: 190,
-      devicePixelRatio: 2,
-      displayScale: 3,
-    })).toEqual({ width: 1140, height: 1140 });
-  });
 });

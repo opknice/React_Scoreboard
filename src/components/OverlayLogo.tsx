@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import type { CropMetadata } from '../types/teamLogo';
 import { normalizeLogoScalePercent, scaleLogoPixels } from '../types/leagueLogoSizing';
-import LogoWithCrop from './LogoWithCrop';
+import CroppedLogoImage from './CroppedLogoImage';
 
 interface OverlayLogoProps {
   src: string;
@@ -45,7 +45,7 @@ export default function OverlayLogo({ src, fallbackSrc, alt, className, crop, sc
 
   if (crop && currentSrc === src) {
     return (
-      <LogoWithCrop
+      <CroppedLogoImage
         url={currentSrc}
         crop={crop}
         alt={alt}

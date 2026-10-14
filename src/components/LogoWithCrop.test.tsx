@@ -3,13 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CropMetadata } from '../types/teamLogo';
 import LogoWithCrop from './LogoWithCrop';
 
-let testNaturalWidth = 960;
-let testNaturalHeight = 960;
-
 class TestImage {
   crossOrigin = '';
-  naturalWidth = testNaturalWidth;
-  naturalHeight = testNaturalHeight;
+  naturalWidth = 960;
+  naturalHeight = 960;
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   private source = '';
@@ -50,8 +47,6 @@ describe('LogoWithCrop high-resolution rendering', () => {
   };
 
   beforeEach(() => {
-    testNaturalWidth = 960;
-    testNaturalHeight = 960;
     vi.stubGlobal('Image', TestImage);
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
     vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
@@ -90,22 +85,4 @@ describe('LogoWithCrop high-resolution rendering', () => {
     expect(context.setTransform).toHaveBeenLastCalledWith(1.92, 0, 0, 1.92, 0, 0);
   });
 
-  it('pre-renders a cropped OBS logo at the maximum animation scale', async () => {
-    testNaturalWidth = 300;
-    testNaturalHeight = 300;
-
-    render(
-      <LogoWithCrop
-        url="https://example.com/logo.png"
-        crop={crop}
-        alt="Animated team logo"
-        renderScale={3}
-      />,
-    );
-    const canvas = screen.getByLabelText('Animated team logo') as HTMLCanvasElement;
-
-    await waitFor(() => expect(canvas.width).toBe(570));
-    expect(canvas.height).toBe(570);
-    expect(context.setTransform).toHaveBeenLastCalledWith(1.14, 0, 0, 1.14, 0, 0);
-  });
 });
