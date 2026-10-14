@@ -1,4 +1,5 @@
 import type { Match } from '../config/supabaseClient';
+import { parseMatchScore } from './matchScore';
 
 export interface ScoreboardMatchResult {
   teamIdA: string | null;
@@ -18,7 +19,7 @@ export type CanonicalMatchResult =
     }
   | {
       ok: false;
-      reason: 'missing-team-identity' | 'team-mismatch';
+      reason: 'invalid-score' | 'missing-team-identity' | 'team-mismatch';
     };
 
 function normalizeTeamName(name: string): string {
@@ -48,6 +49,12 @@ export function resolveCanonicalMatchResult(
   match: Pick<Match, 'team_a_id' | 'team_b_id' | 'team_a_name' | 'team_b_name'>,
   scoreboard: ScoreboardMatchResult,
 ): CanonicalMatchResult {
+  const scoreA = parseMatchScore(scoreboard.scoreA);
+  const scoreB = parseMatchScore(scoreboard.scoreB);
+  if (scoreA === null || scoreB === null) {
+    return { ok: false, reason: 'invalid-score' };
+  }
+
   const scoreboardHasTeamAIdentity = Boolean(scoreboard.teamIdA || normalizeTeamName(scoreboard.teamNameA));
   const scoreboardHasTeamBIdentity = Boolean(scoreboard.teamIdB || normalizeTeamName(scoreboard.teamNameB));
   const matchHasTeamAIdentity = Boolean(match.team_a_id || normalizeTeamName(match.team_a_name));
@@ -82,7 +89,9 @@ export function resolveCanonicalMatchResult(
     scoreboard.teamNameA,
   );
 
-  if (!isDirect && !isSwapped) {
+  // A legacy row with indistinguishable names can satisfy both orientations;
+  // saving either order would be a guess and can reverse the result.
+  if ((!isDirect && !isSwapped) || (isDirect && isSwapped)) {
     return { ok: false, reason: 'team-mismatch' };
   }
 
@@ -90,13 +99,13 @@ export function resolveCanonicalMatchResult(
     ? {
         ok: true,
         orientation: 'direct',
-        score_a: scoreboard.scoreA,
-        score_b: scoreboard.scoreB,
+        score_a: scoreA,
+        score_b: scoreB,
       }
     : {
         ok: true,
         orientation: 'swapped',
-        score_a: scoreboard.scoreB,
-        score_b: scoreboard.scoreA,
+        score_a: scoreB,
+        score_b: scoreA,
       };
 }

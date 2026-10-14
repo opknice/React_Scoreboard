@@ -60,13 +60,14 @@ function normalizeTeamName(teamName: string): string {
 }
 
 /** Resolves a Supabase team logo by stable ID first, then normalized name. */
-export function findTeamLogoRecord(
-  teams: readonly TeamLogoRecord[],
+export function findTeamLogoRecord<T extends TeamLogoRecord>(
+  teams: readonly T[],
   teamId?: string | null,
   teamName?: string | null,
-): TeamLogoRecord | undefined {
-  const byId = teamId ? teams.find((team) => team.id === teamId) : undefined;
-  if (byId) return byId;
+): T | undefined {
+  // A present ID is authoritative. Falling back to a duplicate display name
+  // after an ID miss can attach the wrong team's logo/crop and identity.
+  if (teamId) return teams.find((team) => team.id === teamId);
 
   const normalizedName = teamName ? normalizeTeamName(teamName) : '';
   if (!normalizedName) return undefined;

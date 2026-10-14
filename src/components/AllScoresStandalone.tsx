@@ -3,13 +3,14 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSearchParams } from 'react-router-dom';
 import { findTeamLogoRecord, getLogoSrc } from '../utils/logoResolver';
 import { useDisableZoom } from '../hooks/useDisableZoom';
-import { filterFinishedMatches } from '../utils/finishedMatch';
+import { filterDisplayableFinishedMatches } from '../utils/finishedMatch';
 import type { OverlayMatch } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
 import OverlayLogo from './OverlayLogo';
 import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
 import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
 import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
+import { getTodayDateString } from './league-management/leagueDateUtils';
 
 export default function AllScoresStandalone() {
   useDisableZoom();
@@ -29,13 +30,24 @@ export default function AllScoresStandalone() {
   const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
   const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
-  const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
+  const finishedMatches = useMemo(() => filterDisplayableFinishedMatches(matches), [matches]);
 
   useEffect(() => {
     let isCancelled = false;
+    let latestRequestId = 0;
+    let refreshTimer: number | null = null;
     let supabaseChannel: RealtimeChannel | null = null;
 
+    const scheduleRealtimeRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void loadFromSupabase();
+      }, 150);
+    };
+
     const loadFromSupabase = async () => {
+      const requestId = ++latestRequestId;
       try {
         const { LeagueService } = await import('../services/leagueService');
         const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
@@ -47,7 +59,7 @@ export default function AllScoresStandalone() {
           LeagueService.getMatchesByLeague(leagueId),
           LeagueService.getTeamsByLeague(leagueId),
         ]);
-        if (isCancelled) return;
+        if (isCancelled || requestId !== latestRequestId) return;
         const formatted = supabaseMatches.map((m) => {
           const teamA = findTeamLogoRecord(supabaseTeams, m.team_a_id, m.team_a_name);
           const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
@@ -70,6 +82,7 @@ export default function AllScoresStandalone() {
           };
         });
         setMatches(formatted);
+        setErrorMsg('');
         setLoading(false);
         if (!supabaseChannel && supabase) {
           supabaseChannel = supabase
@@ -77,17 +90,17 @@ export default function AllScoresStandalone() {
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
-              () => { void loadFromSupabase(); },
+              scheduleRealtimeRefresh,
             )
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
-              () => { void loadFromSupabase(); },
+              scheduleRealtimeRefresh,
             )
             .subscribe();
         }
       } catch (err: unknown) {
-        if (isCancelled) return;
+        if (isCancelled || requestId !== latestRequestId) return;
         setErrorMsg(`โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
         setLoading(false);
       }
@@ -97,6 +110,8 @@ export default function AllScoresStandalone() {
 
     return () => {
       isCancelled = true;
+      latestRequestId += 1;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       if (supabaseChannel) {
         void import('../config/supabaseClient').then(({ supabase }) => {
           if (supabase && supabaseChannel) void supabase.removeChannel(supabaseChannel);
@@ -124,7 +139,7 @@ export default function AllScoresStandalone() {
     );
   }
 
-  const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+  const selectedDate = dateParam === 'today' ? getTodayDateString() : dateParam && dateParam !== 'all' ? dateParam : '';
   const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
 
   if (filtered.length === 0) {

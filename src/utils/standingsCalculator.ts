@@ -1,4 +1,5 @@
-import { filterFinishedMatches } from './finishedMatch';
+import { isFinishedMatch } from './finishedMatch';
+import { parseMatchScore } from './matchScore';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import type { CropMetadata } from '../types/teamLogo';
 
@@ -32,6 +33,54 @@ const createEmptyStanding = (team: OverlayTeam): CalculatedStanding => ({
   Pts: 0,
 });
 
+const normalizeTeamName = (name: string): string => name
+  .trim()
+  .toLocaleLowerCase('th')
+  .replace(/\s+/g, ' ');
+
+interface StandingIdentityIndex {
+  rows: Map<string, CalculatedStanding>;
+  keysByName: Map<string, Set<string>>;
+}
+
+function registerName(index: StandingIdentityIndex, name: string, key: string): void {
+  const normalized = normalizeTeamName(name);
+  if (!normalized) return;
+  const keys = index.keysByName.get(normalized) ?? new Set<string>();
+  keys.add(key);
+  index.keysByName.set(normalized, keys);
+}
+
+function resolveStandingKey(
+  index: StandingIdentityIndex,
+  id: string | null | undefined,
+  name: string,
+): string | null {
+  const cleanId = id?.trim();
+  if (cleanId) return `id:${cleanId}`;
+
+  const normalizedName = normalizeTeamName(name);
+  if (!normalizedName) return null;
+  const registeredKeys = index.keysByName.get(normalizedName);
+  if (registeredKeys?.size === 1) return [...registeredKeys][0];
+  if (registeredKeys && registeredKeys.size > 1) return null;
+  return `legacy:${normalizedName}`;
+}
+
+function ensureMatchTeam(
+  index: StandingIdentityIndex,
+  key: string,
+  team: OverlayTeam,
+): CalculatedStanding {
+  const existing = index.rows.get(key);
+  if (existing) return existing;
+
+  const created = createEmptyStanding(team);
+  index.rows.set(key, created);
+  registerName(index, team.name, key);
+  return created;
+}
+
 /**
  * Builds standings from finished matches only while retaining every
  * registered team as a zero-stat row when it has no finished match yet.
@@ -40,27 +89,48 @@ export const calculateFinishedStandings = (
   matches: readonly OverlayMatch[],
   registeredTeams: readonly OverlayTeam[] = [],
 ): CalculatedStanding[] => {
-  const stats: Record<string, CalculatedStanding> = {};
+  const index: StandingIdentityIndex = {
+    rows: new Map<string, CalculatedStanding>(),
+    keysByName: new Map<string, Set<string>>(),
+  };
 
   registeredTeams.forEach((team) => {
     const teamName = team.name.trim();
-    if (teamName) stats[teamName] = createEmptyStanding({ ...team, name: teamName });
+    if (!teamName) return;
+    const cleanId = team.id?.trim();
+    const key = cleanId ? `id:${cleanId}` : `legacy:${normalizeTeamName(teamName)}`;
+    if (!index.rows.has(key)) {
+      index.rows.set(key, createEmptyStanding({ ...team, id: cleanId || null, name: teamName }));
+    }
+    registerName(index, teamName, key);
   });
 
-  filterFinishedMatches(matches).forEach((match) => {
+  matches.forEach((match) => {
+    if (!isFinishedMatch(match)) return;
     const teamA = (match.teamA || '').trim();
     const teamB = (match.teamB || '').trim();
     if (!teamA || !teamB) return;
 
-    const scoreA = Number(match.scoreA);
-    const scoreB = Number(match.scoreB);
-    if (!Number.isFinite(scoreA) || !Number.isFinite(scoreB)) return;
+    const scoreA = parseMatchScore(match.scoreA);
+    const scoreB = parseMatchScore(match.scoreB);
+    if (scoreA === null || scoreB === null) return;
 
-    stats[teamA] ||= createEmptyStanding({ name: teamA, logo: match.logoA });
-    stats[teamB] ||= createEmptyStanding({ name: teamB, logo: match.logoB });
+    const keyA = resolveStandingKey(index, match.teamIdA, teamA);
+    const keyB = resolveStandingKey(index, match.teamIdB, teamB);
+    if (!keyA || !keyB || keyA === keyB) return;
 
-    const a = stats[teamA];
-    const b = stats[teamB];
+    const a = ensureMatchTeam(index, keyA, {
+      id: match.teamIdA,
+      name: teamA,
+      logo: match.logoA,
+      crop: match.cropA,
+    });
+    const b = ensureMatchTeam(index, keyB, {
+      id: match.teamIdB,
+      name: teamB,
+      logo: match.logoB,
+      crop: match.cropB,
+    });
     if (!a.logo && match.logoA) a.logo = match.logoA;
     if (!b.logo && match.logoB) b.logo = match.logoB;
     if (!a.crop && match.cropA) a.crop = match.cropA;
@@ -89,7 +159,7 @@ export const calculateFinishedStandings = (
     }
   });
 
-  return Object.values(stats)
+  return [...index.rows.values()]
     .map((row) => ({ ...row, GD: row.GF - row.GA }))
     .sort((a, b) => b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF || a.team.localeCompare(b.team, 'th'));
 };

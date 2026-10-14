@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured, type League, type Team, type Match, type Player, type PlayerMatchStat } from '../config/supabaseClient';
 import { retryWithBackoff } from '../utils/retry';
-import { isFinishedMatch } from '../utils/finishedMatch';
+import { calculateFinishedStandings } from '../utils/standingsCalculator';
+import { parseMatchScore } from '../utils/matchScore';
 import { LogoStorageService } from './logoStorageService';
 import { deletePlayerImage } from './playerImageStorageService';
 import type { LogoStorageProvider } from '../types/logoStorage';
@@ -29,6 +30,77 @@ function storagePathFromPublicUrl(imageUrl: string): string | null {
   const index = imageUrl.indexOf(marker);
   if (index < 0) return null;
   return decodeURIComponent(imageUrl.slice(index + marker.length));
+}
+
+const MATCH_STATUSES = new Set(['scheduled', 'in_progress', 'finished', 'postponed']);
+const MATCH_MUTABLE_FIELDS = [
+  'match_number',
+  'team_a_id',
+  'team_b_id',
+  'team_a_name',
+  'team_b_name',
+  'score_a',
+  'score_b',
+  'status',
+  'label1',
+  'label2',
+  'label3',
+  'match_date',
+] as const satisfies readonly (keyof Match)[];
+
+type MutableMatchField = typeof MATCH_MUTABLE_FIELDS[number];
+
+function validateMatchValues(values: Partial<Match>): void {
+  if (values.match_number !== undefined && (!Number.isInteger(values.match_number) || values.match_number <= 0)) {
+    throw new Error('หมายเลขแมตช์ต้องเป็นจำนวนเต็มมากกว่า 0');
+  }
+  if (values.score_a !== undefined && parseMatchScore(values.score_a) === null) {
+    throw new Error('สกอร์ทีม A ไม่ถูกต้อง');
+  }
+  if (values.score_b !== undefined && parseMatchScore(values.score_b) === null) {
+    throw new Error('สกอร์ทีม B ไม่ถูกต้อง');
+  }
+  if (values.status !== undefined && !MATCH_STATUSES.has(values.status)) {
+    throw new Error('สถานะแมตช์ไม่ถูกต้อง');
+  }
+  if (values.team_a_id && values.team_b_id && values.team_a_id === values.team_b_id) {
+    throw new Error('ทีม A และทีม B ต้องไม่เป็นทีมเดียวกัน');
+  }
+  if (values.team_a_name !== undefined && !values.team_a_name.trim()) {
+    throw new Error('ชื่อทีม A ห้ามว่าง');
+  }
+  if (values.team_b_name !== undefined && !values.team_b_name.trim()) {
+    throw new Error('ชื่อทีม B ห้ามว่าง');
+  }
+}
+
+function sanitizeMatchUpdates(updates: Partial<Match>): Partial<Match> {
+  const clean: Partial<Match> = {};
+  MATCH_MUTABLE_FIELDS.forEach((field) => {
+    const value = updates[field];
+    if (value !== undefined) {
+      (clean as Record<MutableMatchField, Match[MutableMatchField] | undefined>)[field] = value;
+    }
+  });
+  if (clean.team_a_name !== undefined) clean.team_a_name = clean.team_a_name.trim();
+  if (clean.team_b_name !== undefined) clean.team_b_name = clean.team_b_name.trim();
+  if (clean.label1 !== undefined) clean.label1 = clean.label1 || '';
+  if (clean.label2 !== undefined) clean.label2 = clean.label2 || '';
+  if (clean.label3 !== undefined) clean.label3 = clean.label3 || '';
+  validateMatchValues(clean);
+  return clean;
+}
+
+function isNoRowsError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'PGRST116';
+}
+
+function matchContainsUpdates(match: Match, updates: Partial<Match>): boolean {
+  return MATCH_MUTABLE_FIELDS.every((field) => (
+    updates[field] === undefined || Object.is(match[field], updates[field])
+  ));
 }
 
 export interface StandingsRow {
@@ -320,13 +392,23 @@ export class LeagueService {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
+    validateMatchValues(payload);
     const data = await executeSupabaseRequest(() => supabase!
       .from('matches')
       .insert([{
-        ...payload,
+        league_id: payload.league_id,
+        match_number: payload.match_number,
+        team_a_id: payload.team_a_id,
+        team_b_id: payload.team_b_id,
+        team_a_name: payload.team_a_name.trim(),
+        team_b_name: payload.team_b_name.trim(),
+        score_a: payload.score_a,
+        score_b: payload.score_b,
+        status: payload.status,
         label1: payload.label1 || '',
         label2: payload.label2 || '',
         label3: payload.label3 || '',
+        match_date: payload.match_date,
         updated_at: new Date().toISOString(),
       }])
       .select(MATCH_COLUMNS)
@@ -335,30 +417,59 @@ export class LeagueService {
     return data as Match;
   }
 
-  static async updateMatch(id: string, updates: Partial<Match>, expectedLeagueId: string): Promise<Match> {
+  static async updateMatch(
+    id: string,
+    updates: Partial<Match>,
+    expectedLeagueId: string,
+    expectedUpdatedAt: string,
+  ): Promise<Match> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Supabase is not configured.');
     }
     if (updates.league_id !== undefined && updates.league_id !== expectedLeagueId) {
       throw new Error('Match league_id does not match the active league.');
     }
+    if (!expectedUpdatedAt.trim()) {
+      throw new Error('ไม่พบเวอร์ชันข้อมูลแมตช์ กรุณารีเฟรชข้อมูลก่อนบันทึก');
+    }
     const cleanUpdates: Partial<Match> = {
-      ...updates,
+      ...sanitizeMatchUpdates(updates),
       updated_at: new Date().toISOString(),
     };
-    if (updates.label1 !== undefined) cleanUpdates.label1 = updates.label1 || '';
-    if (updates.label2 !== undefined) cleanUpdates.label2 = updates.label2 || '';
-    if (updates.label3 !== undefined) cleanUpdates.label3 = updates.label3 || '';
 
-    const data = await executeSupabaseRequest(() => supabase!
-      .from('matches')
-      .update(cleanUpdates)
-      .eq('id', id)
-      .eq('league_id', expectedLeagueId)
-      .select(MATCH_COLUMNS)
-      .single());
-
-    return data as unknown as Match;
+    try {
+      const data = await executeSupabaseRequest(() => {
+        let query = supabase!
+          .from('matches')
+          .update(cleanUpdates)
+          .eq('id', id)
+          .eq('league_id', expectedLeagueId);
+        query = query.eq('updated_at', expectedUpdatedAt);
+        return query.select(MATCH_COLUMNS).single();
+      });
+      return data as unknown as Match;
+    } catch (error: unknown) {
+      if (isNoRowsError(error)) {
+        // A transient network failure may occur after PostgreSQL committed the
+        // first attempt. Re-read once so an already-applied idempotent result
+        // is reported as success, while a genuinely newer/different edit is
+        // still rejected as a conflict.
+        try {
+          const currentData = await executeSupabaseRequest(() => supabase!
+            .from('matches')
+            .select(MATCH_COLUMNS)
+            .eq('id', id)
+            .eq('league_id', expectedLeagueId)
+            .maybeSingle());
+          const current = currentData as unknown as Match | null;
+          if (current && matchContainsUpdates(current, cleanUpdates)) return current;
+        } catch {
+          // Keep the deterministic conflict error below if reconciliation fails.
+        }
+        throw new Error('ข้อมูลแมตช์ถูกแก้ไขจากหน้าจออื่น กรุณารีเฟรชข้อมูลก่อนบันทึกอีกครั้ง');
+      }
+      throw error;
+    }
   }
 
   static async deleteMatch(id: string, expectedLeagueId: string): Promise<void> {
@@ -385,95 +496,34 @@ export class LeagueService {
   // ==========================================
 
   static calculateStandings(matches: Match[], teams: Team[] = []): StandingsRow[] {
-    const stats: Record<string, StandingsRow> = {};
-
-    // Initialize stats for all registered teams
-    teams.forEach((team) => {
-      stats[team.name] = {
-        teamId: team.id,
-        teamName: team.name,
-        logoUrl: team.logo_url || '',
-        P: 0,
-        W: 0,
-        D: 0,
-        L: 0,
-        GF: 0,
-        GA: 0,
-        GD: 0,
-        Pts: 0,
-      };
-    });
-
-    // Standings must be based on explicitly finished matches only.
-    matches.forEach((m) => {
-      const teamA = (m.team_a_name || '').trim();
-      const teamB = (m.team_b_name || '').trim();
-      if (!teamA || !teamB) return;
-
-      if (!isFinishedMatch(m)) return;
-
-      if (!stats[teamA]) {
-        stats[teamA] = {
-          teamId: m.team_a_id || undefined,
-          teamName: teamA,
-          logoUrl: '',
-          P: 0,
-          W: 0,
-          D: 0,
-          L: 0,
-          GF: 0,
-          GA: 0,
-          GD: 0,
-          Pts: 0,
-        };
-      }
-
-      if (!stats[teamB]) {
-        stats[teamB] = {
-          teamId: m.team_b_id || undefined,
-          teamName: teamB,
-          logoUrl: '',
-          P: 0,
-          W: 0,
-          D: 0,
-          L: 0,
-          GF: 0,
-          GA: 0,
-          GD: 0,
-          Pts: 0,
-        };
-      }
-
-      const a = stats[teamA];
-      const b = stats[teamB];
-      const sA = m.score_a || 0;
-      const sB = m.score_b || 0;
-
-      a.P += 1;
-      b.P += 1;
-      a.GF += sA;
-      a.GA += sB;
-      b.GF += sB;
-      b.GA += sA;
-
-      if (sA > sB) {
-        a.W += 1;
-        a.Pts += 3;
-        b.L += 1;
-      } else if (sA < sB) {
-        b.W += 1;
-        b.Pts += 3;
-        a.L += 1;
-      } else {
-        a.D += 1;
-        b.D += 1;
-        a.Pts += 1;
-        b.Pts += 1;
-      }
-    });
-
-    return Object.values(stats)
-      .map((row) => ({ ...row, GD: row.GF - row.GA }))
-      .sort((a, b) => b.Pts - a.Pts || b.GD - a.GD || b.GF - a.GF || a.teamName.localeCompare(b.teamName, 'th'));
+    return calculateFinishedStandings(
+      matches.map((match) => ({
+        id: match.id,
+        teamIdA: match.team_a_id,
+        teamIdB: match.team_b_id,
+        teamA: match.team_a_name,
+        teamB: match.team_b_name,
+        scoreA: match.score_a,
+        scoreB: match.score_b,
+        status: match.status,
+      })),
+      teams.map((team) => ({
+        id: team.id,
+        name: team.name,
+        logo: team.logo_url,
+      })),
+    ).map((row) => ({
+      teamId: row.teamId || undefined,
+      teamName: row.team,
+      logoUrl: row.logo,
+      P: row.P,
+      W: row.W,
+      D: row.D,
+      L: row.L,
+      GF: row.GF,
+      GA: row.GA,
+      GD: row.GD,
+      Pts: row.Pts,
+    }));
   }
 }

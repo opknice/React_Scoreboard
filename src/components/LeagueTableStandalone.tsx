@@ -36,9 +36,20 @@ export default function LeagueTableStandalone() {
 
   useEffect(() => {
     let isCancelled = false;
+    let latestRequestId = 0;
+    let refreshTimer: number | null = null;
     let supabaseChannel: RealtimeChannel | null = null;
 
+    const scheduleRealtimeRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void loadFromSupabase();
+      }, 150);
+    };
+
     const loadFromSupabase = async () => {
+      const requestId = ++latestRequestId;
       try {
         const { LeagueService } = await import('../services/leagueService');
         const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
@@ -50,7 +61,7 @@ export default function LeagueTableStandalone() {
           LeagueService.getMatchesByLeague(leagueId),
           LeagueService.getTeamsByLeague(leagueId),
         ]);
-        if (isCancelled) return;
+        if (isCancelled || requestId !== latestRequestId) return;
         // Map to match structure expected by calculateStandings
         const formatted = supabaseMatches.map((m) => {
           const teamA = findTeamLogoRecord(supabaseTeams, m.team_a_id, m.team_a_name);
@@ -77,6 +88,7 @@ export default function LeagueTableStandalone() {
           crop: parseCropMetadata(team.overlay_crop_metadata),
         })));
         setMatches(formatted);
+        setErrorMsg('');
         setLoading(false);
 
         // Setup Realtime subscription for automatic updates on OBS
@@ -86,21 +98,17 @@ export default function LeagueTableStandalone() {
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
-              () => {
-                void loadFromSupabase();
-              }
+              scheduleRealtimeRefresh,
             )
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
-              () => {
-                void loadFromSupabase();
-              }
+              scheduleRealtimeRefresh,
             )
             .subscribe();
         }
       } catch (err: unknown) {
-        if (isCancelled) return;
+        if (isCancelled || requestId !== latestRequestId) return;
         setErrorMsg(`โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
         setLoading(false);
       }
@@ -110,6 +118,8 @@ export default function LeagueTableStandalone() {
 
     return () => {
       isCancelled = true;
+      latestRequestId += 1;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       if (supabaseChannel) {
         void import('../config/supabaseClient').then(({ supabase }) => {
           if (supabase && supabaseChannel) void supabase.removeChannel(supabaseChannel);
@@ -197,7 +207,7 @@ export default function LeagueTableStandalone() {
             </thead>
             <tbody>
               {standingsRows.map((row, index) => (
-                <tr key={row.team}>
+                <tr key={row.teamId ?? `legacy:${row.team}:${index}`}>
                   <td style={{ fontWeight: 400 }}>{index + 1}</td>
                   <td className="overlay-team-cell">
                   {renderLogo(row.logo, row.team, row.crop, row.teamId)}

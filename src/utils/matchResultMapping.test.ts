@@ -97,4 +97,21 @@ describe('resolveCanonicalMatchResult', () => {
       scoreboard({ teamIdA: null, teamIdB: null, teamNameA: 'Gamma' }),
     )).toEqual({ ok: false, reason: 'team-mismatch' });
   });
+
+  it('rejects a legacy pair whose identical names make score orientation ambiguous', () => {
+    expect(resolveCanonicalMatchResult(
+      { team_a_id: null, team_b_id: null, team_a_name: 'City', team_b_name: 'City' },
+      scoreboard({ teamIdA: null, teamIdB: null, teamNameA: 'City', teamNameB: 'City' }),
+    )).toEqual({ ok: false, reason: 'team-mismatch' });
+  });
+
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648])(
+    'rejects invalid score %p before saving',
+    (invalidScore) => {
+      expect(resolveCanonicalMatchResult(match, scoreboard({ scoreA: invalidScore }))).toEqual({
+        ok: false,
+        reason: 'invalid-score',
+      });
+    },
+  );
 });

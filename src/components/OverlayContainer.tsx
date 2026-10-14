@@ -3,23 +3,16 @@ import { useSearchParams } from 'react-router-dom';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { findTeamLogoRecord, getLogoSrc } from '../utils/logoResolver';
 import { useDisableZoom } from '../hooks/useDisableZoom';
-import { filterFinishedMatches } from '../utils/finishedMatch';
+import { filterDisplayableFinishedMatches } from '../utils/finishedMatch';
 import { calculateFinishedStandings } from '../utils/standingsCalculator';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
 import OverlayLogo from './OverlayLogo';
-import { limitOverlayItems, parseOverlayLimit } from '../utils/overlayQuery';
+import { limitOverlayItems, parseOverlayLimit, parseTickerDuration } from '../utils/overlayQuery';
 import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
 import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
 import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
-
-const getLocalTodayString = (): string => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+import { getTodayDateString } from './league-management/leagueDateUtils';
 
 const getErrorMessage = (error: unknown): string => (
   error instanceof Error ? error.message : String(error)
@@ -49,7 +42,7 @@ export default function OverlayContainer() {
   const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
   const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
-  const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
+  const finishedMatches = useMemo(() => filterDisplayableFinishedMatches(matches), [matches]);
   const standingsRows = useMemo(
     () => calculateFinishedStandings(matches, registeredTeams),
     [matches, registeredTeams],
@@ -97,8 +90,8 @@ export default function OverlayContainer() {
             teamIdB: teamB?.id ?? m.team_b_id ?? null,
             teamA: m.team_a_name,
             teamB: m.team_b_name,
-            scoreA: m.score_a || 0,
-            scoreB: m.score_b || 0,
+            scoreA: m.score_a,
+            scoreB: m.score_b,
             logoA: teamA?.logo_url || '',
             logoB: teamB?.logo_url || '',
             cropA: parseCropMetadata(teamA?.overlay_crop_metadata),
@@ -229,7 +222,7 @@ export default function OverlayContainer() {
           </thead>
           <tbody>
             {standingsRows.map((row, index) => (
-              <tr key={row.team}>
+              <tr key={row.teamId ?? `legacy:${row.team}:${index}`}>
                 <td>{index + 1}</td>
                 <td className="overlay-team-cell">
                   {renderLogo(row.logo, row.team, 'overlay-logo', row.crop, row.teamId)}
@@ -255,7 +248,7 @@ export default function OverlayContainer() {
 
   // 2. Results List View
   const renderResultsView = () => {
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayDateString();
     const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
     const limited = limitOverlayItems(filtered, resultLimit);
@@ -354,7 +347,7 @@ export default function OverlayContainer() {
 
   // 3. Ticker View (Bottom scrolling list)
   const renderTickerView = () => {
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayDateString();
     const selectedDate = dateParam === 'today' ? todayStr : dateParam && dateParam !== 'all' ? dateParam : '';
     const filtered = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
     const limited = limitOverlayItems(filtered, resultLimit);
@@ -367,7 +360,7 @@ export default function OverlayContainer() {
       );
     }
 
-    const duration = parseInt(speed, 10) || 75;
+    const duration = parseTickerDuration(speed);
 
     return (
       <div className="overlay-ticker-shell">
@@ -483,7 +476,7 @@ export default function OverlayContainer() {
                   </thead>
                   <tbody>
                     {rows.slice(0, 6).map((row, index) => (
-                      <tr key={row.team}>
+                      <tr key={row.teamId ?? `legacy:${row.team}:${index}`}>
                         <td style={{ textAlign: 'center' }}>{index + 1}</td>
                         <td className="team-cell">
                           {renderLogo(row.logo, row.team, 'overlay-logo', row.crop, row.teamId)}

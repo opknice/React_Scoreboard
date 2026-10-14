@@ -4,6 +4,7 @@ import { getTodayDateString } from './leagueDateUtils';
 import { getScheduledTeamIdsForDate } from './leagueMatchUtils';
 import LeagueDatePicker from './LeagueDatePicker';
 import ModalBackdrop from '../ModalBackdrop';
+import { MAX_MATCH_SCORE, parseMatchScore } from '../../utils/matchScore';
 
 type MatchStatus = 'scheduled' | 'in_progress' | 'finished' | 'postponed';
 
@@ -88,8 +89,8 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
     e.preventDefault();
     setErrorMessage('');
 
-    const scoreA = Number(formData.scoreA);
-    const scoreB = Number(formData.scoreB);
+    const scoreA = parseMatchScore(formData.scoreA);
+    const scoreB = parseMatchScore(formData.scoreB);
 
     if (!formData.teamAId || !formData.teamBId) {
       setErrorMessage('กรุณาเลือกทีม A และทีม B');
@@ -99,8 +100,8 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
       setErrorMessage('ทีม A และทีม B ต้องไม่เป็นทีมเดียวกัน');
       return;
     }
-    if (!Number.isInteger(scoreA) || scoreA < 0 || !Number.isInteger(scoreB) || scoreB < 0) {
-      setErrorMessage('สกอร์ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+    if (scoreA === null || scoreB === null) {
+      setErrorMessage(`สกอร์ต้องเป็นจำนวนเต็มระหว่าง 0 ถึง ${MAX_MATCH_SCORE.toLocaleString()}`);
       return;
     }
 
@@ -241,6 +242,8 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
                 <input
                   type="number"
                   min="0"
+                  max={MAX_MATCH_SCORE}
+                  step="1"
                   className="league-form-input"
                   aria-label="สกอร์ทีม A"
                   value={formData.scoreA}
@@ -250,6 +253,8 @@ export const MatchEditModal: React.FC<MatchEditModalProps> = ({
                 <input
                   type="number"
                   min="0"
+                  max={MAX_MATCH_SCORE}
+                  step="1"
                   className="league-form-input"
                   aria-label="สกอร์ทีม B"
                   value={formData.scoreB}

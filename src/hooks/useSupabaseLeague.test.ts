@@ -30,6 +30,7 @@ const serviceMocks = vi.hoisted(() => ({
   createTeam: vi.fn<() => Promise<Team>>(),
   deleteTeam: vi.fn<() => Promise<void>>(),
   createMatch: vi.fn<() => Promise<Match>>(),
+  updateMatch: vi.fn<() => Promise<Match>>(),
   deleteMatchesByLeague: vi.fn<() => Promise<void>>(),
   createLeague: vi.fn<() => Promise<League>>(),
 }));
@@ -108,6 +109,7 @@ const matches: Match[] = [
     score_a: 0,
     score_b: 0,
     status: 'scheduled',
+    updated_at: '2026-10-14T08:00:00.000Z',
   },
 ];
 
@@ -228,6 +230,7 @@ describe('league mutation context and targeted refresh', () => {
     serviceMocks.getLeagues.mockReset().mockResolvedValue([league, otherLeague]);
     serviceMocks.getTeamsByLeague.mockReset().mockImplementation(async id => id === league.id ? teams : otherTeams);
     serviceMocks.getMatchesByLeague.mockReset().mockImplementation(async id => id === league.id ? matches : otherMatches);
+    serviceMocks.updateMatch.mockReset();
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); leagueMemoryCache.clear(); });
 
@@ -359,6 +362,45 @@ describe('league mutation context and targeted refresh', () => {
     await act(async () => { await expect(result.current.createTeam(teams[0])).rejects.toThrow('save failed'); });
     expect(result.current.teams).toEqual(teams);
     expect(result.current.matches).toEqual(matches);
+  });
+
+  it('uses updated_at to prevent overwriting a newer match result', async () => {
+    const { result } = await setup();
+    const updated = {
+      ...matches[0],
+      score_a: 2,
+      score_b: 1,
+      status: 'finished',
+      updated_at: '2026-10-14T08:01:00.000Z',
+    };
+    serviceMocks.updateMatch.mockResolvedValueOnce(updated);
+
+    await act(async () => {
+      await result.current.updateMatch(matches[0].id, { score_a: 2, score_b: 1, status: 'finished' });
+    });
+
+    expect(serviceMocks.updateMatch).toHaveBeenCalledWith(
+      matches[0].id,
+      { score_a: 2, score_b: 1, status: 'finished' },
+      league.id,
+      matches[0].updated_at,
+    );
+    expect(result.current.matches).toContainEqual(updated);
+  });
+
+  it('refuses to update a match when its concurrency version is missing', async () => {
+    const matchWithoutVersion = { ...matches[0], updated_at: undefined };
+    serviceMocks.getMatchesByLeague.mockImplementation(async id => (
+      id === league.id ? [matchWithoutVersion] : otherMatches
+    ));
+    const { result } = await setup();
+
+    await act(async () => {
+      await expect(result.current.updateMatch(matchWithoutVersion.id, { score_a: 1 }))
+        .rejects.toThrow('ไม่พบเวอร์ชันข้อมูลแมตช์');
+    });
+
+    expect(serviceMocks.updateMatch).not.toHaveBeenCalled();
   });
 
 });

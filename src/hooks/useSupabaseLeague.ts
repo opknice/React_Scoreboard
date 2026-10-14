@@ -752,7 +752,14 @@ export function useSupabaseLeague(
       if (!activeId || (updates.league_id !== undefined && updates.league_id !== activeId)) {
         throw new Error('ไม่สามารถแก้ไขแมตช์ข้ามลีกได้ กรุณาเลือก League ปัจจุบันใหม่');
       }
-      const updated = await LeagueService.updateMatch(id, updates, activeId);
+      const currentMatch = matches.find((match) => match.id === id && match.league_id === activeId);
+      if (!currentMatch) {
+        throw new Error('ไม่พบแมตช์ใน League ปัจจุบัน กรุณารีเฟรชข้อมูลก่อนบันทึก');
+      }
+      if (!currentMatch.updated_at) {
+        throw new Error('ไม่พบเวอร์ชันข้อมูลแมตช์ กรุณารีเฟรชข้อมูลก่อนบันทึก');
+      }
+      const updated = await LeagueService.updateMatch(id, updates, activeId, currentMatch.updated_at);
       invalidateLeagueDetailsCache(updated.league_id);
       if (isCurrent()) setMatches((prev) => prev.map((m) => (m.id === id ? updated : m)).sort((a, b) => a.match_number - b.match_number));
       dispatchLeagueChanged(updated.league_id, 'matches');
@@ -762,7 +769,7 @@ export function useSupabaseLeague(
       notify?.(`อัปเดตแมตช์ไม่สำเร็จ: ${getErrorMessage(err, 'เกิดข้อผิดพลาด')}`, 'error');
       throw err;
     }
-  }, [captureContext, notify]);
+  }, [captureContext, matches, notify]);
 
   const deleteMatch = useCallback(async (id: string) => {
     const isCurrent = captureContext();

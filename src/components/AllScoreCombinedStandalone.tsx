@@ -3,7 +3,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useSearchParams } from 'react-router-dom';
 import { findTeamLogoRecord, getLogoSrc } from '../utils/logoResolver';
 import { useDisableZoom } from '../hooks/useDisableZoom';
-import { filterFinishedMatches } from '../utils/finishedMatch';
+import { filterDisplayableFinishedMatches } from '../utils/finishedMatch';
 import { calculateFinishedStandings } from '../utils/standingsCalculator';
 import type { OverlayMatch, OverlayTeam } from '../types/overlay';
 import { parseCropMetadata } from '../types/teamLogo';
@@ -11,6 +11,7 @@ import OverlayLogo from './OverlayLogo';
 import { useCropPreviewOverrides } from '../hooks/useLogoCropPreviewSync';
 import { useLeagueLogoSizingForObs } from '../hooks/useLeagueLogoSizingForObs';
 import { getEffectiveLogoScalePercent } from '../types/leagueLogoSizing';
+import { getTodayDateString } from './league-management/leagueDateUtils';
 
 export default function AllScoreCombinedStandalone() {
   useDisableZoom();
@@ -31,7 +32,7 @@ export default function AllScoreCombinedStandalone() {
   const { resolveCrop } = useCropPreviewOverrides({ sessionId: syncSessionId, context: 'overlay' });
   const leagueLogoSizing = useLeagueLogoSizingForObs({ leagueId, sessionId: syncSessionId });
 
-  const finishedMatches = useMemo(() => filterFinishedMatches(matches), [matches]);
+  const finishedMatches = useMemo(() => filterDisplayableFinishedMatches(matches), [matches]);
   const standingsRows = useMemo(
     () => calculateFinishedStandings(matches, registeredTeams),
     [matches, registeredTeams],
@@ -39,9 +40,20 @@ export default function AllScoreCombinedStandalone() {
 
   useEffect(() => {
     let isCancelled = false;
+    let latestRequestId = 0;
+    let refreshTimer: number | null = null;
     let supabaseChannel: RealtimeChannel | null = null;
 
+    const scheduleRealtimeRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void loadFromSupabase();
+      }, 150);
+    };
+
     const loadFromSupabase = async () => {
+      const requestId = ++latestRequestId;
       try {
         const { LeagueService } = await import('../services/leagueService');
         const { isSupabaseConfigured, supabase } = await import('../config/supabaseClient');
@@ -53,7 +65,7 @@ export default function AllScoreCombinedStandalone() {
           LeagueService.getMatchesByLeague(leagueId),
           LeagueService.getTeamsByLeague(leagueId),
         ]);
-        if (isCancelled) return;
+        if (isCancelled || requestId !== latestRequestId) return;
         const formatted = supabaseMatches.map((m) => {
           const teamA = findTeamLogoRecord(supabaseTeams, m.team_a_id, m.team_a_name);
           const teamB = findTeamLogoRecord(supabaseTeams, m.team_b_id, m.team_b_name);
@@ -82,6 +94,7 @@ export default function AllScoreCombinedStandalone() {
           crop: parseCropMetadata(team.overlay_crop_metadata),
         })));
         setMatches(formatted);
+        setErrorMsg('');
         setLoading(false);
 
         // Setup Realtime subscription for automatic updates on OBS
@@ -91,21 +104,17 @@ export default function AllScoreCombinedStandalone() {
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'matches', filter: `league_id=eq.${leagueId}` },
-              () => {
-                void loadFromSupabase();
-              }
+              scheduleRealtimeRefresh,
             )
             .on(
               'postgres_changes',
               { event: '*', schema: 'public', table: 'teams', filter: `league_id=eq.${leagueId}` },
-              () => {
-                void loadFromSupabase();
-              }
+              scheduleRealtimeRefresh,
             )
             .subscribe();
         }
       } catch (err: unknown) {
-        if (isCancelled) return;
+        if (isCancelled || requestId !== latestRequestId) return;
         setErrorMsg(`โหลดข้อมูลจาก Supabase ไม่สำเร็จ: ${err instanceof Error ? err.message : String(err)}`);
         setLoading(false);
       }
@@ -115,6 +124,8 @@ export default function AllScoreCombinedStandalone() {
 
     return () => {
       isCancelled = true;
+      latestRequestId += 1;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       if (supabaseChannel) {
         void import('../config/supabaseClient').then(({ supabase }) => {
           if (supabase && supabaseChannel) void supabase.removeChannel(supabaseChannel);
@@ -143,7 +154,7 @@ export default function AllScoreCombinedStandalone() {
   }
 
   // --- 2. Group matches by Date & Week ---
-  const selectedDate = dateParam === 'today' ? new Date().toISOString().slice(0, 10) : dateParam && dateParam !== 'all' ? dateParam : '';
+  const selectedDate = dateParam === 'today' ? getTodayDateString() : dateParam && dateParam !== 'all' ? dateParam : '';
   const filteredMatches = selectedDate ? finishedMatches.filter((m) => m.date === selectedDate) : finishedMatches;
 
   const groups: Record<string, any[]> = {};
@@ -250,7 +261,7 @@ export default function AllScoreCombinedStandalone() {
                 </thead>
                 <tbody>
                   {standingsRows.map((row, index) => (
-                    <tr key={row.team}>
+                    <tr key={row.teamId ?? `legacy:${row.team}:${index}`}>
                       <td>{index + 1}</td>
                       <td className="combined-team-cell">
                         <div className="combined-team-content">

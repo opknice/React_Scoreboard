@@ -16,7 +16,7 @@ import {
   broadcastPlayerBrowserSettings,
 } from '../hooks/useScoreboardChannels';
 import { translations } from '../constants/translations';
-import { getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
+import { findTeamLogoRecord, getLogoSrc as resolveLogoSrc } from '../utils/logoResolver';
 import ReplayControlModals from './ReplayControlModals';
 import ModalBackdrop from './ModalBackdrop';
 import ScoreboardTimerPanel from './ScoreboardTimerPanel';
@@ -74,6 +74,7 @@ import ScoreboardLazyFallback from './scoreboard/ScoreboardLazyFallback';
 import SaveMatchConfirmDialog from './SaveMatchConfirmDialog';
 import UiIcon from './UiIcon';
 import { resolveCanonicalMatchResult } from '../utils/matchResultMapping';
+import { MAX_MATCH_SCORE, parseMatchScore } from '../utils/matchScore';
 
 const controllerProfilerEnabled = import.meta.env.DEV
   && typeof window !== 'undefined'
@@ -811,6 +812,11 @@ export default function ScoreboardController() {
   }, [supabaseLeague.teams, logoFolderPath]);
 
   const addGoal = useCallback((team: 'A' | 'B', source: 'manual' | 'hotkey' | 'macro' = 'manual') => {
+    const currentScore = team === 'A' ? scoreA : scoreB;
+    if (currentScore >= MAX_MATCH_SCORE) {
+      triggerToast(`สกอร์สูงสุดที่บันทึกได้คือ ${MAX_MATCH_SCORE.toLocaleString()}`, 'warning');
+      return;
+    }
     const nextScoreA = team === 'A' ? scoreA + 1 : scoreA;
     const nextScoreB = team === 'B' ? scoreB + 1 : scoreB;
     const teamName = team === 'A' ? nameA : nameB;
@@ -835,7 +841,7 @@ export default function ScoreboardController() {
       color2,
       source,
     });
-  }, [colorA1, colorA2, colorB1, colorB2, getLogoSrc, logoA, logoB, nameA, nameB, scoreA, scoreB, setScoreA, setScoreB]);
+  }, [colorA1, colorA2, colorB1, colorB2, getLogoSrc, logoA, logoB, nameA, nameB, scoreA, scoreB, setScoreA, setScoreB, triggerToast]);
 
   const handleAddGoal = useCallback((team: 'A' | 'B') => {
     addGoal(team, 'manual');
@@ -1035,15 +1041,11 @@ export default function ScoreboardController() {
     const teamAName = match.team_a_name || 'Team A';
     const teamBName = match.team_b_name || 'Team B';
 
-    const teamAObj = availableTeams.find(
-      (t) => t.id === match.team_a_id || t.name.toLowerCase() === teamAName.toLowerCase()
-    );
-    const teamBObj = availableTeams.find(
-      (t) => t.id === match.team_b_id || t.name.toLowerCase() === teamBName.toLowerCase()
-    );
+    const teamAObj = findTeamLogoRecord(availableTeams, match.team_a_id, teamAName);
+    const teamBObj = findTeamLogoRecord(availableTeams, match.team_b_id, teamBName);
 
-    const initialScoreA = typeof match.score_a === 'number' ? match.score_a : 0;
-    const initialScoreB = typeof match.score_b === 'number' ? match.score_b : 0;
+    const initialScoreA = parseMatchScore(match.score_a) ?? 0;
+    const initialScoreB = parseMatchScore(match.score_b) ?? 0;
 
     setNameA(teamAName);
     setNameB(teamBName);
@@ -1303,9 +1305,11 @@ export default function ScoreboardController() {
       scoreB,
     });
     if (!canonicalResult.ok) {
-      const message = canonicalResult.reason === 'missing-team-identity'
-        ? 'ข้อมูลทีมบนสกอร์บอร์ดไม่ครบ กรุณาโหลดคู่แข่งขันใหม่ก่อนบันทึกผล'
-        : 'ทีมบนสกอร์บอร์ดไม่ตรงกับคู่แข่งขันที่เลือก กรุณาโหลดคู่แข่งขันใหม่ก่อนบันทึกผล';
+      const message = canonicalResult.reason === 'invalid-score'
+        ? 'สกอร์ไม่ถูกต้อง กรุณาตรวจสอบให้เป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป'
+        : canonicalResult.reason === 'missing-team-identity'
+          ? 'ข้อมูลทีมบนสกอร์บอร์ดไม่ครบ กรุณาโหลดคู่แข่งขันใหม่ก่อนบันทึกผล'
+          : 'ทีมบนสกอร์บอร์ดไม่ตรงกับคู่แข่งขันที่เลือก กรุณาโหลดคู่แข่งขันใหม่ก่อนบันทึกผล';
       triggerToast(message, 'error');
       return false;
     }

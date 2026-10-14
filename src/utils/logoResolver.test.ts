@@ -16,6 +16,11 @@ describe('logoResolver', () => {
     expect(resolveTeamLogo(teams, null, '  ทีม   เหย้า ')).toBe('https://example.com/home.png');
   });
 
+  it('does not fall back to another team name when an authoritative ID is missing', () => {
+    expect(findTeamLogoRecord(teams, 'missing-id', 'ทีม เหย้า')).toBeUndefined();
+    expect(resolveTeamLogo(teams, 'missing-id', 'ทีม เหย้า')).toBe('');
+  });
+
   it('resolves a missing logo to the normal static fallback path', () => {
     expect(getLogoSrc('', 'Unknown Team')).toBe('/logos/Unknown%20Team.png');
   });
