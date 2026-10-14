@@ -36,3 +36,4 @@ template/Untitled/basic.ini
 .env
 .env.*
 !.env.example
+.vercel
