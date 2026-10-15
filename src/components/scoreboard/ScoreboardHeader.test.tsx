@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { User } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
+import { FREE_TRIAL_DAYS } from '../../utils/trialAccess';
 import ScoreboardHeader from './ScoreboardHeader';
 
 describe('ScoreboardHeader', () => {
@@ -27,7 +28,10 @@ describe('ScoreboardHeader', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /ดูรายละเอียด Trial และ VIP/ }));
+    const trialBadge = screen.getByRole('button', { name: /ดูรายละเอียด Trial และ VIP/ });
+    expect(trialBadge.getAttribute('title')).toContain(`${FREE_TRIAL_DAYS} วัน`);
+
+    fireEvent.click(trialBadge);
     expect(onNavigatePlans).toHaveBeenCalledTimes(1);
   });
 });

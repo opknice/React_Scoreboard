@@ -2,7 +2,7 @@ import React from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { AccessDecision } from '../../types/authAccess';
 import UserAvatar from '../UserAvatar';
-import { formatTrialRemaining } from '../../utils/trialAccess';
+import { FREE_TRIAL_DAYS, formatTrialRemaining } from '../../utils/trialAccess';
 import UiIcon from '../UiIcon';
 import { useObsVideoFolderFiles } from '../../context/useObsVideoFolderContext';
 
@@ -129,7 +129,7 @@ export const ScoreboardHeader: React.FC<ScoreboardHeaderProps> = React.memo(({
               <button
                 type="button"
                 className="trial-access-badge"
-                title={`ระยะเวลาทดลองใช้งานฟรี 7 วัน · ${trialRemainingLabel} · คลิกเพื่อดูรายละเอียด Trial และ VIP`}
+                title={`ระยะเวลาทดลองใช้งานฟรี ${FREE_TRIAL_DAYS} วัน · ${trialRemainingLabel} · คลิกเพื่อดูรายละเอียด Trial และ VIP`}
                 aria-label={`ระยะเวลาทดลองใช้งานฟรี ${trialRemainingLabel} ดูรายละเอียด Trial และ VIP`}
                 onClick={onNavigatePlans}
               >

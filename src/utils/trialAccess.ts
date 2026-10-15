@@ -1,4 +1,4 @@
-export const FREE_TRIAL_DAYS = 7;
+export const FREE_TRIAL_DAYS = 90;
 export const FREE_TRIAL_DURATION_MS = FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000;
 
 export interface TrialAccessResult {

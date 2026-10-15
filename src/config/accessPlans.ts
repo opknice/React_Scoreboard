@@ -1,4 +1,8 @@
+import { FREE_TRIAL_DAYS } from '../utils/trialAccess';
+
 export type AccessPlanId = 'trial' | 'vip';
+
+const FREE_TRIAL_DURATION_LABEL = `${FREE_TRIAL_DAYS} วัน`;
 
 export interface AccessPlanSummary {
   id: AccessPlanId;
@@ -32,7 +36,7 @@ export const ACCESS_PLAN_SUMMARIES: readonly AccessPlanSummary[] = [
     name: 'Free Trial',
     eyebrow: 'เริ่มต้นทดลองระบบ',
     description: 'ทดลองใช้เครื่องมือถ่ายทอดฟุตบอลชุดหลักได้ครบ ก่อนตัดสินใจขอสิทธิ์ VIP',
-    duration: '7 วัน',
+    duration: FREE_TRIAL_DURATION_LABEL,
     logoUploadLimit: '10 รูป',
     playerImageUploadLimit: '20 รูป',
   },
@@ -146,7 +150,7 @@ export const ACCESS_PLAN_FEATURE_GROUPS: readonly AccessPlanFeatureGroup[] = [
       {
         label: 'ระยะเวลาการใช้งาน',
         description: 'Trial เริ่มนับจากการเข้าสู่ระบบครั้งแรก',
-        trial: '7 วัน',
+        trial: FREE_TRIAL_DURATION_LABEL,
         vip: 'ต่อเนื่องระหว่างได้รับสิทธิ์',
         trialAvailable: true,
         vipAvailable: true,

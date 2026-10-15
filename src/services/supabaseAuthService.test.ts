@@ -11,7 +11,7 @@ vi.mock('../config/supabaseClient', () => ({
   getSupabaseClient: () => ({ rpc: authMocks.rpc }),
 }));
 
-import { evaluateUserAccess, getUserAccessDecision } from './supabaseAuthService';
+import { FREE_TRIAL_DURATION_MS, evaluateUserAccess, getUserAccessDecision } from './supabaseAuthService';
 
 const NOW = Date.UTC(2026, 0, 1);
 
@@ -60,12 +60,12 @@ describe('evaluateUserAccess', () => {
       isAllowed: true,
       accessType: 'trial',
       trialStartedAt: startedAt,
-      trialExpiresAt: startedAt + (7 * 24 * 60 * 60 * 1000),
+      trialExpiresAt: startedAt + FREE_TRIAL_DURATION_MS,
     });
   });
 
   it('reports an expired trial', () => {
-    const startedAt = NOW - (8 * 24 * 60 * 60 * 1000);
+    const startedAt = NOW - FREE_TRIAL_DURATION_MS - 1;
     expect(evaluateUserAccess(makeRecord({ trial_started_at: startedAt }), 'user@example.com', NOW, [])).toMatchObject({
       isAllowed: false,
       accessType: 'trial-expired',

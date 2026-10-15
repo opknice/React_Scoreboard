@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { FREE_TRIAL_DURATION_MS, evaluateTrialAccess, formatTrialRemaining } from './trialAccess';
+import { FREE_TRIAL_DAYS, FREE_TRIAL_DURATION_MS, evaluateTrialAccess, formatTrialRemaining } from './trialAccess';
 
 describe('evaluateTrialAccess', () => {
-  it('starts a seven-day trial with the correct expiry and remaining days', () => {
+  it('starts a ninety-day trial with the correct expiry and remaining days', () => {
     const startedAt = 1_700_000_000_000;
     const result = evaluateTrialAccess(startedAt, startedAt);
 
     expect(result).toEqual({
       isActive: true,
       expiresAt: startedAt + FREE_TRIAL_DURATION_MS,
-      daysRemaining: 7,
+      daysRemaining: FREE_TRIAL_DAYS,
     });
   });
 

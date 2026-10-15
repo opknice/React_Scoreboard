@@ -225,7 +225,7 @@ begin
      and not (
        v_record.status = 'pending'
        and v_record.trial_started_at is not null
-       and v_record.trial_started_at + (7 * 24 * 60 * 60 * 1000) > v_now_ms
+       and v_record.trial_started_at + (90::bigint * 24 * 60 * 60 * 1000) > v_now_ms
      ) then
     raise exception 'upload access denied';
   end if;
