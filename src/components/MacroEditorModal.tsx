@@ -9,6 +9,7 @@ import {
 } from '../macros/macroEventCatalog';
 import { normalizeMacroFilter } from '../macros/macroTrigger';
 import { describeAction } from '../macros/macroSummary';
+import { callObsWithTimeout } from '../macros/macroExecutor';
 
 interface MacroEditorModalProps {
   obs?: any;
@@ -17,12 +18,20 @@ interface MacroEditorModalProps {
   onClose: () => void;
 }
 
+interface PlayGroupOption {
+  uuid: string;
+  name: string;
+  scene: string;
+}
+
 const PRESET_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4'];
 
 const ACTION_OPTIONS: Array<{ value: ActionType; label: string }> = [
   { value: 'switchScene', label: 'สลับ Scene' },
   { value: 'showSource', label: 'แสดง Source' },
   { value: 'hideSource', label: 'ซ่อน Source' },
+  { value: 'showPlayGroup', label: 'PlayGroup: Show' },
+  { value: 'hidePlayGroup', label: 'PlayGroup: Hide' },
   { value: 'wait', label: 'รอเวลา' },
   { value: 'openVarReplay', label: 'เปิด VAR Controller' },
   { value: 'closeVarReplay', label: 'ปิด VAR Controller' },
@@ -85,12 +94,15 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   const [allInputs, setAllInputs] = useState<string[]>([]);
   const [mediaInputs, setMediaInputs] = useState<string[]>([]);
   const [sceneItemsMap, setSceneItemsMap] = useState<Record<string, string[]>>({});
+  const [playGroups, setPlayGroups] = useState<PlayGroupOption[] | null>(null);
+  const [playGroupLoadError, setPlayGroupLoadError] = useState(false);
   const [isLoadingObs, setIsLoadingObs] = useState(false);
   const [error, setError] = useState('');
   const obsRef = useRef(obs);
   obsRef.current = obs;
 
   const eventOption = getMacroEventOption(event);
+  const needsPlayGroups = step === 2 && actions.some(({ type }) => type === 'showPlayGroup' || type === 'hidePlayGroup');
 
   useEffect(() => {
     if (!obs?.isConnected) return undefined;
@@ -134,6 +146,28 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     })();
     return () => { mounted = false; };
   }, [obs?.isConnected]);
+
+  useEffect(() => {
+    setPlayGroups(null);
+    setPlayGroupLoadError(false);
+    if (!obs?.isConnected || !needsPlayGroups) return undefined;
+
+    const controller = new AbortController();
+    void callObsWithTimeout(obsRef.current, 'CallVendorRequest', {
+      vendorName: 'PlayGroup', requestType: 'ListGroups',
+    }, controller.signal).then((result) => {
+      if (controller.signal.aborted) return;
+      const groups: unknown = result?.responseData?.groups;
+      if (!Array.isArray(groups)) throw new Error('Invalid PlayGroup group list');
+      setPlayGroups(groups.filter((item): item is PlayGroupOption => (
+        typeof item?.uuid === 'string' && Boolean(item.uuid.trim())
+        && typeof item.name === 'string' && typeof item.scene === 'string'
+      )));
+    }).catch(() => {
+      if (!controller.signal.aborted) setPlayGroupLoadError(true);
+    });
+    return () => controller.abort();
+  }, [obs?.isConnected, needsPlayGroups]);
 
   const sourceOptions = useMemo(() => {
     const values = Object.values(sceneItemsMap).flat();
@@ -229,6 +263,11 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     const message = validateStep(2);
     if (message) {
       setError(message);
+      return;
+    }
+    if (actions.some((action) => (action.type === 'showPlayGroup' || action.type === 'hidePlayGroup')
+      && !(typeof action.playGroupUuid === 'string' && action.playGroupUuid.trim()))) {
+      setError('กรุณาเลือกกลุ่ม PlayGroup ในแต่ละขั้นตอน');
       return;
     }
     onSave({
@@ -335,6 +374,35 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   };
 
   const renderActionFields = (action: ActionStep) => {
+    if (action.type === 'showPlayGroup' || action.type === 'hidePlayGroup') {
+      const groups = obs?.isConnected ? playGroups : null;
+      const selectedUuid = action.playGroupUuid || '';
+      const selectedGroup = groups?.find((group) => group.uuid === selectedUuid);
+      const status = !obs?.isConnected ? 'เชื่อมต่อ OBS เพื่อโหลดรายการกลุ่ม PlayGroup'
+        : playGroupLoadError ? 'โหลดกลุ่ม PlayGroup ไม่สำเร็จ ตรวจสอบว่าปลั๊กอินทำงานใน OBS'
+          : !groups ? 'กำลังโหลดกลุ่ม PlayGroup…'
+            : groups.length === 0 ? 'ยังไม่มีกลุ่ม PlayGroup ใน Scene Collection นี้' : '';
+      return (
+        <div style={{ display: 'grid', gap: 6 }}>
+          <select
+            aria-label="เลือกกลุ่ม PlayGroup"
+            style={fieldStyle()}
+            value={selectedUuid}
+            disabled={!groups?.length}
+            onChange={(e) => {
+              const group = groups?.find(({ uuid }) => uuid === e.target.value);
+              updateAction(action.id, { playGroupUuid: group?.uuid, playGroupName: group?.name });
+              setError('');
+            }}
+          >
+            <option value="">เลือกกลุ่ม PlayGroup…</option>
+            {selectedUuid && !selectedGroup && <option value={selectedUuid}>{action.playGroupName || selectedUuid}</option>}
+            {groups?.map(({ uuid, name, scene }) => <option key={uuid} value={uuid}>{name}{scene ? ` (${scene})` : ''}</option>)}
+          </select>
+          {status && <small role="status" style={{ color: '#94a3b8' }}>{status}</small>}
+        </div>
+      );
+    }
     if (action.type === 'wait') {
       return <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><input type="number" min="0" step="0.1" style={{ ...fieldStyle(), maxWidth: 140 }} value={(action.delayMs ?? 1000) / 1000} onChange={(e) => updateAction(action.id, { delayMs: Math.max(0, Number(e.target.value) * 1000) })} /><span style={{ color: '#94a3b8' }}>วินาที</span></div>;
     }

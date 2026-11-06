@@ -21,7 +21,7 @@ export interface MacroFilter {
   keyField?: 'key' | 'code';
 }
 
-export type ActionType = 'switchScene' | 'showSource' | 'hideSource' | 'wait' | 'openVarReplay' | 'closeVarReplay' | 'openReplayControl' | 'closeReplayControl' | 'closePenaltyShootout' | 'saveReplayBuffer' | 'loadLatestReplay';
+export type ActionType = 'switchScene' | 'showSource' | 'hideSource' | 'showPlayGroup' | 'hidePlayGroup' | 'wait' | 'openVarReplay' | 'closeVarReplay' | 'openReplayControl' | 'closeReplayControl' | 'closePenaltyShootout' | 'saveReplayBuffer' | 'loadLatestReplay';
 
 export interface ActionStep {
   id: string;
@@ -31,6 +31,8 @@ export interface ActionStep {
   // showSource / hideSource
   sourceScene?: string;
   sourceName?: string;
+  playGroupUuid?: string;
+  playGroupName?: string;
   // wait
   delayMs?: number;
 }

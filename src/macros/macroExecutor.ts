@@ -28,7 +28,7 @@ function waitWithCancellation(delayMs: number, signal?: AbortSignal): Promise<vo
   });
 }
 
-function callObsWithTimeout(
+export function callObsWithTimeout(
   obsRef: any,
   requestType: string,
   requestData: Record<string, unknown> | undefined,
@@ -111,6 +111,21 @@ export async function executeMacroActions(
         } else {
           context.addLog(macro.id, '⚠️ ไม่ได้ระบุชื่อ Source ข้ามขั้นตอนนี้');
         }
+      } else if (step.type === 'showPlayGroup' || step.type === 'hidePlayGroup') {
+        const group = typeof step.playGroupUuid === 'string' ? step.playGroupUuid.trim() : '';
+        if (!group) throw new Error('กรุณาเลือกกลุ่ม PlayGroup');
+
+        const action = step.type === 'showPlayGroup' ? 'show' : 'hide';
+        const result = await callObsWithTimeout(obsRef, 'CallVendorRequest', {
+          vendorName: 'PlayGroup',
+          requestType: 'RunAction',
+          requestData: { action, group },
+        }, context.signal);
+        const response = result?.responseData;
+        if (response?.ok !== true) {
+          throw new Error(`PlayGroup ${action} ไม่สำเร็จ (${response?.error || 'ไม่ได้รับผลยืนยัน'})`);
+        }
+        context.addLog(macro.id, `✓ PlayGroup รับคำสั่ง ${action} สำหรับ “${step.playGroupName || group}” แล้ว`);
       } else if (
         step.type === 'openVarReplay'
         || step.type === 'closeVarReplay'

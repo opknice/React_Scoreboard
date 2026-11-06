@@ -32,6 +32,17 @@ describe('macroStorage', () => {
     expect(loadCustomMacros()).toEqual([macro]);
   });
 
+  it('restores PlayGroup actions with their selected group', () => {
+    const group = { playGroupUuid: 'group-uuid', playGroupName: 'Score overlay' };
+    const macro = makeMacro({ actions: [
+      { id: '1', type: 'showPlayGroup', ...group },
+      { id: '2', type: 'hidePlayGroup', ...group },
+    ] });
+
+    saveCustomMacros([macro]);
+    expect(loadCustomMacros()).toEqual([macro]);
+  });
+
   it('keeps preset definitions while restoring only their enabled state', () => {
     const preset = makeMacro({ id: 'preset', name: 'Preset', isEnabled: false });
     saveCustomMacros([makeMacro({ id: 'preset', name: 'Old name', isEnabled: true })]);

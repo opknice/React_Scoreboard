@@ -4,7 +4,7 @@ import { isMacroEvent } from './macroTrigger';
 export const CUSTOM_MACROS_STORAGE_KEY = 'customMacrosList';
 
 const ACTION_TYPES = new Set([
-  'switchScene', 'showSource', 'hideSource', 'wait',
+  'switchScene', 'showSource', 'hideSource', 'showPlayGroup', 'hidePlayGroup', 'wait',
   'openVarReplay', 'closeVarReplay', 'openReplayControl', 'closeReplayControl', 'closePenaltyShootout',
   'saveReplayBuffer', 'loadLatestReplay',
 ]);

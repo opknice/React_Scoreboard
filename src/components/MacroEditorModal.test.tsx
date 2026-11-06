@@ -118,6 +118,8 @@ describe('MacroEditorModal event step', () => {
     'switchScene',
     'showSource',
     'hideSource',
+    'showPlayGroup',
+    'hidePlayGroup',
     'wait',
     'openVarReplay',
     'closeVarReplay',
@@ -133,9 +135,33 @@ describe('MacroEditorModal event step', () => {
     const addActionSelect = comboboxes[comboboxes.length - 1];
     fireEvent.change(addActionSelect, { target: { value: actionType } });
 
-    const actionSelects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const actionSelects = (screen.getAllByRole('combobox') as HTMLSelectElement[])
+      .filter((select) => select.getAttribute('aria-label') !== 'เลือกกลุ่ม PlayGroup');
     const addedActionSelect = actionSelects[actionSelects.length - 2];
     expect(addedActionSelect.value).toBe(actionType);
     expect(addActionSelect.value).toBe('');
+  });
+
+  it('loads PlayGroup groups and saves the chosen UUID with the action', async () => {
+    const onSave = vi.fn();
+    const call = vi.fn(async (requestType: string) => requestType === 'CallVendorRequest'
+      ? { responseData: { groups: [{ uuid: 'group-uuid', name: 'Score overlay', scene: 'Main' }] } }
+      : {});
+    render(<MacroEditorModal obs={{ isConnected: true, call }} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.change(screen.getAllByRole('combobox').at(-1)!, { target: { value: 'showPlayGroup' } });
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึก Automation' }));
+    expect(onSave).not.toHaveBeenCalled();
+
+    await screen.findByRole('option', { name: 'Score overlay (Main)' });
+    expect(call).toHaveBeenCalledWith('CallVendorRequest', { vendorName: 'PlayGroup', requestType: 'ListGroups' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'เลือกกลุ่ม PlayGroup' }), { target: { value: 'group-uuid' } });
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึก Automation' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      actions: expect.arrayContaining([expect.objectContaining({
+        type: 'showPlayGroup', playGroupUuid: 'group-uuid', playGroupName: 'Score overlay',
+      })]),
+    }));
   });
 });

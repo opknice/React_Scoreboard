@@ -19,6 +19,8 @@ export function describeAction(step: ActionStep): string {
     case 'switchScene': return `สลับไป Scene “${step.sceneName || 'ยังไม่ได้เลือก'}”`;
     case 'showSource': return `แสดง Source “${step.sourceName || 'ยังไม่ได้เลือก'}”`;
     case 'hideSource': return `ซ่อน Source “${step.sourceName || 'ยังไม่ได้เลือก'}”`;
+    case 'showPlayGroup': return `เล่น Show ของ PlayGroup “${step.playGroupName || step.playGroupUuid || 'ยังไม่ได้เลือก'}”`;
+    case 'hidePlayGroup': return `เล่น Hide ของ PlayGroup “${step.playGroupName || step.playGroupUuid || 'ยังไม่ได้เลือก'}”`;
     case 'openVarReplay': return 'เปิด VAR Controller';
     case 'closeVarReplay': return 'ปิด VAR Controller';
     case 'openReplayControl': return 'เปิด Replay Control';
