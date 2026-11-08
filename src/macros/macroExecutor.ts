@@ -1,3 +1,7 @@
+import { callObsWithTimeout } from '../obs/obsRequest';
+export { callObsWithTimeout } from '../obs/obsRequest';
+import { saveSourceRecordReplay } from '../obs/sourceRecordClient';
+import { isSourceRecordTarget, SourceRecordError } from '../types/sourceRecord';
 import type { CustomMacro } from '../types/macro';
 import { MACRO_CHANNELS, postMacroChannelMessage } from './macroChannels';
 
@@ -25,31 +29,6 @@ function waitWithCancellation(delayMs: number, signal?: AbortSignal): Promise<vo
       reject(new Error('Macro ถูกยกเลิก'));
     };
     signal?.addEventListener('abort', handleAbort, { once: true });
-  });
-}
-
-export function callObsWithTimeout(
-  obsRef: any,
-  requestType: string,
-  requestData: Record<string, unknown> | undefined,
-  signal?: AbortSignal,
-): Promise<any> {
-  throwIfAborted(signal);
-  let timeoutId: number | null = null;
-  let handleAbort: (() => void) | null = null;
-
-  const operation = Promise.resolve(obsRef.call(requestType, requestData));
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error(`OBS timeout: ${requestType}`)), 5000);
-  });
-  const aborted = new Promise<never>((_, reject) => {
-    handleAbort = () => reject(new Error('Macro ถูกยกเลิก'));
-    signal?.addEventListener('abort', handleAbort, { once: true });
-  });
-
-  return Promise.race([operation, timeout, aborted]).finally(() => {
-    if (timeoutId !== null) window.clearTimeout(timeoutId);
-    if (handleAbort) signal?.removeEventListener('abort', handleAbort);
   });
 }
 
@@ -153,6 +132,13 @@ export async function executeMacroActions(
         context.addLog(macro.id, sent
           ? `✓ ส่งคำสั่ง ${isOpen ? 'เปิด' : 'ปิด'} ${modalLabel} แล้ว`
           : '❌ ไม่สามารถส่งคำสั่งไปยังหน้าควบคุมได้');
+      } else if (step.type === 'saveSourceRecordReplay') {
+        if (!isSourceRecordTarget(step.sourceRecordTarget)) {
+          throw new SourceRecordError('INVALID_TARGET', 'กรุณาเลือก Source และ Filter Source Record ที่มี UUID ถูกต้อง');
+        }
+        context.addLog(macro.id, `💾 กำลังบันทึก Source Record “${step.sourceRecordTarget.sourceName} / ${step.sourceRecordTarget.filterName}”…`);
+        const saved = await saveSourceRecordReplay(obsRef, step.sourceRecordTarget, context.signal);
+        context.addLog(macro.id, `✓ บันทึก Source Record สำเร็จ: ${saved.path}`);
       } else if (step.type === 'saveReplayBuffer') {
         try {
           context.addLog(macro.id, '💾 กำลังบันทึก Replay Buffer...');

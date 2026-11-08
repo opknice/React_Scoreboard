@@ -1,3 +1,5 @@
+import type { SourceRecordTarget } from './sourceRecord';
+
 export type MacroEvent =
   | 'ReplayBufferSaved'
   | 'ReplayVideoEnded'
@@ -21,7 +23,7 @@ export interface MacroFilter {
   keyField?: 'key' | 'code';
 }
 
-export type ActionType = 'switchScene' | 'showSource' | 'hideSource' | 'showPlayGroup' | 'hidePlayGroup' | 'wait' | 'openVarReplay' | 'closeVarReplay' | 'openReplayControl' | 'closeReplayControl' | 'closePenaltyShootout' | 'saveReplayBuffer' | 'loadLatestReplay';
+export type ActionType = 'switchScene' | 'showSource' | 'hideSource' | 'showPlayGroup' | 'hidePlayGroup' | 'wait' | 'openVarReplay' | 'closeVarReplay' | 'openReplayControl' | 'closeReplayControl' | 'closePenaltyShootout' | 'saveReplayBuffer' | 'loadLatestReplay' | 'saveSourceRecordReplay';
 
 export interface ActionStep {
   id: string;
@@ -33,6 +35,7 @@ export interface ActionStep {
   sourceName?: string;
   playGroupUuid?: string;
   playGroupName?: string;
+  sourceRecordTarget?: SourceRecordTarget;
   // wait
   delayMs?: number;
 }

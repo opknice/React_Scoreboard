@@ -6,7 +6,7 @@ export const CUSTOM_MACROS_STORAGE_KEY = 'customMacrosList';
 const ACTION_TYPES = new Set([
   'switchScene', 'showSource', 'hideSource', 'showPlayGroup', 'hidePlayGroup', 'wait',
   'openVarReplay', 'closeVarReplay', 'openReplayControl', 'closeReplayControl', 'closePenaltyShootout',
-  'saveReplayBuffer', 'loadLatestReplay',
+  'saveReplayBuffer', 'loadLatestReplay', 'saveSourceRecordReplay',
 ]);
 const FILTER_KINDS = new Set(['any', 'button', 'key', 'hotkey', 'scene', 'input']);
 
@@ -28,11 +28,26 @@ function isCustomMacro(value: unknown): value is CustomMacro {
     ));
 }
 
+function persistableActions(actions: CustomMacro['actions']): CustomMacro['actions'] {
+  return actions.map((action) => {
+    if (action.type !== 'saveSourceRecordReplay') return action;
+    const target = action.sourceRecordTarget;
+    return {
+      id: action.id, type: action.type,
+      ...(target && typeof target === 'object' ? { sourceRecordTarget: {
+        sourceUuid: target.sourceUuid, sourceName: target.sourceName,
+        filterUuid: target.filterUuid, filterName: target.filterName,
+      } } : {}),
+    };
+  });
+}
+
 function normalizeMacro(macro: CustomMacro): CustomMacro {
   const filter = macro.trigger.filter;
 
   return {
     ...macro,
+    actions: persistableActions(macro.actions),
     logs: Array.isArray(macro.logs) ? macro.logs.filter((log): log is string => typeof log === 'string').slice(-15) : [],
     lastTrigger: typeof macro.lastTrigger === 'string' ? macro.lastTrigger : '',
     trigger: filter
@@ -76,7 +91,7 @@ export function loadCustomMacros(presets: CustomMacro[] = []): CustomMacro[] {
 
 export function saveCustomMacros(macros: CustomMacro[]): void {
   try {
-    localStorage.setItem(CUSTOM_MACROS_STORAGE_KEY, JSON.stringify(macros));
+    localStorage.setItem(CUSTOM_MACROS_STORAGE_KEY, JSON.stringify(macros.map((macro) => ({ ...macro, actions: persistableActions(macro.actions) }))));
   } catch (error) {
     console.error('Failed to save custom macros to localStorage', error);
   }

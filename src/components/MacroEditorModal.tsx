@@ -1,3 +1,5 @@
+import SourceRecordActionFields from './SourceRecordActionFields';
+import { isSourceRecordTarget } from '../types/sourceRecord';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import type { ActionStep, ActionType, CustomMacro, MacroEvent, MacroFilter } from '../types/macro';
 import ModalBackdrop from './ModalBackdrop';
@@ -38,6 +40,7 @@ const ACTION_OPTIONS: Array<{ value: ActionType; label: string }> = [
   { value: 'openReplayControl', label: 'เปิด Replay Control' },
   { value: 'closeReplayControl', label: 'ปิด Replay Control' },
   { value: 'closePenaltyShootout', label: 'ปิดการยิงจุดโทษ' },
+  { value: 'saveSourceRecordReplay', label: 'Source Record: บันทึกย้อนหลัง' },
   { value: 'saveReplayBuffer', label: 'บันทึก Replay Buffer' },
   { value: 'loadLatestReplay', label: 'โหลด Replay ล่าสุด' },
 ];
@@ -259,6 +262,8 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     setStep(targetStep);
   };
 
+  const sourceRecordValidity = useRef<Record<string, boolean>>({});
+
   const save = () => {
     const message = validateStep(2);
     if (message) {
@@ -268,6 +273,11 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
     if (actions.some((action) => (action.type === 'showPlayGroup' || action.type === 'hidePlayGroup')
       && !(typeof action.playGroupUuid === 'string' && action.playGroupUuid.trim()))) {
       setError('กรุณาเลือกกลุ่ม PlayGroup ในแต่ละขั้นตอน');
+      return;
+    }
+    if (actions.some((action) => action.type === 'saveSourceRecordReplay'
+      && (!isSourceRecordTarget(action.sourceRecordTarget) || sourceRecordValidity.current[action.id] === false))) {
+      setError('กรุณาเลือก Source และ Filter Source Record ที่มี UUID ถูกต้อง');
       return;
     }
     onSave({
@@ -374,6 +384,12 @@ export default function MacroEditorModal({ obs, macro, onSave, onClose }: MacroE
   };
 
   const renderActionFields = (action: ActionStep) => {
+    if (action.type === 'saveSourceRecordReplay') {
+      return <SourceRecordActionFields obs={obs?.getObsRef ? obs.getObsRef() : obs} isConnected={!!obs?.isConnected}
+        value={action.sourceRecordTarget}
+        onChange={(sourceRecordTarget) => { updateAction(action.id, { sourceRecordTarget }); setError(''); }}
+        onValidityChange={(valid) => { sourceRecordValidity.current[action.id] = valid; }} />;
+    }
     if (action.type === 'showPlayGroup' || action.type === 'hidePlayGroup') {
       const groups = obs?.isConnected ? playGroups : null;
       const selectedUuid = action.playGroupUuid || '';

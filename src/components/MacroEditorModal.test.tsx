@@ -164,4 +164,47 @@ describe('MacroEditorModal event step', () => {
       })]),
     }));
   });
+
+  it('cannot_save_new_source_record_action_without_uuids', () => {
+    const onSave = vi.fn();
+    render(<MacroEditorModal onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.change(screen.getAllByRole('combobox').at(-1)!, { target: { value: 'saveSourceRecordReplay' } });
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึก Automation' }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText('กรุณาเลือก Source และ Filter Source Record ที่มี UUID ถูกต้อง')).toBeTruthy();
+  });
+
+  it('saves the exact Source Record filter target selected in the editor', async () => {
+    const target = { sourceUuid: '23456789-1234-4123-8123-123456789abc', filterUuid: '34567890-1234-4123-8123-123456789abc', sourceName: 'Camera', filterName: 'Highlights' };
+    const call = vi.fn(async (type: string, data?: any) => type === 'CallVendorRequest' && data.vendorName === 'SourceRecord'
+      ? { responseData: { protocolVersion: 1, ok: true, filters: [{ ...target, targetKind: 'source', enabled: true, replayEnabled: true, replayActive: true, busy: false,
+        settings: { durationSeconds: 20, directory: 'D:\\Clips', filenameFormatting: '%CCYY', format: 'mkv', replayPerformance: 1 } }] } } : {});
+    const onSave = vi.fn();
+    const connection = { call, on: vi.fn(), off: vi.fn() };
+    render(<MacroEditorModal obs={{ isConnected: true, call, getObsRef: () => connection }} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.change(screen.getAllByRole('combobox').at(-1)!, { target: { value: 'saveSourceRecordReplay' } });
+    await screen.findByRole('option', { name: /Camera \(Source\)/ });
+    fireEvent.change(screen.getByLabelText('เลือก Source หรือ Scene'), { target: { value: target.sourceUuid } });
+    fireEvent.change(screen.getByLabelText('เลือก Filter Source Record'), { target: { value: target.filterUuid } });
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึก Automation' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ actions: expect.arrayContaining([
+      expect.objectContaining({ type: 'saveSourceRecordReplay', sourceRecordTarget: target }),
+    ]) }));
+  });
+
+  it('allows an existing target to be saved while offline', () => {
+    const sourceRecordTarget = { sourceUuid: '23456789-1234-4123-8123-123456789abc', filterUuid: '34567890-1234-4123-8123-123456789abc', sourceName: 'Camera', filterName: 'Replay' };
+    const onSave = vi.fn();
+    render(<MacroEditorModal macro={{ id: 'existing', name: 'Existing', color: '#fff', isEnabled: true,
+      trigger: { event: 'ReplayBufferSaved' }, actions: [{ id: 'save', type: 'saveSourceRecordReplay', sourceRecordTarget }], logs: [], lastTrigger: '' }}
+      onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+    fireEvent.click(screen.getByRole('button', { name: 'บันทึก Automation' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ actions: [{ id: 'save', type: 'saveSourceRecordReplay', sourceRecordTarget }] }));
+  });
 });
